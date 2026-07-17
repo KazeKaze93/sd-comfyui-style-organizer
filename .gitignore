@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 data/config.json
+data/*.csv
 *.log
 node_modules/
 dist/
