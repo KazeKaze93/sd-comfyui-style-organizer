@@ -8,3 +8,6 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# Local Cursor config (not shipped)
+.cursor/
