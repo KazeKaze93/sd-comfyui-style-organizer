@@ -1,0 +1,12 @@
+[project]
+name = "sd-comfyui-style-organizer"
+description = "Grid/gallery-based style selector for ComfyUI. Browse and apply prompt styles from a searchable visual card grid."
+version = "0.0.1"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/KazeKaze93/sd-comfyui-style-organizer"
+
+[tool.comfy]
+PublisherId = "PLACEHOLDER_SET_AT_PUBLISH"
+DisplayName = "Style Grid"
