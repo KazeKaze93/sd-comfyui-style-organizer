@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+data/config.json
+*.log
+node_modules/
+dist/
+.DS_Store
+.vscode/
+.idea/
