@@ -2,7 +2,7 @@
 
 import hashlib
 
-from stylegrid.config import get_all_styles_file_paths
+from .config import get_all_styles_file_paths
 
 _file_hashes = {}
 _styles_cache = {"data": None, "hashes": {}}
@@ -43,7 +43,7 @@ def get_cached_styles():
     global _styles_cache
 
     if check_files_changed() or _styles_cache["data"] is None:
-        from stylegrid.csv_io import load_all_styles
+        from .csv_io import load_all_styles
 
         _styles_cache["data"] = load_all_styles()
         _styles_cache["hashes"] = dict(_file_hashes)

@@ -3,7 +3,7 @@
 import csv
 import os
 
-from stylegrid.config import get_all_styles_file_paths, logger
+from .config import get_all_styles_file_paths, logger
 
 
 def parse_styles_csv(filepath):

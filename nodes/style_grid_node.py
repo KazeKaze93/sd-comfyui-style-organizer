@@ -1,9 +1,9 @@
 import os
 
-from stylegrid.cache import get_cached_styles
-from stylegrid.config import get_all_styles_file_paths
-from stylegrid.csv_io import categorize_styles
-from stylegrid.prompt_ops import build_styles_by_cat, resolve_and_pack
+from ..stylegrid.cache import get_cached_styles
+from ..stylegrid.config import get_all_styles_file_paths
+from ..stylegrid.csv_io import categorize_styles
+from ..stylegrid.prompt_ops import build_styles_by_cat, resolve_and_pack
 
 ALL_SOURCES = "All Sources"
 

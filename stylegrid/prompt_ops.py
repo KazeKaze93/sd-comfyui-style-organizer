@@ -2,7 +2,7 @@
 
 import re
 
-from stylegrid.wildcards import resolve_sg_wildcards
+from .wildcards import resolve_sg_wildcards
 
 _WEIGHTED = re.compile(r"^\((.+?):\d+\.?\d*\)$")
 
