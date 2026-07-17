@@ -9,5 +9,5 @@ dist/
 .vscode/
 .idea/
 
-# Local Cursor config (not shipped)
+# Local Cursor config
 .cursor/
