@@ -44,7 +44,7 @@ function removeAppliedStyle(node, styleId) {
 }
 
 function rehydrate() {
-    fetch("/style_grid/styles")
+    return fetch("/style_grid/styles")
         .then((r) => r.json())
         .then((data) => {
             const allStyles = Object.values(data.categories || {}).flat();
@@ -133,9 +133,12 @@ function ensureOverlay() {
 function openStyleBrowser(node) {
     currentNode = node;
     ensureOverlay();
-    overlay.style.display = "block";
     if (ready) {
-        rehydrate();
+        rehydrate().then(() => {
+            overlay.style.display = "block";
+        });
+    } else {
+        overlay.style.display = "block";
     }
 }
 
