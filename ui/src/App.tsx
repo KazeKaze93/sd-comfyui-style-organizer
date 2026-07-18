@@ -180,10 +180,6 @@ export default function App() {
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5
                     border-b border-sg-border">
         <span className="text-sg-accent font-semibold">🎨 Style Grid</span>
-        <span className="text-xs text-sg-muted/60 border border-sg-border/50 
-                   px-1.5 py-0.5 rounded font-mono">
-          {tab}
-        </span>
         <SourceFilter />
         <div className="flex-1">
           <SearchBar />
