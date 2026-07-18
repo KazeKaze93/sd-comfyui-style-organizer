@@ -1,0 +1,261 @@
+import { useMemo, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
+import { sendToHost, type Style } from '../bridge'
+import {
+  getCategoryColor,
+  selectFilteredStyles,
+  styleRowKey,
+  useStylesStore,
+} from '../store/stylesStore'
+import { StyleCard } from './StyleCard'
+
+export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
+  const {
+    styles, search, activeCategory, activeSource,
+    favorites, recentNames, presets,
+    compactMode, collapsedCategories, toggleCollapse,
+    selectedStyles, selectAllInCategory,
+  } = useStylesStore(
+    useShallow(s => ({
+      styles: s.styles,
+      search: s.search,
+      activeCategory: s.activeCategory,
+      activeSource: s.activeSource,
+      favorites: s.favorites,
+      recentNames: s.recentNames,
+      presets: s.presets,
+      compactMode: s.compactMode,
+      collapsedCategories: s.collapsedCategories,
+      toggleCollapse: s.toggleCollapse,
+      selectedStyles: s.selectedStyles,
+      selectAllInCategory: s.selectAllInCategory,
+    }))
+  )
+  const [catMenu, setCatMenu] = useState<{
+    x: number
+    y: number
+    cat: string
+    missingCount: number
+  } | null>(null)
+
+  const filtered = useMemo(
+    () => selectFilteredStyles(styles, search, activeCategory, activeSource, favorites, recentNames, presets),
+    [styles, search, activeCategory, activeSource, favorites, recentNames, presets]
+  )
+
+  if (activeCategory === 'presets') {
+    const presetNames = Object.keys(presets).sort((a, b) => a.localeCompare(b))
+    if (presetNames.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
+          <p className="text-sg-muted text-sm">No presets saved yet</p>
+          <p className="max-w-sm text-sg-muted/70 text-xs leading-relaxed">
+            Open the toolbar <span className="text-sg-text/90">Presets</span> control, then use{' '}
+            <span className="text-sg-text/90">Save current</span> in the Style Presets dialog.
+          </p>
+        </div>
+      )
+    }
+    return (
+      <div
+        className={`grid content-start ${
+          compactMode
+            ? windowed
+              ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
+              : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
+            : windowed
+              ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
+              : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2'
+        }`}
+      >
+        {presetNames.map((name) => {
+          const style: Style = {
+            name,
+            prompt: '',
+            negative_prompt: '',
+            description: '',
+            category: 'OTHER',
+            source_file: '',
+            has_thumbnail: false,
+          }
+          return (
+            <StyleCard
+              key={`preset:${name}`}
+              style={style}
+              windowed={windowed}
+              presetName={name}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-32 
+                      text-sg-muted text-sm">
+        No styles found
+      </div>
+    )
+  }
+
+  // If specific category selected - flat grid, no headers
+  if (activeCategory &&
+      activeCategory !== '★ Favorites' &&
+      activeCategory !== '🕑 Recent') {
+    return (
+      <div className={`grid content-start ${
+        compactMode
+          ? (windowed
+              ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
+              : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1')
+          : (windowed
+              ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
+              : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
+      }`} style={{ contentVisibility: 'auto' }}>
+        {filtered.map(style => (
+          <StyleCard key={styleRowKey(style)} style={style} windowed={windowed} />
+        ))}
+      </div>
+    )
+  }
+
+  // Group by category for All view
+  const groups = filtered.reduce((acc, style) => {
+    const cat = style.category || 'OTHER'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(style)
+    return acc
+  }, {} as Record<string, typeof filtered>)
+
+  const sortedGroups = Object.entries(groups).sort(([a], [b]) =>
+    a.localeCompare(b)
+  )
+
+  return (
+    <div className="space-y-4">
+      {sortedGroups.map(([cat, catStyles]) => {
+        const isCollapsed = collapsedCategories.has(cat)
+        const color = getCategoryColor(cat)
+        const allSelected = catStyles.every(s =>
+          selectedStyles.some(sel => sel.name === s.name)
+        )
+
+        return (
+          <div key={cat}>
+            {/* Category header */}
+            <div
+              className="flex items-center gap-2 mb-2 sticky top-0 
+                            bg-sg-bg/95 backdrop-blur-sm py-1 z-10 cursor-pointer hover:bg-sg-surface/30 rounded-md transition-colors -mx-1 px-1"
+              title="Right-click for options"
+              onClick={() => toggleCollapse(cat)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                const missing = catStyles.filter(s =>
+                  !localStorage.getItem(`sg_thumb_v_${s.name}`)
+                ).length
+                setCatMenu({ x: e.clientX, y: e.clientY, cat, missingCount: missing })
+              }}
+            >
+              <span className="text-sg-muted">
+                {isCollapsed ? '▶' : '▼'}
+              </span>
+              <span
+                className="text-xs font-bold tracking-wider uppercase"
+                style={{ color }}
+              >
+                {cat}
+              </span>
+              <span className="text-xs text-sg-muted/60">
+                ({catStyles.length})
+              </span>
+              <div className="flex-1" />
+              <button
+                onClick={() => selectAllInCategory(cat)}
+                className="text-xs text-sg-muted hover:text-sg-accent 
+                           transition-colors px-2 py-0.5 rounded
+                           hover:bg-sg-accent/10"
+              >
+                {allSelected ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+
+            {/* Cards */}
+            <AnimatePresence>
+              {!isCollapsed && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="overflow-hidden"
+                >
+                  <div className={`grid ${
+                    compactMode
+                      ? (windowed
+                          ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
+                          : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1')
+                      : (windowed
+                          ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
+                          : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
+                  }`} style={{ contentVisibility: 'auto' }}>
+                    {catStyles.map(style => (
+                      <StyleCard key={styleRowKey(style)} style={style} windowed={windowed} />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )
+      })}
+      {catMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={() => setCatMenu(null)}
+          />
+          <div
+            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
+            style={{ left: catMenu.x, top: catMenu.y }}
+          >
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+              onClick={() => {
+                sendToHost({
+                  type: 'SG_WILDCARD_CATEGORY',
+                  category: catMenu.cat
+                })
+                setCatMenu(null)
+              }}
+            >
+              🎲 Add category as wildcard
+            </button>
+            {catMenu.missingCount > 0 && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+                onClick={() => {
+                  const rawSrc =
+                    useStylesStore.getState().activeSource ??
+                    (typeof localStorage !== 'undefined' ? localStorage.getItem('sg_v2_last_source') : null)
+                  sendToHost({
+                    type: 'SG_GENERATE_CATEGORY_PREVIEWS',
+                    category: catMenu.cat,
+                    missingCount: catMenu.missingCount,
+                    ...(rawSrc ? { source: rawSrc } : {}),
+                  })
+                  setCatMenu(null)
+                }}
+              >
+                🎨 Generate previews ({catMenu.missingCount} missing)
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

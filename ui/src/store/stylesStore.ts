@@ -1,0 +1,500 @@
+import { create } from 'zustand'
+import { sendToHost, type Style, type Tab } from '../bridge'
+
+interface Conflict {
+  styleA: string
+  styleB: string
+  reason: string
+}
+
+/** Maps category text to a stable palette index for repeatable colors. */
+export function getCategoryColor(category: string): string {
+  // Fixed palette of visually distinct colors — no duplicates
+  const PALETTE = [
+    '#f472b6', // pink
+    '#fb923c', // orange
+    '#facc15', // yellow
+    '#4ade80', // green
+    '#34d399', // emerald
+    '#22d3ee', // cyan
+    '#60a5fa', // blue
+    '#818cf8', // indigo
+    '#a78bfa', // violet
+    '#e879f9', // fuchsia
+    '#f87171', // red
+    '#a3e635', // lime
+    '#2dd4bf', // teal
+    '#38bdf8', // sky
+    '#c084fc', // purple
+    '#fb7185', // rose
+    '#fdba74', // amber
+    '#86efac', // light green
+    '#93c5fd', // light blue
+    '#fda4af', // light pink
+    '#6ee7b7', // light teal
+    '#fcd34d', // light yellow
+    '#d8b4fe', // light purple
+    '#67e8f9', // light cyan
+    '#bbf7d0', // mint
+    '#fecaca', // salmon
+    '#bfdbfe', // powder blue
+    '#ddd6fe', // lavender
+    '#fed7aa', // peach
+    '#bbf7d0', // seafoam
+  ]
+
+  // Deterministic index based on category name hash
+  let hash = 0
+  for (let i = 0; i < category.length; i++) {
+    hash = category.charCodeAt(i) + ((hash << 5) - hash)
+    hash = hash & hash // Convert to 32bit int
+  }
+
+  // Spread across palette using prime multiplication to avoid clustering
+  const index = Math.abs(hash * 2654435761) % PALETTE.length
+  return PALETTE[index]
+}
+
+/** Stable React key when the same name can appear from different CSV rows. */
+export function styleRowKey(s: Pick<Style, 'name' | 'source_file'>): string {
+  return `${s.source_file}\0${s.name}`
+}
+
+/** First occurrence wins; use only when the active source is "All sources". */
+export function dedupeStylesByNameForAllSources(styles: Style[]): Style[] {
+  const seen = new Set<string>()
+  return styles.filter((s) => {
+    if (seen.has(s.name)) return false
+    seen.add(s.name)
+    return true
+  })
+}
+
+/** Map persisted or UI source string to an entry in `sources` (exact match, else basename). */
+function resolveSourceInList(sources: string[], preferred: string | null): string | null {
+  if (!preferred || sources.length === 0) return null
+  if (sources.includes(preferred)) return preferred
+  const key = (s: string) => {
+    const base = s.replace(/\\/g, '/').split('/').pop() ?? s
+    return base.replace(/\.csv$/i, '').toLowerCase()
+  }
+  const k = key(preferred)
+  const found = sources.find((s) => key(s) === k)
+  return found ?? null
+}
+
+/**
+ * Values of `activeCategory` that are sidebar “special” views (not real CSV categories).
+ * Matches Favorites / Recent; use the same checks in grid layout as those.
+ */
+export type ActiveSpecialView = '★ Favorites' | '🕑 Recent' | 'presets'
+
+/** Central UI state for style filtering, selection, and host-side actions. */
+interface StylesStore {
+  toasts: { id: number; message: string; variant: 'success' | 'error' | 'info' }[]
+  // Data
+  styles: Style[]
+  tab: Tab
+  
+  // Filters
+  search: string
+  activeCategory: string | null
+  sources: string[]
+  activeSource: string | null
+  
+  // Selection
+  selectedStyles: Style[]
+  /** Collapsed category names in the All/Categories views. */
+  collapsedCategories: Set<string>
+  silentMode: boolean
+  compactMode: boolean
+  /** Favorite style names persisted in localStorage. */
+  favorites: Set<string>
+  /** Most recently applied style names (max 10). */
+  recentNames: string[]
+  /** Detected conflicts among current selected styles. */
+  conflicts: Conflict[]
+  /** Usage counters loaded/persisted via backend API. */
+  usageCounts: Record<string, number>
+  /** User-defined category order for All Sources view. */
+  categoryOrder: string[]
+  /** Saved style presets from backend (`/style_grid/presets` / list API). */
+  presets: Record<string, { styles: string[]; created: string }>
+  
+  // Actions
+  setStyles: (styles: Style[], tab: Tab) => void
+  setSearch: (q: string) => void
+  setCategory: (cat: string | null) => void
+  setActiveSource: (src: string | null) => void
+  toggleSilent: () => void
+  toggleCompact: () => void
+  toggleCollapse: (cat: string) => void
+  collapseAll: () => void
+  expandAll: () => void
+  selectAllInCategory: (cat: string) => void
+  toggleStyle: (style: Style) => void
+  setSelectedStyles: (styles: Style[]) => void
+  clearAll: () => void
+  showToast: (message: string, variant?: 'success' | 'error' | 'info') => void
+  detectConflicts: () => void
+  loadUsage: () => Promise<void>
+  incrementUsage: (name: string) => void
+  setCategoryOrder: (order: string[]) => void
+  toggleFavorite: (name: string) => void
+  isFavorite: (name: string) => boolean
+  addToRecent: (name: string) => void
+  fetchPresets: () => Promise<void>
+  
+  // Derived
+  categories: () => string[]
+}
+
+export function selectFilteredStyles(
+  styles: Style[],
+  search: string,
+  activeCategory: string | null,
+  activeSource: string | null,
+  favorites: Set<string>,
+  recentNames: string[],
+  presets: Record<string, { styles: string[]; created: string }>,
+): Style[] {
+  if (activeCategory === '★ Favorites') {
+    return styles.filter(s => favorites.has(s.name))
+  }
+
+  if (activeCategory === '🕑 Recent') {
+    return recentNames
+      .map(name => styles.find(s => s.name === name))
+      .filter(Boolean) as Style[]
+  }
+
+  if (activeCategory === 'presets') {
+    const order: string[] = []
+    const seen = new Set<string>()
+    for (const key of Object.keys(presets).sort()) {
+      for (const n of presets[key]?.styles ?? []) {
+        if (!seen.has(n)) {
+          seen.add(n)
+          order.push(n)
+        }
+      }
+    }
+    return order
+      .map(name => styles.find(s => s.name === name))
+      .filter(Boolean) as Style[]
+  }
+
+  let filtered = styles.filter(s => {
+    const matchSource = !activeSource || s.source_file === activeSource
+    const matchCat = !activeCategory || s.category === activeCategory
+    const matchSearch = !search ||
+      s.name.toLowerCase().includes(search.toLowerCase())
+    return matchSource && matchCat && matchSearch
+  })
+
+  if (!activeSource) {
+    filtered = dedupeStylesByNameForAllSources(filtered)
+  }
+
+  return filtered
+}
+
+export const useStylesStore = create<StylesStore>((set, get) => ({
+  toasts: [],
+  styles: [],
+  tab: 'txt2img',
+  search: '',
+  activeCategory: null,
+  activeSource: null,
+  sources: [],
+  selectedStyles: [],
+  conflicts: [],
+  usageCounts: {},
+  categoryOrder: JSON.parse(
+    localStorage.getItem('sg_v2_category_order') || '[]'
+  ) as string[],
+  collapsedCategories: new Set(),
+  silentMode: false,
+  compactMode: false,
+  favorites: new Set(
+    JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
+  ),
+  recentNames: JSON.parse(
+    localStorage.getItem('sg_v2_recent') || '[]'
+  ),
+  presets: {},
+
+  setStyles: (styles, tab) => {
+    const sources = [...new Set(
+      styles.map(s => s.source_file).filter(Boolean)
+    )].sort()
+
+    // Restore selection: exact match can fail when host path strings differ from LS (basename must match)
+    const lastSource = localStorage.getItem('sg_v2_last_source')
+    const prevActive = get().activeSource
+    const activeSource =
+      resolveSourceInList(sources, prevActive) ??
+      resolveSourceInList(sources, lastSource)
+
+    set({ styles, tab, sources, activeSource })
+    if (activeSource) {
+      localStorage.setItem('sg_v2_last_source', activeSource)
+      sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
+    }
+  },
+  setSearch: (search) => set({ search }),
+  setCategory: (activeCategory) => set({ activeCategory }),
+  setActiveSource: (activeSource) => {
+    if (activeSource) {
+      localStorage.setItem('sg_v2_last_source', activeSource)
+    } else {
+      localStorage.removeItem('sg_v2_last_source')
+    }
+    set({ activeSource })
+    sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
+  },
+  toggleSilent: () => {
+    const newVal = !get().silentMode
+    if (!newVal) {
+      set({ silentMode: newVal, selectedStyles: [], conflicts: [] })
+    } else {
+      set({ silentMode: newVal })
+    }
+    window.parent.postMessage(
+      { type: 'SG_TOGGLE_SILENT', tab: 'txt2img', value: newVal },
+      '*'
+    )
+    window.parent.postMessage(
+      { type: 'SG_TOGGLE_SILENT', tab: 'img2img', value: newVal },
+      '*'
+    )
+  },
+  toggleCompact: () => set((s) => ({ compactMode: !s.compactMode })),
+  toggleCollapse: (cat) => set((s) => {
+    const next = new Set(s.collapsedCategories)
+    if (next.has(cat)) next.delete(cat)
+    else next.add(cat)
+    return { collapsedCategories: next }
+  }),
+  collapseAll: () => {
+    const { styles, activeSource } = get()
+    const src = activeSource
+      ? styles.filter(s => s.source_file === activeSource)
+      : styles
+    const cats = [...new Set(src.map(s => s.category).filter(Boolean))]
+    set({ collapsedCategories: new Set(cats) })
+  },
+  expandAll: () => set({ collapsedCategories: new Set() }),
+  selectAllInCategory: (cat) => {
+    const { styles, activeSource, selectedStyles, silentMode } = get()
+    const src = activeSource
+      ? styles.filter(s => s.source_file === activeSource)
+      : styles
+    const catStyles = src.filter(s => s.category === cat)
+    const allSelected = catStyles.every(s =>
+      selectedStyles.some(sel => sel.name === s.name)
+    )
+
+    if (allSelected) {
+      const removeNames = new Set(catStyles.map(s => s.name))
+      set({
+        selectedStyles: selectedStyles.filter(s => !removeNames.has(s.name)),
+      })
+      catStyles.forEach((style) => {
+        sendToHost({ type: 'SG_UNAPPLY', styleId: style.name })
+      })
+      get().detectConflicts()
+      return
+    }
+
+    const selectedNames = new Set(selectedStyles.map(s => s.name))
+    const toAdd = catStyles.filter(s => !selectedNames.has(s.name))
+    if (toAdd.length === 0) return
+
+    set({ selectedStyles: [...selectedStyles, ...toAdd] })
+    toAdd.forEach((style) => {
+      get().addToRecent(style.name)
+      sendToHost({
+        type: 'SG_APPLY',
+        styleId: style.name,
+        prompt: style.prompt,
+        neg: style.negative_prompt,
+        silent: silentMode,
+      })
+    })
+  },
+  toggleFavorite: (name) => {
+    const favs = new Set(get().favorites)
+    if (favs.has(name)) favs.delete(name)
+    else favs.add(name)
+    localStorage.setItem('sg_v2_favorites', JSON.stringify([...favs]))
+    set({ favorites: favs })
+  },
+  isFavorite: (name) => get().favorites.has(name),
+  addToRecent: (name) => {
+    const recent = [name, ...get().recentNames.filter(n => n !== name)]
+      .slice(0, 10)
+    localStorage.setItem('sg_v2_recent', JSON.stringify(recent))
+    set({ recentNames: recent })
+  },
+
+  toggleStyle: (style) => {
+    const { selectedStyles } = get()
+    const isSelected = selectedStyles.some(s => s.name === style.name)
+    
+    if (isSelected) {
+      set({ selectedStyles: selectedStyles.filter(s => s.name !== style.name) })
+      sendToHost({ type: 'SG_UNAPPLY', styleId: style.name })
+      get().detectConflicts()
+    } else {
+      set({ selectedStyles: [...selectedStyles, style] })
+      get().addToRecent(style.name)
+      get().incrementUsage(style.name)
+      sendToHost({ 
+        type: 'SG_APPLY', 
+        styleId: style.name,
+        prompt: style.prompt,
+        neg: style.negative_prompt,
+        silent: get().silentMode,
+      })
+      get().detectConflicts()
+    }
+  },
+  setSelectedStyles: (styles: Style[]) => set({ selectedStyles: styles }),
+  clearAll: () => {
+    const { selectedStyles } = get()
+    selectedStyles.forEach(s =>
+      sendToHost({ type: 'SG_UNAPPLY', styleId: s.name })
+    )
+    set({ selectedStyles: [], conflicts: [] })
+  },
+  showToast: (message, variant = 'info') => {
+    const id = Date.now()
+    set((s) => ({ toasts: [...s.toasts, { id, message, variant }] }))
+    setTimeout(() => set((s) => ({
+      toasts: s.toasts.filter(t => t.id !== id)
+    })), 3000)
+  },
+  detectConflicts: () => {
+    // Conflict heuristic: compare normalized prompt tags against each
+    // other style's negative tags; any overlap is treated as a conflict.
+    const { selectedStyles } = get()
+    const conflicts: Conflict[] = []
+
+    for (let i = 0; i < selectedStyles.length; i++) {
+      for (let j = i + 1; j < selectedStyles.length; j++) {
+        const a = selectedStyles[i]
+        const b = selectedStyles[j]
+
+        // Check if style A's negative prompt contains tags from B's prompt
+        const aTags = a.prompt.toLowerCase().split(',').map(t => t.trim())
+        const bTags = b.prompt.toLowerCase().split(',').map(t => t.trim())
+        const aNeg = (a.negative_prompt || '').toLowerCase().split(',').map(t => t.trim())
+        const bNeg = (b.negative_prompt || '').toLowerCase().split(',').map(t => t.trim())
+
+        const aKillsB = bTags.some(tag => tag && aNeg.some(n => n && n.includes(tag)))
+        const bKillsA = aTags.some(tag => tag && bNeg.some(n => n && n.includes(tag)))
+
+        if (aKillsB) conflicts.push({
+          styleA: a.name, styleB: b.name,
+          reason: `${a.name} negates tags from ${b.name}`
+        })
+        if (bKillsA) conflicts.push({
+          styleA: b.name, styleB: a.name,
+          reason: `${b.name} negates tags from ${a.name}`
+        })
+      }
+    }
+    set({ conflicts })
+  },
+  loadUsage: async () => {
+    try {
+      const r = await fetch('/style_grid/usage')
+      const data = await r.json()
+      set({ usageCounts: data || {} })
+    } catch {
+      // ignore usage load errors
+    }
+  },
+  incrementUsage: (name: string) => {
+    const counts = { ...get().usageCounts }
+    counts[name] = (counts[name] || 0) + 1
+    set({ usageCounts: counts })
+    // Persist to backend
+    fetch('/style_grid/usage/increment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    }).catch(() => {})
+  },
+  fetchPresets: async () => {
+    const parse = (raw: unknown): Record<string, { styles: string[]; created: string }> =>
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? raw as Record<string, { styles: string[]; created: string }>
+        : {}
+    try {
+      let r = await fetch('/style_grid/presets/list')
+      if (!r.ok) {
+        r = await fetch('/style_grid/presets')
+      }
+      if (!r.ok) return
+      const data = parse(await r.json())
+      set({ presets: data })
+    } catch {
+      try {
+        const r = await fetch('/style_grid/presets')
+        if (!r.ok) return
+        const data = parse(await r.json())
+        set({ presets: data })
+      } catch {
+        // ignore
+      }
+    }
+  },
+  setCategoryOrder: (order: string[]) => {
+    localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
+    localStorage.setItem('sg_v2_category_order_source', 'all')
+    set({ categoryOrder: order })
+    // Sync to backend same as old panel
+    fetch('/style_grid/category_order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order })
+    }).catch(() => {})
+  },
+
+  categories: () => {
+    const { styles, activeSource, categoryOrder } = get()
+    const filtered = activeSource
+      ? styles.filter(s => s.source_file === activeSource)
+      : styles
+    const all = [...new Set(
+      filtered.map(s => s.category).filter(Boolean)
+    )]
+
+    // When specific source selected — always alphabetical
+    // Saved category order only applies to All Sources view
+    if (activeSource) {
+      return all.sort()
+    }
+
+    // Only use saved order if it was saved for All Sources context
+    // (contains most of the current categories)
+    const allSorted = all.sort()
+    if (categoryOrder.length === 0) return allSorted
+
+    const savedForSource = localStorage.getItem('sg_v2_category_order_source')
+    if (savedForSource !== 'all' && !activeSource) {
+      return allSorted
+    }
+
+    const relevantOrder = categoryOrder.filter(c => all.includes(c))
+    const coverage = relevantOrder.length / all.length
+
+    // If saved order covers less than 80% of current categories — ignore it
+    if (coverage < 0.8) return allSorted
+
+    const rest = all.filter(c => !relevantOrder.includes(c)).sort()
+    return [...relevantOrder, ...rest]
+  }
+}))
