@@ -1,9 +1,19 @@
-"""CSV parsing and categorization (read path)."""
+"""CSV parsing, categorization, and style CRUD (read + write path)."""
 
 import csv
 import os
 
-from .config import get_all_styles_file_paths, logger
+from .cache import invalidate_styles_cache
+from .config import DATA_DIR, get_all_styles_file_paths, logger
+
+FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
+
+
+def _sanitize_csv_cell(value):
+    """Prevent CSV injection when opening in spreadsheet apps."""
+    if isinstance(value, str) and value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
 
 
 def parse_styles_csv(filepath):
@@ -54,7 +64,7 @@ def parse_styles_csv(filepath):
 
 
 def load_all_styles():
-    """Merge CSVs from data/. Uniqueness key is (source_file, name).
+    """Merge CSVs from data/ and samples/. Uniqueness key is (source_file, name).
     Warns on the same name appearing in different packs (thumbnail hash collision risk).
     """
     all_styles = []
@@ -113,3 +123,106 @@ def categorize_styles(styles):
     for cat in categories:
         categories[cat].sort(key=lambda x: (x.get("display_name") or x["name"] or "").lower())
     return categories
+
+
+def _resolve_write_target(source_file):
+    """Resolve a CSV path for writes. Only matches files under DATA_DIR — samples/ is
+    never a write target, even if a same-named file exists there.
+    """
+    if source_file:
+        source_file = os.path.basename(source_file)
+        if not source_file.lower().endswith(".csv"):
+            source_file += ".csv"
+    if not source_file:
+        source_file = "styles.csv"
+    for fp in get_all_styles_file_paths():
+        if os.path.dirname(fp) == DATA_DIR and os.path.basename(fp) == source_file:
+            return fp
+    return os.path.join(DATA_DIR, source_file)
+
+
+def save_style_to_csv(name, prompt, negative_prompt, description="", source_file=None, category=None):
+    """Upsert a style row in a data/ CSV: replace the first matching name row, or append."""
+    target_path = _resolve_write_target(source_file)
+    rows = []
+    header = None
+    if os.path.isfile(target_path):
+        with open(target_path, "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if header is None and row and row[0].strip().lower() == "name":
+                    header = row
+                    continue
+                rows.append(row)
+    if not header:
+        header = FIELDNAMES
+
+    def make_row(existing_row=None):
+        existing_cat = existing_row[4].strip() if (existing_row and len(existing_row) > 4) else ""
+        if category is None:
+            cat_cell = existing_cat
+        else:
+            cat_cell = str(category).strip()
+            cat_cell = _sanitize_csv_cell(cat_cell) if cat_cell else ""
+        return [name, prompt, negative_prompt, _sanitize_csv_cell(description), cat_cell]
+
+    found = False
+    for i, row in enumerate(rows):
+        if row and row[0].strip() == name:
+            rows[i] = make_row(rows[i])
+            found = True
+            break
+    if not found:
+        rows.append(make_row())
+
+    with open(target_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow(row)
+    invalidate_styles_cache()
+    return True
+
+
+def delete_style_from_csv(name, source_file=None):
+    """Delete a style row by name from a data/ CSV. Returns False if the style is not
+    found under data/ (including when it only exists in the read-only samples/ pack).
+    """
+    if not source_file:
+        for s in load_all_styles():
+            if s["name"] == name:
+                source_file = s.get("source", "")
+                break
+    if not source_file:
+        return False
+    source_file = os.path.basename(source_file)
+    if not source_file.lower().endswith(".csv"):
+        source_file += ".csv"
+    target_path = None
+    for fp in get_all_styles_file_paths():
+        if os.path.dirname(fp) == DATA_DIR and os.path.basename(fp) == source_file:
+            target_path = fp
+            break
+    if not target_path:
+        return False
+    rows = []
+    header = None
+    with open(target_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if header is None and row and row[0].strip().lower() == "name":
+                header = row
+                continue
+            if row and row[0].strip() != name:
+                rows.append(row)
+    with open(target_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            row_dict = {
+                fn: (row[i].strip() if i < len(row) and row[i] is not None else "")
+                for i, fn in enumerate(FIELDNAMES)
+            }
+            writer.writerow(row_dict)
+    invalidate_styles_cache()
+    return True
