@@ -43,7 +43,7 @@ function removeAppliedStyle(node, styleId) {
     setAppliedStyles(node, getAppliedStyles(node).filter((n) => n !== styleId));
 }
 
-function sendInit() {
+function rehydrate() {
     fetch("/style_grid/styles")
         .then((r) => r.json())
         .then((data) => {
@@ -53,6 +53,17 @@ function sendInit() {
                 tab: String(currentNode?.id ?? ""),
                 styles: allStyles,
             }, "*");
+            iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
+            const applied = getAppliedStyles(currentNode);
+            if (applied.length) {
+                const byName = new Map(allStyles.map((s) => [s.name, s]));
+                for (const name of applied) {
+                    const style = byName.get(name);
+                    if (style) {
+                        iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
+                    }
+                }
+            }
         });
 }
 
@@ -105,7 +116,7 @@ function ensureOverlay() {
 
         if (msg.type === "SG_READY") {
             ready = true;
-            sendInit();
+            rehydrate();
         }
         if (msg.type === "SG_APPLY") {
             addAppliedStyle(currentNode, msg.styleId);
@@ -124,8 +135,7 @@ function openStyleBrowser(node) {
     ensureOverlay();
     overlay.style.display = "block";
     if (ready) {
-        iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
-        sendInit();
+        rehydrate();
     }
 }
 
