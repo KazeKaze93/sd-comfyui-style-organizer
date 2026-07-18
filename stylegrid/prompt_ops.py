@@ -49,3 +49,52 @@ def build_styles_by_cat(styles, active_source=""):
 def resolve_and_pack(prompt_str, styles_by_cat, rng=None):
     """Expand {sg:...} wildcards from the given category map, then dedup tags."""
     return dedup_prompt(resolve_sg_wildcards(prompt_str, styles_by_cat, rng))
+
+
+def _merge_tags(base, additions):
+    """Case-fold tag dedup against additions, first occurrence wins. Plain lowercase
+    comparison only — not weight-aware, matches the original process() tag merge.
+    """
+    current_tags = [t.strip() for t in base.split(",") if t.strip()]
+    seen = {t.lower() for t in current_tags}
+    result = list(current_tags)
+    for t in additions:
+        if t.lower() not in seen:
+            result.append(t)
+            seen.add(t.lower())
+    return ", ".join(result)
+
+
+def merge_selected_styles(positive, negative, style_names, styles_by_name):
+    """Layer explicitly selected styles onto already-resolved positive/negative text.
+
+    A style's prompt/negative_prompt containing {prompt} wraps the existing text
+    immediately, in selection order. Styles without a placeholder are collected and
+    merged in afterward as new tags via _merge_tags.
+    """
+    prompts_add = []
+    neg_add = []
+    for name in style_names:
+        s = styles_by_name.get(name)
+        if not s:
+            continue
+        p = s.get("prompt") or ""
+        if p:
+            if "{prompt}" in p:
+                positive = p.replace("{prompt}", positive)
+            else:
+                prompts_add.append(p)
+        n = s.get("negative_prompt") or ""
+        if n:
+            if "{prompt}" in n:
+                negative = n.replace("{prompt}", negative)
+            else:
+                neg_add.append(n)
+
+    if prompts_add:
+        style_tags = [t.strip() for grp in prompts_add for t in grp.split(",") if t.strip()]
+        positive = _merge_tags(positive, style_tags)
+    if neg_add:
+        style_tags = [t.strip() for grp in neg_add for t in grp.split(",") if t.strip()]
+        negative = _merge_tags(negative, style_tags)
+    return positive, negative
