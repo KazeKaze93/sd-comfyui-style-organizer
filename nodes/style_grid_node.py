@@ -1,3 +1,4 @@
+import random
 import os
 
 from ..stylegrid.cache import get_cached_styles
@@ -16,6 +17,7 @@ class StyleGridNode:
             "required": {
                 "text": ("STRING", {"multiline": True, "default": ""}),
                 "source": (sources, {"default": ALL_SOURCES}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
             }
         }
 
@@ -24,10 +26,10 @@ class StyleGridNode:
     FUNCTION = "apply"
     CATEGORY = "Style Grid"
 
-    def apply(self, text, source):
+    def apply(self, text, source, seed):
         styles = list(get_cached_styles())
         categorize_styles(styles)
         active = "" if source == ALL_SOURCES else source
         by_cat = build_styles_by_cat(styles, active)
-        positive = resolve_and_pack(text, by_cat)
+        positive = resolve_and_pack(text, by_cat, random.Random(seed))
         return (positive, "")

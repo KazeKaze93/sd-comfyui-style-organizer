@@ -4,14 +4,18 @@ import random
 import re
 
 
-def resolve_sg_wildcards(prompt, styles_by_category):
-    """Replace `{sg:CATEGORY}` tokens with a random style prompt from that category map."""
+def resolve_sg_wildcards(prompt, styles_by_category, rng=None):
+    """Replace `{sg:CATEGORY}` tokens with a style prompt picked from that category map.
+    rng is an optional random.Random for reproducible picks; falls back to the module RNG.
+    """
+    picker = rng or random
+
     def replacer(m):
         token = m.group(1).strip().lower()
         candidates = styles_by_category.get(token)
         if not candidates:
             return m.group(0)
-        style = random.choice(candidates)
+        style = picker.choice(candidates)
         return style.get("prompt", "") or m.group(0)
 
     return re.sub(r"\{sg:([^}]+)\}", replacer, prompt)
