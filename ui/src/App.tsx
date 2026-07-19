@@ -106,7 +106,7 @@ export default function App() {
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
       }
       if (msg.type === 'SG_CLEAR_SELECTION') {
-        useStylesStore.setState({ selectedStyles: [], conflicts: [] })
+        useStylesStore.setState({ selectedStyles: [], conflicts: [], activeWildcards: [] })
       }
       if (msg.type === 'SG_STYLE_APPLIED') {
         const { selectedStyles, addToRecent } = useStylesStore.getState()
@@ -115,6 +115,9 @@ export default function App() {
           useStylesStore.getState().setSelectedStyles([...selectedStyles, msg.style])
           addToRecent(msg.style.name)
         }
+      }
+      if (msg.type === 'SG_WILDCARDS_ACTIVE') {
+        useStylesStore.getState().setActiveWildcards(msg.categories)
       }
     })
     sendToHost({ type: 'SG_READY' })
