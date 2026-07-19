@@ -34,5 +34,5 @@ class StyleGridNode:
         categorize_styles(styles)
         by_cat = build_styles_by_cat(styles, active_source)
         positive = resolve_and_pack(text, by_cat)
-        negative = resolve_and_pack(negative_text, by_cat)
+        negative = resolve_and_pack(negative_text, by_cat, field="negative_prompt")
         return (positive, negative)
