@@ -131,6 +131,10 @@ function ensureOverlay() {
 }
 
 function openStyleBrowser(node) {
+    if (overlay && overlay.style.display === "block" && currentNode === node) {
+        closeStyleBrowser();
+        return;
+    }
     currentNode = node;
     ensureOverlay();
     if (ready) {
