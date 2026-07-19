@@ -1,26 +1,18 @@
-import json
-import os
-import random
+import hashlib
 
 from ..stylegrid.cache import get_cached_styles
-from ..stylegrid.config import get_all_styles_file_paths, logger
 from ..stylegrid.csv_io import categorize_styles
-from ..stylegrid.data_files import increment_usage
-from ..stylegrid.prompt_ops import build_styles_by_cat, merge_selected_styles, resolve_and_pack
-
-ALL_SOURCES = "All Sources"
+from ..stylegrid.prompt_ops import build_styles_by_cat, resolve_and_pack
 
 
 class StyleGridNode:
     @classmethod
     def INPUT_TYPES(cls):
-        sources = [ALL_SOURCES] + [os.path.basename(p) for p in get_all_styles_file_paths()]
         return {
             "required": {
                 "text": ("STRING", {"multiline": True, "default": ""}),
-                "source": (sources, {"default": ALL_SOURCES}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
-                "applied_styles": ("STRING", {"multiline": False, "default": "[]"}),
+                "negative_text": ("STRING", {"multiline": True, "default": ""}),
+                "active_source": ("STRING", {"multiline": False, "default": ""}),
             }
         }
 
@@ -29,23 +21,18 @@ class StyleGridNode:
     FUNCTION = "apply"
     CATEGORY = "Style Grid"
 
-    def apply(self, text, source, seed, applied_styles):
+    @classmethod
+    def IS_CHANGED(cls, text, negative_text, active_source):
+        """Force re-execution only when a wildcard needs re-rolling."""
+        if "{sg:" in text or "{sg:" in negative_text:
+            return float("nan")
+        payload = "\x00".join([text, negative_text, active_source])
+        return hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+    def apply(self, text, negative_text, active_source):
         styles = list(get_cached_styles())
         categorize_styles(styles)
-        active = "" if source == ALL_SOURCES else source
-        by_cat = build_styles_by_cat(styles, active)
-        positive = resolve_and_pack(text, by_cat, random.Random(seed))
-        negative = ""
-
-        try:
-            style_names = json.loads(applied_styles) if applied_styles else []
-        except json.JSONDecodeError:
-            logger.warning("[Style Grid] applied_styles is not valid JSON, ignoring: %r", applied_styles)
-            style_names = []
-
-        if style_names:
-            styles_by_name = {s["name"]: s for s in styles}
-            positive, negative = merge_selected_styles(positive, negative, style_names, styles_by_name)
-            increment_usage(style_names)
-
+        by_cat = build_styles_by_cat(styles, active_source)
+        positive = resolve_and_pack(text, by_cat)
+        negative = resolve_and_pack(negative_text, by_cat)
         return (positive, negative)
