@@ -4,8 +4,11 @@ import random
 import re
 
 
-def resolve_sg_wildcards(prompt, styles_by_category, rng=None):
-    """Replace `{sg:CATEGORY}` tokens with a style prompt picked from that category map.
+def resolve_sg_wildcards(prompt, styles_by_category, rng=None, field="prompt"):
+    """Replace `{sg:CATEGORY}` tokens with a style's `field` value picked from that
+    category map. field is "prompt" for positive-context resolution or "negative_prompt"
+    for negative-context resolution — a wildcard always pulls the matching side of the
+    picked style, never the positive prompt inside a negative field.
     rng is an optional random.Random for reproducible picks; falls back to the module RNG.
     """
     picker = rng or random
@@ -16,6 +19,6 @@ def resolve_sg_wildcards(prompt, styles_by_category, rng=None):
         if not candidates:
             return m.group(0)
         style = picker.choice(candidates)
-        return style.get("prompt", "") or m.group(0)
+        return style.get(field, "") or m.group(0)
 
     return re.sub(r"\{sg:([^}]+)\}", replacer, prompt)
