@@ -46,9 +46,11 @@ def build_styles_by_cat(styles, active_source=""):
     return by_cat
 
 
-def resolve_and_pack(prompt_str, styles_by_cat, rng=None):
-    """Expand {sg:...} wildcards from the given category map, then dedup tags."""
-    return dedup_prompt(resolve_sg_wildcards(prompt_str, styles_by_cat, rng))
+def resolve_and_pack(prompt_str, styles_by_cat, rng=None, field="prompt"):
+    """Expand {sg:...} wildcards from the given category map, then dedup tags. field
+    selects which side of a picked style a wildcard pulls from (see resolve_sg_wildcards).
+    """
+    return dedup_prompt(resolve_sg_wildcards(prompt_str, styles_by_cat, rng, field))
 
 
 def _merge_tags(base, additions):
