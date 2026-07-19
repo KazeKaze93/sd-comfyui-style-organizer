@@ -166,6 +166,33 @@ function insertWildcardCategory(node, category) {
     node.graph?.setDirtyCanvas(true, true);
 }
 
+function extractWildcardCategories(str) {
+    return [...(str || "").matchAll(/\{sg:([^}]+)\}/gi)].map((m) => m[1].trim());
+}
+
+function activeWildcardCategories(text, negativeText) {
+    const all = [...extractWildcardCategories(text), ...extractWildcardCategories(negativeText)];
+    const seen = new Set();
+    const result = [];
+    for (const c of all) {
+        const key = c.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            result.push(c);
+        }
+    }
+    return result;
+}
+
+function removeWildcardCategory(node, category) {
+    const { text, neg } = getTextWidgets(node);
+    const token = `{sg:${category}}`.toLowerCase();
+    const strip = (s) => parseTags(s).filter((t) => t.toLowerCase() !== token).join(", ");
+    if (text) text.value = strip(text.value || "");
+    if (neg) neg.value = strip(neg.value || "");
+    node.graph?.setDirtyCanvas(true, true);
+}
+
 function setActiveSource(node, source) {
     const w = node?.widgets?.find((w) => w.name === "active_source");
     if (!w) return;
@@ -196,6 +223,10 @@ function rehydrate() {
                     iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
                 }
             }
+            iframe.contentWindow.postMessage({
+                type: "SG_WILDCARDS_ACTIVE",
+                categories: activeWildcardCategories(currentText, currentNeg),
+            }, "*");
         });
 }
 
@@ -262,6 +293,9 @@ function ensureOverlay() {
         }
         if (msg.type === "SG_CLEAR_ALL" && currentNode) {
             clearAllStyles(currentNode);
+        }
+        if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
+            removeWildcardCategory(currentNode, msg.category);
         }
         if (msg.type === "SG_SOURCE_CHANGE" && currentNode) {
             setActiveSource(currentNode, msg.source);
