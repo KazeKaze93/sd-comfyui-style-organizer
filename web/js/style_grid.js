@@ -134,6 +134,26 @@ function unapplyStyleFromNode(node, style) {
     node.graph?.setDirtyCanvas(true, true);
 }
 
+function clearAllStyles(node) {
+    const { text, neg } = getTextWidgets(node);
+    let currentText = text ? text.value || "" : "";
+    let currentNeg = neg ? neg.value || "" : "";
+
+    const stripWildcards = (s) =>
+        parseTags(s).filter((t) => !/^\{sg:[^}]+\}$/i.test(t)).join(", ");
+    currentText = stripWildcards(currentText);
+    currentNeg = stripWildcards(currentNeg);
+
+    for (const style of getActiveStyles(currentText, currentNeg, null)) {
+        currentText = removeStyleText(currentText, style.prompt || "", []);
+        currentNeg = removeStyleText(currentNeg, style.negative_prompt || "", []);
+    }
+
+    if (text) text.value = currentText;
+    if (neg) neg.value = currentNeg;
+    node.graph?.setDirtyCanvas(true, true);
+}
+
 function insertWildcardCategory(node, category) {
     const { text } = getTextWidgets(node);
     if (!text) return;
@@ -239,6 +259,9 @@ function ensureOverlay() {
         }
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
             insertWildcardCategory(currentNode, msg.category);
+        }
+        if (msg.type === "SG_CLEAR_ALL" && currentNode) {
+            clearAllStyles(currentNode);
         }
         if (msg.type === "SG_SOURCE_CHANGE" && currentNode) {
             setActiveSource(currentNode, msg.source);
