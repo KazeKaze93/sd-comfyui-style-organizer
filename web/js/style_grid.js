@@ -152,6 +152,7 @@ function clearAllStyles(node) {
     if (text) text.value = currentText;
     if (neg) neg.value = currentNeg;
     node.graph?.setDirtyCanvas(true, true);
+    syncWildcards(node);
 }
 
 function insertWildcardCategory(node, category) {
@@ -164,6 +165,7 @@ function insertWildcardCategory(node, category) {
     if (already) return;
     text.value = mergeTagsIntoText(text.value || "", token);
     node.graph?.setDirtyCanvas(true, true);
+    syncWildcards(node);
 }
 
 function extractWildcardCategories(str) {
@@ -182,6 +184,12 @@ function activeWildcardCategories(text, negativeText) {
         }
     }
     return result;
+}
+
+function syncWildcards(node) {
+    const { text, neg } = getTextWidgets(node);
+    const categories = activeWildcardCategories(text ? text.value || "" : "", neg ? neg.value || "" : "");
+    iframe.contentWindow.postMessage({ type: "SG_WILDCARDS_ACTIVE", categories }, "*");
 }
 
 function removeWildcardCategory(node, category) {
@@ -223,10 +231,7 @@ function rehydrate() {
                     iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
                 }
             }
-            iframe.contentWindow.postMessage({
-                type: "SG_WILDCARDS_ACTIVE",
-                categories: activeWildcardCategories(currentText, currentNeg),
-            }, "*");
+            syncWildcards(currentNode);
         });
 }
 
