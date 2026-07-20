@@ -266,11 +266,6 @@ function ensureOverlay() {
     overlay.appendChild(iframe);
     document.body.appendChild(overlay);
 
-    document.addEventListener("mousedown", (e) => {
-        if (overlay.style.display !== "block") return;
-        if (!overlay.contains(e.target)) closeStyleBrowser();
-    }, true);
-
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape" && overlay.style.display !== "none") {
             closeStyleBrowser();
