@@ -106,7 +106,6 @@ interface StylesStore {
   selectedStyles: Style[]
   /** Collapsed category names in the All/Categories views. */
   collapsedCategories: Set<string>
-  silentMode: boolean
   compactMode: boolean
   /** Favorite style names persisted in localStorage. */
   favorites: Set<string>
@@ -126,7 +125,6 @@ interface StylesStore {
   setSearch: (q: string) => void
   setCategory: (cat: string | null) => void
   setActiveSource: (src: string | null) => void
-  toggleSilent: () => void
   toggleCompact: () => void
   toggleCollapse: (cat: string) => void
   collapseAll: () => void
@@ -217,7 +215,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     localStorage.getItem('sg_v2_category_order') || '[]'
   ) as string[],
   collapsedCategories: new Set(),
-  silentMode: false,
   compactMode: false,
   favorites: new Set(
     JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
@@ -256,22 +253,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     set({ activeSource })
     sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
   },
-  toggleSilent: () => {
-    const newVal = !get().silentMode
-    if (!newVal) {
-      set({ silentMode: newVal, selectedStyles: [], conflicts: [] })
-    } else {
-      set({ silentMode: newVal })
-    }
-    window.parent.postMessage(
-      { type: 'SG_TOGGLE_SILENT', tab: 'txt2img', value: newVal },
-      '*'
-    )
-    window.parent.postMessage(
-      { type: 'SG_TOGGLE_SILENT', tab: 'img2img', value: newVal },
-      '*'
-    )
-  },
   toggleCompact: () => set((s) => ({ compactMode: !s.compactMode })),
   toggleCollapse: (cat) => set((s) => {
     const next = new Set(s.collapsedCategories)
@@ -289,7 +270,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
   expandAll: () => set({ collapsedCategories: new Set() }),
   selectAllInCategory: (cat) => {
-    const { styles, activeSource, selectedStyles, silentMode } = get()
+    const { styles, activeSource, selectedStyles } = get()
     const src = activeSource
       ? styles.filter(s => s.source_file === activeSource)
       : styles
@@ -322,7 +303,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         styleId: style.name,
         prompt: style.prompt,
         neg: style.negative_prompt,
-        silent: silentMode,
       })
     })
   },
@@ -358,7 +338,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         styleId: style.name,
         prompt: style.prompt,
         neg: style.negative_prompt,
-        silent: get().silentMode,
       })
       get().detectConflicts()
     }

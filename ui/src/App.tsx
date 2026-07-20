@@ -10,6 +10,7 @@ import { SelectedBar } from './components/SelectedBar'
 import { ThumbProgressModal } from './components/ThumbProgressModal'
 import { Toast } from './components/Toast'
 import { ConfirmInputDialog } from './components/ConfirmInputDialog'
+import { EditStyleDialog } from './components/EditStyleDialog'
 import {
   Tooltip,
   TooltipContent,
@@ -66,6 +67,7 @@ const ToolBtn = ({
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [presetSaveOpen, setPresetSaveOpen] = useState(false)
+  const [newStyleOpen, setNewStyleOpen] = useState(false)
   const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
   const {
@@ -74,8 +76,6 @@ export default function App() {
     selectedStyles,
     styles,
     conflicts,
-    silentMode,
-    toggleSilent,
     toggleStyle,
     toggleCompact,
     collapsedCategories,
@@ -84,6 +84,8 @@ export default function App() {
     showToast,
     presets,
     fetchPresets,
+    activeSource,
+    categories,
   } = useStylesStore()
 
   useEffect(() => {
@@ -196,18 +198,6 @@ export default function App() {
         </div>
         <TooltipProvider>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => toggleSilent()}
-              title={silentMode ? 'Silent mode ON' : 'Silent mode OFF'}
-              className={`w-8 h-8 flex items-center justify-center rounded
-              transition-colors text-sm border border-transparent shrink-0
-            ${silentMode 
-              ? 'bg-sg-accent/20 text-sg-accent' 
-              : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface hover:border-sg-border'}`}
-            >
-              👁
-            </button>
             <ToolBtn
               icon="🎲"
               label="Random style"
@@ -294,12 +284,11 @@ export default function App() {
               icon="➕"
               label="New style"
               onClick={() => {
-                const { activeSource, showToast } = useStylesStore.getState()
                 if (!activeSource) {
                   showToast('⚠️ Select a specific CSV source before creating a style', 'info')
-                } else {
-                  sendToHost({ type: 'SG_NEW_STYLE', sourceFile: activeSource })
+                  return
                 }
+                setNewStyleOpen(true)
               }}
             />
             <span className="text-xs text-sg-muted">
@@ -399,6 +388,48 @@ export default function App() {
         <SelectedBar />
       </div>
       <ThumbProgressModal />
+      <EditStyleDialog
+        open={newStyleOpen}
+        nameEditable
+        style={{ name: '', description: '', category: '', prompt: '', negative_prompt: '' }}
+        categories={categories()}
+        onCancel={() => setNewStyleOpen(false)}
+        onSave={async (fields) => {
+          if (styles.some((s) => s.name === fields.name)) {
+            showToast(`A style named "${fields.name}" already exists`, 'error')
+            return
+          }
+          try {
+            const res = await fetch('/style_grid/style/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: fields.name,
+                prompt: fields.prompt,
+                negative_prompt: fields.negative_prompt,
+                description: fields.description,
+                category: fields.category,
+                source: activeSource,
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.ok === false || data.error) {
+              showToast(
+                typeof data.error === 'string' && data.error ? data.error : 'Create failed',
+                'error',
+              )
+              return
+            }
+            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+            const flat = Object.values(fresh.categories || {}).flat()
+            setStyles(flat, tab)
+            showToast(`Created "${fields.name}"`, 'success')
+            setNewStyleOpen(false)
+          } catch {
+            showToast('Create failed', 'error')
+          }
+        }}
+      />
       <ConfirmInputDialog
         open={presetSaveOpen}
         title="Save preset"

@@ -16,7 +16,7 @@ export type HostMessage =
 /** Messages sent from the React iframe back to Forge host script. */
 export type FrameMessage =
   | { type: 'SG_READY' }
-  | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; silent?: boolean }
+  | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string }
   | { type: 'SG_UNAPPLY';       styleId: string }
   | { type: 'SG_EDIT_STYLE';      styleId: string }
   | { type: 'SG_DUPLICATE_STYLE'; styleId: string }
@@ -38,7 +38,6 @@ export type FrameMessage =
   | { type: 'SG_CSV_EDITOR' }
   | { type: 'SG_CLEAR_ALL' }
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
-  | { type: 'SG_TOGGLE_SILENT'; tab: Tab; value: boolean }
 
 // ── Shared types ──────────────────────────────────────────────
 export type Tab = 'txt2img' | 'img2img'

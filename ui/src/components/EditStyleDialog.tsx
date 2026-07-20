@@ -10,7 +10,9 @@ export interface EditStyleDialogProps {
     negative_prompt: string
   }
   categories: string[]
+  nameEditable?: boolean
   onSave: (fields: {
+    name: string
     description: string
     category: string
     prompt: string
@@ -34,9 +36,11 @@ export function EditStyleDialog({
   open,
   style,
   categories,
+  nameEditable = false,
   onSave,
   onCancel,
 }: EditStyleDialogProps) {
+  const [name, setName] = useState(style.name)
   const [description, setDescription] = useState(style.description)
   const [category, setCategory] = useState(style.category)
   const [prompt, setPrompt] = useState(style.prompt)
@@ -44,6 +48,7 @@ export function EditStyleDialog({
 
   useEffect(() => {
     if (!open) return
+    setName(style.name)
     setDescription(style.description)
     setCategory(style.category)
     setPrompt(style.prompt)
@@ -75,9 +80,23 @@ export function EditStyleDialog({
           className="pointer-events-auto bg-sg-surface border border-sg-border rounded-lg shadow-xl p-4 w-[28rem]"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="text-sm font-medium text-sg-text mb-3">
-            Editing &quot;{style.name}&quot;
-          </div>
+          {nameEditable ? (
+            <div className="mb-3">
+              <div className={labelClassName}>Name</div>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Style name"
+                className={inputClassName}
+                autoFocus
+              />
+            </div>
+          ) : (
+            <div className="text-sm font-medium text-sg-text mb-3">
+              Editing &quot;{style.name}&quot;
+            </div>
+          )}
 
           <div className="mb-3">
             <div className={labelClassName}>Description</div>
@@ -141,15 +160,17 @@ export function EditStyleDialog({
             </button>
             <button
               type="button"
+              disabled={nameEditable && name.trim() === ''}
               onClick={() =>
                 onSave({
+                  name: nameEditable ? name.trim() : style.name,
                   description,
                   category,
                   prompt,
                   negative_prompt: negativePrompt,
                 })
               }
-              className="px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors"
+              className="px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
             >
               Save
             </button>
