@@ -21,11 +21,9 @@ export type FrameMessage =
   | { type: 'SG_EDIT_STYLE';      styleId: string }
   | { type: 'SG_DUPLICATE_STYLE'; styleId: string }
   | { type: 'SG_MOVE_TO_CATEGORY'; styleId: string }
-  | { type: 'SG_GENERATE_PREVIEW'; styleId: string }
   | { type: 'SG_UPLOAD_PREVIEW';   styleId: string }
   | { type: 'SG_WILDCARD_CATEGORY'; category: string }
   | { type: 'SG_REMOVE_WILDCARD'; category: string }
-  | { type: 'SG_GENERATE_CATEGORY_PREVIEWS'; category: string; missingCount: number; source?: string }
   | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
   | { type: 'SG_DELETE_STYLE';  styleId: string }
   | { type: 'SG_CLOSE_REQUEST' }
