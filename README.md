@@ -34,7 +34,7 @@ Add the **Style Grid** node to your workflow. It outputs two STRING values, posi
 
 ## Style packs
 
-Style Grid ships with one small sample pack (`styles_sfw.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2393177). Drop CSV files into the node's `data/` folder to add more.
+Style Grid ships with one small sample pack (`styles_sfw.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2409619/sfw-prompt-pack). Drop CSV files into the node's `data/` folder to add more.
 
 ## BREAK and prompt chunking
 
