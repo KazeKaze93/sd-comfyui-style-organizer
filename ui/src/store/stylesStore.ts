@@ -399,7 +399,15 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     try {
       const r = await fetch('/style_grid/usage')
       const data = await r.json()
-      set({ usageCounts: data || {} })
+      const counts: Record<string, number> = {}
+      if (data && typeof data === 'object') {
+        for (const [name, entry] of Object.entries(data)) {
+          counts[name] = (entry && typeof entry === 'object' && 'count' in entry)
+            ? Number((entry as { count: number }).count) || 0
+            : 0
+        }
+      }
+      set({ usageCounts: counts })
     } catch {
       // ignore usage load errors
     }
@@ -412,7 +420,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     fetch('/style_grid/usage/increment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ styles: [name] })
     }).catch(() => {})
   },
   fetchPresets: async () => {

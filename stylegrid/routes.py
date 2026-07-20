@@ -136,8 +136,8 @@ def _register_style_routes(routes):
                         data = json.loads(zf.read("presets.json").decode("utf-8"))
                         if isinstance(data, dict):
                             save_presets(data)
-            except (zipfile.BadZipFile, json.JSONDecodeError, KeyError):
-                pass
+            except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
+                return web.json_response({"error": f"Invalid ZIP archive: {e}"}, status=422)
             return web.json_response({"ok": True})
         try:
             data = json.loads(raw.decode("utf-8"))
