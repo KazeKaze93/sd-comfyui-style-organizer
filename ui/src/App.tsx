@@ -77,6 +77,7 @@ export default function App() {
     collapsedCategories,
     collapseAll,
     expandAll,
+    showToast,
   } = useStylesStore()
 
   useEffect(() => {
@@ -204,7 +205,17 @@ export default function App() {
             <ToolBtn
               icon="🎲"
               label="Random style"
-              onClick={() => sendToHost({ type: 'SG_RANDOM' })}
+              onClick={() => {
+                const available = styles.filter(
+                  (s) => !selectedStyles.some((sel) => sel.name === s.name),
+                )
+                if (available.length === 0) {
+                  showToast('All styles already applied', 'info')
+                  return
+                }
+                const pick = available[Math.floor(Math.random() * available.length)]
+                toggleStyle(pick)
+              }}
             />
             <ToolBtn
               icon="📦"
@@ -214,7 +225,24 @@ export default function App() {
             <ToolBtn
               icon="💾"
               label="Backup CSV"
-              onClick={() => sendToHost({ type: 'SG_BACKUP' })}
+              onClick={async () => {
+                try {
+                  const res = await fetch('/style_grid/backup', { method: 'POST' })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || data.ok === false || data.error) {
+                    showToast(
+                      typeof data.error === 'string' && data.error
+                        ? data.error
+                        : 'Backup failed',
+                      'error',
+                    )
+                    return
+                  }
+                  showToast('💾 Backup created', 'success')
+                } catch {
+                  showToast('Backup failed', 'error')
+                }
+              }}
             />
             <ToolBtn
               icon="📥"

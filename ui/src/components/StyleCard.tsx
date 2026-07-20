@@ -18,7 +18,7 @@ const Portal = ({ children }: { children: React.ReactNode }) =>
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
-    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource
+    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource, showToast
   } = useStylesStore()
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
@@ -193,7 +193,36 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             <div className="h-px my-1 bg-sg-border" />
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/20 transition-colors"
-              onClick={() => { sendToHost({ type: 'SG_DELETE_STYLE', styleId: style.name }); setMenuPos(null) }}
+              onClick={async () => {
+                setMenuPos(null)
+                if (!window.confirm(`Delete "${style.name}"? This cannot be undone.`)) return
+                try {
+                  const res = await fetch('/style_grid/style/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: style.name, source: style.source_file }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || data.ok === false) {
+                    showToast(
+                      typeof data.error === 'string' && data.error
+                        ? data.error
+                        : `Failed to delete ${style.name}`,
+                      'error',
+                    )
+                    return
+                  }
+                  if (selectedStyles.some((s) => s.name === style.name)) {
+                    toggleStyle(style)
+                  }
+                  useStylesStore.setState((state) => ({
+                    styles: state.styles.filter((s) => s.name !== style.name),
+                  }))
+                  showToast(`Deleted "${style.name}"`, 'success')
+                } catch {
+                  showToast(`Failed to delete ${style.name}`, 'error')
+                }
+              }}
             >
               🗑️ Delete
             </button>
