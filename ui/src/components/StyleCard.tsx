@@ -229,12 +229,6 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             <div className="h-px my-1 bg-sg-border" />
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { sendToHost({ type: 'SG_GENERATE_PREVIEW', styleId: style.name }); setMenuPos(null) }}
-            >
-              🎨 Generate preview (SD)
-            </button>
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => { setMenuPos(null); fileInputRef.current?.click() }}
             >
               🖼️ Upload preview image

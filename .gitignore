@@ -4,6 +4,10 @@ __pycache__/
 data/config.json
 data/*.csv
 data/backups/
+data/presets.json
+data/usage.json
+data/category_order.json
+data/thumbnails/
 *.log
 node_modules/
 dist/
