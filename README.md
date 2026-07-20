@@ -1,4 +1,45 @@
 # Style Grid for ComfyUI
 
-Searchable, categorized visual card grid for browsing and applying prompt styles in ComfyUI.
-CSV style packs are distributed separately on CivitAI.
+Searchable, categorized visual card grid for browsing and applying prompt styles in ComfyUI. A ComfyUI node port of the [WebUI extension](https://github.com/KazeKaze93/sd-webui-style-organizer) with the same idea: search, favorites, presets, and a visual grid instead of a flat dropdown.
+
+## Features
+
+- Search and category filtering across your style packs
+- Multi-select with conflict detection
+- Favorites and recently used
+- Presets: save and load groups of styles at once
+- Create, edit, duplicate, and delete styles from the grid
+- Move styles between categories
+- Thumbnail previews with manual upload
+- Import and export your styles and presets, with automatic backup
+- Wildcard support: `{sg:category}` resolves to a random style from that category at generation time
+- Works with multiple CSV sources at once, or filtered to one
+
+## Installation
+
+Clone into your `custom_nodes` folder:
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/KazeKaze93/sd-comfyui-style-organizer
+```
+
+Restart ComfyUI. The Style Grid node will be available under the node search.
+
+(Once published to the ComfyUI Registry, this section will be updated with a Manager install option.)
+
+## Usage
+
+Add the **Style Grid** node to your workflow. It outputs two STRING values, positive and negative, meant to feed directly into your text encode nodes. Click **Browse Styles** to open the grid, search or browse by category, and apply styles to the node's text fields directly.
+
+## Style packs
+
+Style Grid ships with one small sample pack (`styles_sfw.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2393177). Drop CSV files into the node's `data/` folder to add more.
+
+## BREAK and prompt chunking
+
+Style Grid does not insert or manage `BREAK` tokens itself. If your styles or prompts use `BREAK`, ComfyUI's built-in CLIP Text Encode node treats it as a literal word rather than a chunk separator. Use a BREAK-aware text encoder such as [CLIPTextEncodeBREAK](https://github.com/pamparamm/ComfyUI-ppm) if you rely on BREAK in your prompts.
+
+## License
+
+AGPL-3.0. See [LICENSE](LICENSE).
