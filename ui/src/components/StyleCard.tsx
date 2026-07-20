@@ -221,7 +221,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               onClick={() => {
                 if (style.read_only) {
                   setMenuPos(null)
-                  showToast('This is a demo style — duplicate it first to edit', 'info')
+                  showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.', 'info')
                   return
                 }
                 setMenuPos(null); setEditOpen(true)
@@ -240,7 +240,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               onClick={() => {
                 if (style.read_only) {
                   setMenuPos(null)
-                  showToast('This is a demo style — duplicate it first to move it', 'info')
+                  showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.', 'info')
                   return
                 }
                 setMenuPos(null); setMoveOpen(true)
@@ -261,7 +261,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               onClick={async () => {
                 setMenuPos(null)
                 if (style.read_only) {
-                  showToast('This is a demo style — duplicate it first to delete it', 'info')
+                  showToast('This style is from the protected samples pack (read-only) and cannot be deleted.', 'info')
                   return
                 }
                 if (!window.confirm(`Delete "${style.name}"? This cannot be undone.`)) return

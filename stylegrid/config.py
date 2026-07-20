@@ -10,6 +10,7 @@ PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXT_DIR = os.path.dirname(PACKAGE_DIR)
 DATA_DIR = os.path.join(EXT_DIR, "data")
 SAMPLES_DIR = os.path.join(EXT_DIR, "samples")
+IMPORTS_DIR = os.path.join(DATA_DIR, "imports")
 PRESETS_FILE = os.path.join(DATA_DIR, "presets.json")
 USAGE_FILE = os.path.join(DATA_DIR, "usage.json")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -32,7 +33,7 @@ def _csvs_in(dirpath):
 
 def get_all_styles_file_paths():
     """Abs paths of every .csv in data/ then samples/, sorted within each dir."""
-    return _csvs_in(DATA_DIR) + _csvs_in(SAMPLES_DIR)
+    return _csvs_in(DATA_DIR) + _csvs_in(IMPORTS_DIR) + _csvs_in(SAMPLES_DIR)
 
 
 def get_styles_dirs():

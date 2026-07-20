@@ -4,6 +4,7 @@ __pycache__/
 data/config.json
 data/*.csv
 data/backups/
+data/imports/
 data/presets.json
 data/usage.json
 data/category_order.json

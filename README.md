@@ -40,6 +40,24 @@ Style Grid ships with one small sample pack (`styles_sfw.csv`) so the grid isn't
 
 Style Grid does not insert or manage `BREAK` tokens itself. If your styles or prompts use `BREAK`, ComfyUI's built-in CLIP Text Encode node treats it as a literal word rather than a chunk separator. Use a BREAK-aware text encoder such as [CLIPTextEncodeBREAK](https://github.com/pamparamm/ComfyUI-ppm) if you rely on BREAK in your prompts.
 
+## Generated files and cleanup
+
+Style Grid writes runtime data under `data/` inside the extension
+folder:
+
+| Path | What it is | Safe to delete? |
+|------|-----------|------------------|
+| `data/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
+| `data/imports/*.csv` | Style packs created by the Import feature | Yes, anytime |
+| `data/backups/` | CSV backup snapshots (created by the Backup button) | Yes, oldest are auto-pruned past 20 |
+| `data/presets.json` | Saved presets | Only if you don't need them |
+| `data/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
+| `data/thumbnails/` | Uploaded/generated preview images | Yes, previews just won't show until re-uploaded |
+
+`samples/styles_sfw.csv` (the bundled demo pack) is read-only by
+design — Edit, Move, and Delete are blocked on styles from this file.
+Use Duplicate to create an editable copy in `data/` first.
+
 ## License
 
 AGPL-3.0. See [LICENSE](LICENSE).

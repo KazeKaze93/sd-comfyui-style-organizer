@@ -17,7 +17,7 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import DATA_DIR, THUMBNAILS_DIR
+from .config import DATA_DIR, IMPORTS_DIR, THUMBNAILS_DIR
 from .csv_io import (
     categorize_styles,
     delete_style_from_csv,
@@ -150,8 +150,8 @@ def _register_style_routes(routes):
             p.update(data["presets"])
             save_presets(p)
         if "styles" in data and data["styles"]:
-            os.makedirs(DATA_DIR, exist_ok=True)
-            target = os.path.join(DATA_DIR, f"imported_{time.strftime('%Y%m%d_%H%M%S')}.csv")
+            os.makedirs(IMPORTS_DIR, exist_ok=True)
+            target = os.path.join(IMPORTS_DIR, f"imported_{time.strftime('%Y%m%d_%H%M%S')}.csv")
             with open(target, "w", encoding="utf-8", newline="") as f:
                 w = csv.writer(f)
                 w.writerow(["name", "prompt", "negative_prompt", "description", "category"])
