@@ -9,5 +9,5 @@ dependencies = []
 Repository = "https://github.com/KazeKaze93/sd-comfyui-style-organizer"
 
 [tool.comfy]
-PublisherId = "PLACEHOLDER_SET_AT_PUBLISH"
+PublisherId = "kaze"
 DisplayName = "Style Grid"
