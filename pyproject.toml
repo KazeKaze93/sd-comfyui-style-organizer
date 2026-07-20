@@ -2,6 +2,7 @@
 name = "sd-comfyui-style-organizer"
 description = "Grid/gallery-based style selector for ComfyUI. Browse and apply prompt styles from a searchable visual card grid."
 version = "0.0.1"
+license = { file = "LICENSE" }
 dependencies = []
 
 [project.urls]
