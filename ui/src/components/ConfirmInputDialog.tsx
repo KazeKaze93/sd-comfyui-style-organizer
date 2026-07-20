@@ -6,6 +6,7 @@ export interface ConfirmInputDialogProps {
   initialValue?: string
   placeholder?: string
   confirmLabel?: string
+  suggestions?: string[]
   onConfirm: (value: string) => void
   onCancel: () => void
 }
@@ -16,6 +17,7 @@ export function ConfirmInputDialog({
   initialValue = '',
   placeholder,
   confirmLabel = 'Confirm',
+  suggestions,
   onConfirm,
   onCancel,
 }: ConfirmInputDialogProps) {
@@ -76,6 +78,20 @@ export function ConfirmInputDialog({
                        placeholder:text-sg-muted focus:border-sg-accent
                        focus:outline-none transition-colors"
           />
+          {suggestions && suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setValue(s)}
+                  className="px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex justify-end gap-2 mt-3">
             <button
               type="button"

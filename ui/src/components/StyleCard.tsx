@@ -5,6 +5,7 @@ import type { Style } from '../bridge'
 import { getCategoryColor, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
+import { ConfirmInputDialog } from './ConfirmInputDialog'
 
 interface Props {
   style: Style
@@ -18,10 +19,12 @@ const Portal = ({ children }: { children: React.ReactNode }) =>
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
-    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource, showToast
+    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource, showToast, categories
   } = useStylesStore()
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
+  const [duplicateOpen, setDuplicateOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
   const isSelected = !presetName && selectedStyles.some(s => s.name === style.name)
   const fav = isFavorite(style.name)
   const usageCount = usageCounts[style.name] || 0
@@ -167,13 +170,13 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             </button>
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { sendToHost({ type: 'SG_DUPLICATE_STYLE', styleId: style.name }); setMenuPos(null) }}
+              onClick={() => { setMenuPos(null); setDuplicateOpen(true) }}
             >
               📄 Duplicate
             </button>
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { sendToHost({ type: 'SG_MOVE_TO_CATEGORY', styleId: style.name }); setMenuPos(null) }}
+              onClick={() => { setMenuPos(null); setMoveOpen(true) }}
             >
               📂 Move to category...
             </button>
@@ -273,6 +276,107 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           />
         </Portal>
       )}
+
+      <ConfirmInputDialog
+        open={duplicateOpen}
+        title={`Duplicate "${style.name}"`}
+        initialValue={`${style.name} copy`}
+        placeholder="New style name"
+        confirmLabel="Duplicate"
+        onCancel={() => setDuplicateOpen(false)}
+        onConfirm={async (newName) => {
+          // Name collision check against the current catalog — style/save
+          // is an upsert, so an existing name would silently overwrite that
+          // style instead of creating a new one.
+          const exists = styles.some((s) => s.name === newName)
+          if (exists) {
+            showToast(`A style named "${newName}" already exists`, 'error')
+            return  // keep dialog open so the user can retype
+          }
+          try {
+            const res = await fetch('/style_grid/style/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: newName,
+                prompt: style.prompt,
+                negative_prompt: style.negative_prompt,
+                description: style.description,
+                category: style.category,
+                source: style.source_file,
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.ok === false || data.error) {
+              showToast(
+                typeof data.error === 'string' && data.error
+                  ? data.error
+                  : 'Duplicate failed',
+                'error',
+              )
+              return  // keep dialog open
+            }
+            // Refresh the catalog the same way SG_INIT/SG_STYLES_UPDATE do —
+            // GET /style_grid/styles returns { categories, usage, presets },
+            // not a flat array.
+            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+            const flat = Object.values(fresh.categories || {}).flat()
+            useStylesStore.getState().setStyles(flat, useStylesStore.getState().tab)
+            showToast(`Duplicated as "${newName}"`, 'success')
+            setDuplicateOpen(false)
+          } catch {
+            showToast('Duplicate failed', 'error')
+            // keep dialog open on network failure too
+          }
+        }}
+      />
+
+      <ConfirmInputDialog
+        open={moveOpen}
+        title={`Move "${style.name}" to category`}
+        initialValue={style.category}
+        placeholder="Category name"
+        confirmLabel="Move"
+        suggestions={categories().filter((c) => c !== style.category)}
+        onCancel={() => setMoveOpen(false)}
+        onConfirm={async (newCategory) => {
+          if (newCategory === style.category) {
+            setMoveOpen(false)
+            return
+          }
+          try {
+            const res = await fetch('/style_grid/style/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: style.name,
+                prompt: style.prompt,
+                negative_prompt: style.negative_prompt,
+                description: style.description,
+                category: newCategory,
+                source: style.source_file,
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.ok === false || data.error) {
+              showToast(
+                typeof data.error === 'string' && data.error
+                  ? data.error
+                  : 'Move failed',
+                'error',
+              )
+              return
+            }
+            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+            const flat = Object.values(fresh.categories || {}).flat()
+            useStylesStore.getState().setStyles(flat, useStylesStore.getState().tab)
+            showToast(`Moved "${style.name}" to "${newCategory}"`, 'success')
+            setMoveOpen(false)
+          } catch {
+            showToast('Move failed', 'error')
+          }
+        }}
+      />
     </>
   )
 })
