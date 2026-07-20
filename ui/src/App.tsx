@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { onHostMessage, sendToHost } from './bridge'
 import { useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
@@ -28,7 +28,7 @@ const ToolBtn = ({
   icon: string
   label: string
   title?: string
-  onClick?: () => void
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
 }) => {
   const button = (
@@ -66,6 +66,8 @@ const ToolBtn = ({
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [presetSaveOpen, setPresetSaveOpen] = useState(false)
+  const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const importFileInputRef = useRef<HTMLInputElement>(null)
   const {
     setStyles,
     tab,
@@ -257,7 +259,10 @@ export default function App() {
             <ToolBtn
               icon="📥"
               label="Import/Export"
-              onClick={() => sendToHost({ type: 'SG_IMPORT_EXPORT' })}
+              onClick={(e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setIeMenuPos({ x: rect.left, y: rect.bottom + 4 })
+              }}
             />
             <ToolBtn
               icon="📋"
@@ -435,6 +440,85 @@ export default function App() {
             setPresetSaveOpen(false)
           } catch {
             showToast('Save preset failed', 'error')
+          }
+        }}
+      />
+      {ieMenuPos && (
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setIeMenuPos(null)} />
+          <div
+            className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48"
+            style={{ left: ieMenuPos.x, top: ieMenuPos.y }}
+          >
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              onClick={async () => {
+                setIeMenuPos(null)
+                try {
+                  const res = await fetch('/style_grid/export')
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || data.error) {
+                    showToast(
+                      typeof data.error === 'string' && data.error ? data.error : 'Export failed',
+                      'error',
+                    )
+                    return
+                  }
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `style_grid_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+                  document.body.appendChild(a)
+                  a.click()
+                  a.remove()
+                  URL.revokeObjectURL(url)
+                  showToast('Exported styles', 'success')
+                } catch {
+                  showToast('Export failed', 'error')
+                }
+              }}
+            >
+              📤 Export
+            </button>
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              onClick={() => {
+                setIeMenuPos(null)
+                importFileInputRef.current?.click()
+              }}
+            >
+              📥 Import from file...
+            </button>
+          </div>
+        </>
+      )}
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept=".json,.zip,application/json,application/zip"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ''
+          if (!file) return
+          try {
+            const res = await fetch('/style_grid/import', { method: 'POST', body: file })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.ok === false || data.error) {
+              showToast(
+                typeof data.error === 'string' && data.error ? data.error : 'Import failed',
+                'error',
+              )
+              return
+            }
+            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+            const flat = Object.values(fresh.categories || {}).flat()
+            setStyles(flat, tab)
+            await fetchPresets()
+            showToast('Import complete', 'success')
+          } catch {
+            showToast('Import failed', 'error')
           }
         }}
       />
