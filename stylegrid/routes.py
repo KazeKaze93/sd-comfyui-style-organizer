@@ -298,8 +298,8 @@ def _register_thumbnail_routes(routes):
             if "," in image_data:
                 image_data = image_data.split(",", 1)[1]
             raw = base64.b64decode(image_data)
-            if len(raw) > 2 * 1024 * 1024:
-                return web.json_response({"error": "Image too large (max 2MB)"})
+            if len(raw) > 10 * 1024 * 1024:
+                return web.json_response({"error": "Image too large (max 10MB)"})
             allowed_magic = [
                 b"\xff\xd8\xff",
                 b"\x89PNG\r\n\x1a\n",

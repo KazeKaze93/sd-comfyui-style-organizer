@@ -4,7 +4,7 @@ import csv
 import os
 
 from .cache import invalidate_styles_cache
-from .config import DATA_DIR, get_all_styles_file_paths, logger
+from .config import DATA_DIR, SAMPLES_DIR, get_all_styles_file_paths, logger
 
 FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
 
@@ -56,6 +56,7 @@ def parse_styles_csv(filepath):
                     "category_explicit": row[4].strip() if len(row) > 4 else "",
                     "source": base,
                     "source_file": os.path.abspath(filepath),
+                    "read_only": os.path.dirname(filepath) == SAMPLES_DIR,
                 })
             except (IndexError, AttributeError):
                 logger.warning("[Style Grid] %s:%d skipped malformed row", base, reader.line_num)

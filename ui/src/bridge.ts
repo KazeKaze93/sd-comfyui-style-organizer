@@ -50,6 +50,7 @@ export interface Style {
   category:          string
   source_file:       string
   has_thumbnail:     boolean
+  read_only:         boolean
 }
 
 /** Posts one typed bridge message to the Forge host window. */

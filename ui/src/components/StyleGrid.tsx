@@ -78,6 +78,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
             category: 'OTHER',
             source_file: '',
             has_thumbnail: false,
+            read_only: false,
           }
           return (
             <StyleCard
