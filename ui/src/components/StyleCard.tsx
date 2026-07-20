@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import type { Style } from '../bridge'
@@ -6,6 +6,7 @@ import { getCategoryColor, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
 import { ConfirmInputDialog } from './ConfirmInputDialog'
+import { EditStyleDialog } from './EditStyleDialog'
 
 interface Props {
   style: Style
@@ -19,12 +20,15 @@ const Portal = ({ children }: { children: React.ReactNode }) =>
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
-    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource, showToast, categories
+    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
+    presets, clearAll,
   } = useStylesStore()
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const isSelected = !presetName && selectedStyles.some(s => s.name === style.name)
   const fav = isFavorite(style.name)
   const usageCount = usageCounts[style.name] || 0
@@ -93,7 +97,13 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           }}
           onClick={(e) => {
             if (presetName) {
-              sendToHost({ type: 'SG_LOAD_PRESET', name: presetName })
+              const preset = presets[presetName]
+              if (!preset) return
+              clearAll()
+              preset.styles.forEach((n) => {
+                const s = styles.find((st) => st.name === n)
+                if (s) toggleStyle(s)
+              })
               return
             }
             if (hasMultipleSources && !activeSource && !isSelected) {
@@ -132,6 +142,42 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               {usageCount > 99 ? '99+' : usageCount}
             </span>
           )}
+          {presetName && (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation()
+                if (!window.confirm(`Delete preset "${presetName}"?`)) return
+                try {
+                  const res = await fetch('/style_grid/presets/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: presetName }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || data.ok === false || data.error) {
+                    showToast(
+                      typeof data.error === 'string' && data.error
+                        ? data.error
+                        : 'Delete preset failed',
+                      'error',
+                    )
+                    return
+                  }
+                  if (data.presets) {
+                    useStylesStore.setState({ presets: data.presets })
+                  }
+                  showToast(`Deleted preset "${presetName}"`, 'success')
+                } catch {
+                  showToast('Delete preset failed', 'error')
+                }
+              }}
+              className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full text-sg-muted hover:bg-red-500/20 hover:text-red-400 transition-colors"
+              title="Delete preset"
+            >
+              ✕
+            </button>
+          )}
         </motion.div>
       </ThumbnailPreview>
 
@@ -164,7 +210,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             </button>
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { sendToHost({ type: 'SG_EDIT_STYLE', styleId: style.name }); setMenuPos(null) }}
+              onClick={() => { setMenuPos(null); setEditOpen(true) }}
             >
               ✏️ Edit
             </button>
@@ -189,7 +235,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             </button>
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { sendToHost({ type: 'SG_UPLOAD_PREVIEW', styleId: style.name }); setMenuPos(null) }}
+              onClick={() => { setMenuPos(null); fileInputRef.current?.click() }}
             >
               🖼️ Upload preview image
             </button>
@@ -375,6 +421,95 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           } catch {
             showToast('Move failed', 'error')
           }
+        }}
+      />
+
+      <EditStyleDialog
+        open={editOpen}
+        style={style}
+        categories={categories().filter((c) => c !== style.category)}
+        onCancel={() => setEditOpen(false)}
+        onSave={async (fields) => {
+          try {
+            const res = await fetch('/style_grid/style/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: style.name,
+                prompt: fields.prompt,
+                negative_prompt: fields.negative_prompt,
+                description: fields.description,
+                category: fields.category,
+                source: style.source_file,
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.ok === false || data.error) {
+              showToast(
+                typeof data.error === 'string' && data.error
+                  ? data.error
+                  : 'Save failed',
+                'error',
+              )
+              return  // keep dialog open so edits aren't lost
+            }
+            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+            const flat = Object.values(fresh.categories || {}).flat()
+            useStylesStore.getState().setStyles(flat, useStylesStore.getState().tab)
+            showToast(`Saved "${style.name}"`, 'success')
+            setEditOpen(false)
+          } catch {
+            showToast('Save failed', 'error')
+            // keep dialog open on network failure too
+          }
+        }}
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ''  // allow re-selecting the same file later
+          if (!file) return
+          if (file.size > 2 * 1024 * 1024) {
+            showToast('Image must be under 2MB', 'error')
+            return
+          }
+          const reader = new FileReader()
+          reader.onload = async () => {
+            try {
+              const res = await fetch('/style_grid/thumbnail/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: style.name, image: reader.result }),
+              })
+              const data = await res.json().catch(() => ({}))
+              if (!res.ok || data.ok === false || data.error) {
+                showToast(
+                  typeof data.error === 'string' && data.error
+                    ? data.error
+                    : 'Upload failed',
+                  'error',
+                )
+                return
+              }
+              // ThumbnailPreview listens on window 'message' via onHostMessage
+              // (bridge.ts) — a same-window postMessage reaches it directly,
+              // no host round-trip needed.
+              window.postMessage(
+                { type: 'SG_THUMB_DONE', styleId: style.name, version: Date.now() },
+                '*',
+              )
+              showToast('Preview updated', 'success')
+            } catch {
+              showToast('Upload failed', 'error')
+            }
+          }
+          reader.onerror = () => showToast('Failed to read image file', 'error')
+          reader.readAsDataURL(file)
         }}
       />
     </>

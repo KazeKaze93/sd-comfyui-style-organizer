@@ -9,6 +9,7 @@ import { StyleInfoPanel } from './components/StyleInfoPanel'
 import { SelectedBar } from './components/SelectedBar'
 import { ThumbProgressModal } from './components/ThumbProgressModal'
 import { Toast } from './components/Toast'
+import { ConfirmInputDialog } from './components/ConfirmInputDialog'
 import {
   Tooltip,
   TooltipContent,
@@ -64,6 +65,7 @@ const ToolBtn = ({
 
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [presetSaveOpen, setPresetSaveOpen] = useState(false)
   const {
     setStyles,
     tab,
@@ -78,6 +80,8 @@ export default function App() {
     collapseAll,
     expandAll,
     showToast,
+    presets,
+    fetchPresets,
   } = useStylesStore()
 
   useEffect(() => {
@@ -220,7 +224,13 @@ export default function App() {
             <ToolBtn
               icon="📦"
               label="Presets"
-              onClick={() => sendToHost({ type: 'SG_PRESETS' })}
+              onClick={() => {
+                if (selectedStyles.length === 0) {
+                  showToast('Select at least one style first', 'info')
+                  return
+                }
+                setPresetSaveOpen(true)
+              }}
             />
             <ToolBtn
               icon="💾"
@@ -384,6 +394,50 @@ export default function App() {
         <SelectedBar />
       </div>
       <ThumbProgressModal />
+      <ConfirmInputDialog
+        open={presetSaveOpen}
+        title="Save preset"
+        placeholder="Preset name"
+        confirmLabel="Save"
+        onCancel={() => setPresetSaveOpen(false)}
+        onConfirm={async (name) => {
+          if (presets[name] && !window.confirm(`Overwrite existing preset "${name}"?`)) {
+            return  // keep dialog open, let them rename
+          }
+          try {
+            const res = await fetch('/style_grid/presets/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name,
+                styles: selectedStyles.map((s) => s.name),
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || data.ok === false || data.error) {
+              showToast(
+                typeof data.error === 'string' && data.error
+                  ? data.error
+                  : 'Save preset failed',
+                'error',
+              )
+              return
+            }
+            // This endpoint returns the updated presets map directly —
+            // unlike style/save, no separate refetch of /style_grid/styles
+            // is needed here.
+            if (data.presets) {
+              useStylesStore.setState({ presets: data.presets })
+            } else {
+              await fetchPresets()
+            }
+            showToast(`Saved preset "${name}"`, 'success')
+            setPresetSaveOpen(false)
+          } catch {
+            showToast('Save preset failed', 'error')
+          }
+        }}
+      />
       <Toast />
     </div>
   )
