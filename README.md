@@ -26,7 +26,12 @@ a random style from that category each time the workflow runs.
 
 ## Installation
 
-Clone into your `custom_nodes` folder:
+**Via ComfyUI-Manager (recommended):**
+
+Open ComfyUI-Manager → Custom Nodes Manager → search "Style Grid" →
+Install. Restart ComfyUI when prompted.
+
+**Manual / development install:**
 
 ```bash
 cd ComfyUI/custom_nodes
@@ -35,7 +40,9 @@ git clone https://github.com/KazeKaze93/sd-comfyui-style-organizer
 
 Restart ComfyUI. The Style Grid node will be available under the node search.
 
-(Once published to the ComfyUI Registry, this section will be updated with a Manager install option.)
+Updates: Manager installs update through Manager's own Update /
+Check for updates flow. Manual git installs update via `git pull`
+inside the extension folder.
 
 ## Usage
 
