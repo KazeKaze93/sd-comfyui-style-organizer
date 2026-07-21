@@ -252,7 +252,7 @@ function ensureOverlay() {
         "max-height:90vh",
         "border-radius:12px",
         "box-shadow:0 25px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)",
-        "z-index:10000",
+        "z-index:2147483000",
         "display:none",
         "overflow:hidden",
         "resize:both",
