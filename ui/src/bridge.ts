@@ -18,22 +18,10 @@ export type FrameMessage =
   | { type: 'SG_READY' }
   | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string }
   | { type: 'SG_UNAPPLY';       styleId: string }
-  | { type: 'SG_EDIT_STYLE';      styleId: string }
-  | { type: 'SG_DUPLICATE_STYLE'; styleId: string }
-  | { type: 'SG_MOVE_TO_CATEGORY'; styleId: string }
-  | { type: 'SG_UPLOAD_PREVIEW';   styleId: string }
   | { type: 'SG_WILDCARD_CATEGORY'; category: string }
   | { type: 'SG_REMOVE_WILDCARD'; category: string }
   | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
-  | { type: 'SG_DELETE_STYLE';  styleId: string }
   | { type: 'SG_CLOSE_REQUEST' }
-  | { type: 'SG_RANDOM' }
-  | { type: 'SG_PRESETS' }
-  | { type: 'SG_LOAD_PRESET'; name: string }
-  | { type: 'SG_BACKUP' }
-  | { type: 'SG_IMPORT_EXPORT' }
-  | { type: 'SG_NEW_STYLE'; sourceFile?: string }
-  | { type: 'SG_CSV_EDITOR' }
   | { type: 'SG_CLEAR_ALL' }
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
 
