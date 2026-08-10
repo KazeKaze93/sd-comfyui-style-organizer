@@ -266,7 +266,6 @@ function rehydrate() {
             allStylesCache = Object.values(data.categories || {}).flat();
             iframe.contentWindow.postMessage({
                 type: "SG_INIT",
-                tab: String(currentNode?.id ?? ""),
                 styles: allStylesCache,
             }, "*");
             iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
