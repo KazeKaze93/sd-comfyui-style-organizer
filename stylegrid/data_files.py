@@ -6,7 +6,7 @@ import shutil
 import time
 import zipfile
 
-from .config import BACKUP_DIR, PRESETS_FILE, USAGE_FILE, get_all_styles_file_paths
+from .config import BACKUP_DIR, PRESETS_FILE, USAGE_FILE, get_all_styles_file_paths, logger
 
 
 def load_presets():
@@ -24,23 +24,45 @@ def save_presets(presets):
         json.dump(presets, f, indent=2, ensure_ascii=False)
 
 
+def _read_usage():
+    """Load usage.json. Returns (data, corrupt) — corrupt when the file exists but is unusable."""
+    if not os.path.isfile(USAGE_FILE):
+        return {}, False
+    try:
+        with open(USAGE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            logger.warning("[Style Grid] usage.json is not a JSON object; treating as empty")
+            return {}, True
+        return data, False
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("[Style Grid] usage.json unreadable (%s); treating as empty", e)
+        return {}, True
+
+
 def load_usage():
-    if os.path.isfile(USAGE_FILE):
-        try:
-            with open(USAGE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError):
-            pass
-    return {}
+    usage, _ = _read_usage()
+    return usage
 
 
 def save_usage(usage):
-    with open(USAGE_FILE, "w", encoding="utf-8") as f:
+    directory = os.path.dirname(USAGE_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = USAGE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(usage, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, USAGE_FILE)
 
 
 def increment_usage(style_names):
-    usage = load_usage()
+    usage, corrupt = _read_usage()
+    if corrupt:
+        # Counts are non-critical UX polish — reset loudly rather than block the click
+        # or silently clobber history forever without a log line.
+        logger.warning(
+            "[Style Grid] usage.json corrupt — resetting usage history and writing a fresh file"
+        )
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     for name in style_names:
         if name not in usage:
