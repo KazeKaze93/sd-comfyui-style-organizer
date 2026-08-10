@@ -15,6 +15,8 @@ export function SearchBar() {
   const { styles, activeSource, search, setSearch, toggleStyle, selectedStyles } = useStylesStore()
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(search)
+  /** cmdk controlled highlight (Command value / onValueChange). */
+  const [highlight, setHighlight] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Autocomplete suggestions:
@@ -32,15 +34,22 @@ export function SearchBar() {
     : []
 
   const handleInput = (val: string) => {
+    const nextSuggestions = val.length > 0
+      ? searchableStyles
+          .filter(s => matchesNameSearch(s, val))
+          .slice(0, 8)
+      : []
     setInputValue(val)
     setSearch(val)
-    setOpen(val.length > 0 && suggestions.length > 0)
+    setOpen(val.length > 0 && nextSuggestions.length > 0)
+    setHighlight(nextSuggestions[0]?.name ?? '')
   }
 
   const handleSelect = (style: typeof styles[0]) => {
     setInputValue('')
     setSearch('')
     setOpen(false)
+    setHighlight('')
     // Apply immediately if not already selected
     const isSelected = selectedStyles.some(s => s.name === style.name)
     if (!isSelected) toggleStyle(style)
@@ -55,8 +64,35 @@ export function SearchBar() {
             value={inputValue}
             onChange={e => handleInput(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Escape') { setOpen(false); setInputValue(''); setSearch('') }
-              if (e.key === 'ArrowDown' && open) e.preventDefault()
+              if (e.key === 'Escape') {
+                setOpen(false)
+                setInputValue('')
+                setSearch('')
+                setHighlight('')
+                return
+              }
+              if (!open || suggestions.length === 0) return
+
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                const idx = suggestions.findIndex(
+                  s => s.name.toLowerCase() === highlight.toLowerCase()
+                )
+                const cur = idx < 0 ? 0 : idx
+                const next = e.key === 'ArrowDown'
+                  ? (cur + 1) % suggestions.length
+                  : (cur - 1 + suggestions.length) % suggestions.length
+                setHighlight(suggestions[next].name)
+                return
+              }
+
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                const style = suggestions.find(
+                  s => s.name.toLowerCase() === highlight.toLowerCase()
+                ) ?? suggestions[0]
+                handleSelect(style)
+              }
             }}
             placeholder="Search styles..."
             className="w-full h-9 px-3 pr-8 rounded border border-sg-border 
@@ -66,7 +102,12 @@ export function SearchBar() {
           />
           {inputValue && (
             <button
-              onClick={() => { setInputValue(''); setSearch(''); setOpen(false) }}
+              onClick={() => {
+                setInputValue('')
+                setSearch('')
+                setOpen(false)
+                setHighlight('')
+              }}
               className="absolute right-2 top-1/2 -translate-y-1/2 
                          text-sg-muted hover:text-sg-text text-xs"
             >✕</button>
@@ -82,7 +123,12 @@ export function SearchBar() {
         align="start"
         onOpenAutoFocus={e => e.preventDefault()}
       >
-        <Command shouldFilter={false} className="bg-transparent">
+        <Command
+          shouldFilter={false}
+          value={highlight}
+          onValueChange={setHighlight}
+          className="bg-transparent"
+        >
           <CommandList className="bg-transparent">
             <CommandEmpty className="text-sg-muted text-sm py-3 px-4">
               No styles found
