@@ -7,6 +7,8 @@ let iframe = null;
 let ready = false;
 let currentNode = null;
 let allStylesCache = [];
+/** node → Map<styleName, { prompt, negative_prompt }> written at apply time. */
+const appliedByNode = new Map();
 
 function closeStyleBrowser() {
     if (overlay) overlay.style.display = "none";
@@ -154,18 +156,34 @@ function applyStyleToNode(node, style) {
     if (text) text.value = applyStyleText(currentText, style.prompt || "");
     if (neg) neg.value = applyStyleText(currentNeg, style.negative_prompt || "");
     node.graph?.setDirtyCanvas(true, true);
+
+    let byName = appliedByNode.get(node);
+    if (!byName) {
+        byName = new Map();
+        appliedByNode.set(node, byName);
+    }
+    byName.set(style.name, {
+        prompt: style.prompt || "",
+        negative_prompt: style.negative_prompt || "",
+    });
 }
 
 function unapplyStyleFromNode(node, style) {
+    const recorded = appliedByNode.get(node)?.get(style.name);
+    const prompt = recorded ? recorded.prompt : (style.prompt || "");
+    const negTpl = recorded ? recorded.negative_prompt : (style.negative_prompt || "");
+
     const { text, neg } = getTextWidgets(node);
     const currentText = text ? text.value || "" : "";
     const currentNeg = neg ? neg.value || "" : "";
     const others = getActiveStyles(currentText, currentNeg, style.name);
     const protectPos = others.flatMap((s) => parseTags(s.prompt || ""));
     const protectNeg = others.flatMap((s) => parseTags(s.negative_prompt || ""));
-    if (text) text.value = removeStyleText(currentText, style.prompt || "", protectPos);
-    if (neg) neg.value = removeStyleText(currentNeg, style.negative_prompt || "", protectNeg);
+    if (text) text.value = removeStyleText(currentText, prompt, protectPos);
+    if (neg) neg.value = removeStyleText(currentNeg, negTpl, protectNeg);
     node.graph?.setDirtyCanvas(true, true);
+
+    appliedByNode.get(node)?.delete(style.name);
 }
 
 // Reorders the tag-blocks belonging to currently-applied plain-tag styles to
@@ -368,9 +386,16 @@ function ensureOverlay() {
             applyStyleToNode(currentNode, { name: msg.styleId, prompt: msg.prompt, negative_prompt: msg.neg });
         }
         if (msg.type === "SG_UNAPPLY" && currentNode) {
-            const style = allStylesCache.find((s) => s.name === msg.styleId);
-            if (style) {
-                unapplyStyleFromNode(currentNode, style);
+            const recorded = appliedByNode.get(currentNode)?.get(msg.styleId);
+            const cached = allStylesCache.find((s) => s.name === msg.styleId);
+            if (recorded || cached) {
+                unapplyStyleFromNode(currentNode, {
+                    name: msg.styleId,
+                    prompt: recorded ? recorded.prompt : (cached.prompt || ""),
+                    negative_prompt: recorded
+                        ? recorded.negative_prompt
+                        : (cached.negative_prompt || ""),
+                });
             } else {
                 const name = msg.styleId || "style";
                 const message =
@@ -409,6 +434,9 @@ function openStyleBrowser(node) {
     if (overlay && overlay.style.display === "block" && currentNode === node) {
         closeStyleBrowser();
         return;
+    }
+    if (currentNode !== node) {
+        appliedByNode.clear();
     }
     currentNode = node;
     ensureOverlay();

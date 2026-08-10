@@ -308,7 +308,10 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const src = activeSource
       ? styles.filter(s => s.source_file === activeSource)
       : styles
-    const catStyles = src.filter(s => s.category === cat)
+    let catStyles = src.filter(s => s.category === cat)
+    if (!activeSource) {
+      catStyles = dedupeStylesByNameForAllSources(catStyles)
+    }
     const allSelected = catStyles.every(s =>
       selectedStyles.some(sel => sel.name === s.name)
     )
