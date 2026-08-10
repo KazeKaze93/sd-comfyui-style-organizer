@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { onHostMessage, sendToHost } from './bridge'
-import { useStylesStore } from './store/stylesStore'
+import { selectFilteredStyles, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
 import { Sidebar } from './components/Sidebar'
 import { StyleGrid } from './components/StyleGrid'
 import { StyleInfoPanel } from './components/StyleInfoPanel'
 import { SelectedBar } from './components/SelectedBar'
-import { ThumbProgressModal } from './components/ThumbProgressModal'
 import { Toast } from './components/Toast'
 import { ConfirmInputDialog } from './components/ConfirmInputDialog'
 import { EditStyleDialog } from './components/EditStyleDialog'
@@ -74,6 +73,10 @@ export default function App() {
     setStyles,
     selectedStyles,
     styles,
+    search,
+    activeCategory,
+    favorites,
+    recentNames,
     conflicts,
     toggleStyle,
     toggleCompact,
@@ -83,12 +86,15 @@ export default function App() {
     showToast,
     presets,
     fetchPresets,
+    savePreset,
     activeSource,
+    setActiveSource,
     categories,
   } = useStylesStore()
 
   useEffect(() => {
     useStylesStore.getState().loadUsage()
+    void useStylesStore.getState().loadCategoryOrder()
     const unsub = onHostMessage((msg) => {
       if (msg.type === 'SG_INIT') {
         const raw: unknown = (msg as { styles?: unknown }).styles
@@ -106,14 +112,19 @@ export default function App() {
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
       }
       if (msg.type === 'SG_CLEAR_SELECTION') {
-        useStylesStore.setState({ selectedStyles: [], conflicts: [], activeWildcards: [] })
+        useStylesStore.setState({
+          selectedStyles: [],
+          conflicts: [],
+          activeWildcards: [],
+          activePresetName: null,
+        })
       }
       if (msg.type === 'SG_STYLE_APPLIED') {
-        const { selectedStyles, addToRecent } = useStylesStore.getState()
+        const { selectedStyles, detectConflicts } = useStylesStore.getState()
         const exists = selectedStyles.some(s => s.name === msg.style.name)
         if (!exists) {
           useStylesStore.getState().setSelectedStyles([...selectedStyles, msg.style])
-          addToRecent(msg.style.name)
+          detectConflicts()
         }
       }
       if (msg.type === 'SG_WILDCARDS_ACTIVE') {
@@ -193,7 +204,10 @@ export default function App() {
               icon="🎲"
               label="Random style"
               onClick={() => {
-                const available = styles.filter(
+                const filtered = selectFilteredStyles(
+                  styles, search, activeCategory, activeSource, favorites, recentNames, presets,
+                )
+                const available = filtered.filter(
                   (s) => !selectedStyles.some((sel) => sel.name === s.name),
                 )
                 if (available.length === 0) {
@@ -206,7 +220,7 @@ export default function App() {
             />
             <ToolBtn
               icon="📦"
-              label="Presets"
+              label="Save preset"
               onClick={() => {
                 if (selectedStyles.length === 0) {
                   showToast('Select at least one style first', 'info')
@@ -217,11 +231,15 @@ export default function App() {
             />
             <ToolBtn
               icon="💾"
-              label="Backup CSV"
+              label="Backup (CSVs + presets)"
               onClick={async () => {
                 try {
                   const res = await fetch('/style_grid/backup', { method: 'POST' })
                   const data = await res.json().catch(() => ({}))
+                  if (data.empty === true) {
+                    showToast('Nothing to back up', 'info')
+                    return
+                  }
                   if (!res.ok || data.ok === false || data.error) {
                     showToast(
                       typeof data.error === 'string' && data.error
@@ -231,7 +249,12 @@ export default function App() {
                     )
                     return
                   }
-                  showToast('💾 Backup created', 'success')
+                  const file =
+                    typeof data.file === 'string' && data.file ? data.file : ''
+                  showToast(
+                    file ? `Backup created: ${file}` : 'Backup created',
+                    'success',
+                  )
                 } catch {
                   showToast('Backup failed', 'error')
                 }
@@ -256,7 +279,6 @@ export default function App() {
               title="Clear all selected styles"
               onClick={() => {
                 useStylesStore.getState().clearAll()
-                sendToHost({ type: 'SG_CLEAR_ALL' })
               }}
             />
             <ToolBtn
@@ -278,6 +300,14 @@ export default function App() {
                 if (!activeSource) {
                   showToast('⚠️ Select a specific CSV source before creating a style', 'info')
                   return
+                }
+                // samples/ is write-protected — style/save rematerializes to
+                // data/<basename>.csv. Tell the user before they fill the form.
+                if (styles.some((s) => s.source_file === activeSource && s.read_only)) {
+                  showToast(
+                    'This pack is from the protected samples pack (read-only). New styles will be created in data/ instead.',
+                    'info',
+                  )
                 }
                 setNewStyleOpen(true)
               }}
@@ -378,7 +408,6 @@ export default function App() {
         <StyleInfoPanel />
         <SelectedBar />
       </div>
-      <ThumbProgressModal />
       <EditStyleDialog
         open={newStyleOpen}
         nameEditable
@@ -390,35 +419,39 @@ export default function App() {
             showToast(`A style named "${fields.name}" already exists`, 'error')
             return
           }
-          try {
-            const res = await fetch('/style_grid/style/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: fields.name,
-                prompt: fields.prompt,
-                negative_prompt: fields.negative_prompt,
-                description: fields.description,
-                category: fields.category,
-                source: activeSource,
-              }),
-            })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || data.ok === false || data.error) {
-              showToast(
-                typeof data.error === 'string' && data.error ? data.error : 'Create failed',
-                'error',
-              )
-              return
-            }
-            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
-            const flat = Object.values(fresh.categories || {}).flat()
-            setStyles(flat)
-            showToast(`Created "${fields.name}"`, 'success')
-            setNewStyleOpen(false)
-          } catch {
-            showToast('Create failed', 'error')
+          // style/save returns {ok} only — resolve the real write target
+          // from the created row after refetch (samples → data/<basename>).
+          const fromSamples = styles.some(
+            (s) => s.source_file === activeSource && s.read_only,
+          )
+          const result = await useStylesStore.getState().saveStyle({
+            name: fields.name,
+            prompt: fields.prompt,
+            negative_prompt: fields.negative_prompt,
+            description: fields.description,
+            category: fields.category,
+            source: activeSource,
+          })
+          if (!result.ok) {
+            showToast(
+              typeof result.error === 'string' && result.error ? result.error : 'Create failed',
+              'error',
+            )
+            return
           }
+          showToast(`Created "${fields.name}"`, 'success')
+          if (fromSamples) {
+            const created =
+              result.styles.find((s) => s.name === fields.name && !s.read_only) ??
+              result.styles.find((s) => s.name === fields.name)
+            if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
+              setActiveSource(created.source_file)
+              const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
+                .replace(/\.csv$/i, '')
+              showToast(`Created in ${base} (data/) — switched source`, 'info')
+            }
+          }
+          setNewStyleOpen(false)
         }}
       />
       <ConfirmInputDialog
@@ -428,41 +461,25 @@ export default function App() {
         confirmLabel="Save"
         onCancel={() => setPresetSaveOpen(false)}
         onConfirm={async (name) => {
+          // Save = create/overwrite by name only; rename/reorder/inspect-members intentionally out of scope.
           if (presets[name] && !window.confirm(`Overwrite existing preset "${name}"?`)) {
             return  // keep dialog open, let them rename
           }
-          try {
-            const res = await fetch('/style_grid/presets/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name,
-                styles: selectedStyles.map((s) => s.name),
-              }),
-            })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || data.ok === false || data.error) {
-              showToast(
-                typeof data.error === 'string' && data.error
-                  ? data.error
-                  : 'Save preset failed',
-                'error',
-              )
-              return
-            }
-            // This endpoint returns the updated presets map directly —
-            // unlike style/save, no separate refetch of /style_grid/styles
-            // is needed here.
-            if (data.presets) {
-              useStylesStore.setState({ presets: data.presets })
-            } else {
-              await fetchPresets()
-            }
-            showToast(`Saved preset "${name}"`, 'success')
-            setPresetSaveOpen(false)
-          } catch {
-            showToast('Save preset failed', 'error')
+          const result = await savePreset(
+            name,
+            selectedStyles.map((s) => s.name),
+          )
+          if (!result.ok) {
+            showToast(
+              typeof result.error === 'string' && result.error
+                ? result.error
+                : 'Save preset failed',
+              'error',
+            )
+            return
           }
+          showToast(`Saved preset "${name}"`, 'success')
+          setPresetSaveOpen(false)
         }}
       />
       {ieMenuPos && (
@@ -534,11 +551,13 @@ export default function App() {
               )
               return
             }
+            const stylesN = Number(data.imported) || 0
+            const presetsN = Number(data.presets_imported) || 0
             const fresh = await fetch('/style_grid/styles').then((r) => r.json())
             const flat = Object.values(fresh.categories || {}).flat()
             setStyles(flat)
             await fetchPresets()
-            showToast('Import complete', 'success')
+            showToast(`Imported ${stylesN} styles, ${presetsN} presets`, 'success')
           } catch {
             showToast('Import failed', 'error')
           }

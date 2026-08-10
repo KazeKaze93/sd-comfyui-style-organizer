@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { sendToHost, type Style } from '../bridge'
 
+/** Avoid toast spam: categories() runs during render while coverage stays low. */
+let categoryOrderCoverageToastShown = false
+
 interface Conflict {
   styleA: string
   styleB: string
@@ -120,7 +123,10 @@ function resolveSourceInList(sources: string[], preferred: string | null): strin
  * Values of `activeCategory` that are sidebar “special” views (not real CSV categories).
  * Matches Favorites / Recent; use the same checks in grid layout as those.
  */
-export type ActiveSpecialView = '★ Favorites' | '🕑 Recent' | 'presets'
+export const FAVORITES_VIEW = '★ Favorites' as const
+export const RECENT_VIEW = '🕑 Recent' as const
+export const RECENT_CAP = 10
+export type ActiveSpecialView = typeof FAVORITES_VIEW | typeof RECENT_VIEW | 'presets'
 
 /** Central UI state for style filtering, selection, and host-side actions. */
 interface StylesStore {
@@ -149,8 +155,10 @@ interface StylesStore {
   usageCounts: Record<string, number>
   /** User-defined category order for All Sources view. */
   categoryOrder: string[]
-  /** Saved style presets from backend (`/style_grid/presets` / list API). */
+  /** Saved style presets from backend (`/style_grid/presets/list`). */
   presets: Record<string, { styles: string[]; created: string }>
+  /** Last preset loaded via StyleCard click; drives toggle-unload for partial sets. */
+  activePresetName: string | null
   
   // Actions
   setStyles: (styles: Style[]) => void
@@ -171,15 +179,58 @@ interface StylesStore {
   showToast: (message: string, variant?: 'success' | 'error' | 'info') => void
   detectConflicts: () => void
   loadUsage: () => Promise<void>
+  loadCategoryOrder: () => Promise<void>
+  loadThumbnails: () => Promise<void>
   incrementUsage: (name: string) => void
   setCategoryOrder: (order: string[]) => void
   toggleFavorite: (name: string) => void
+  clearFavorites: () => void
   isFavorite: (name: string) => boolean
   addToRecent: (name: string) => void
+  clearRecent: () => void
   fetchPresets: () => Promise<void>
+  savePreset: (
+    name: string,
+    styles: string[],
+  ) => Promise<{ ok: true } | { ok: false; error?: string }>
+  deletePreset: (
+    name: string,
+  ) => Promise<{ ok: true } | { ok: false; error?: string }>
+  /** POST /style_grid/style/save then refetch catalog into styles[]. */
+  saveStyle: (payload: {
+    name: string
+    prompt: string
+    negative_prompt: string
+    description: string
+    category: string
+    source?: string | null
+  }) => Promise<
+    | { ok: true; styles: Style[] }
+    | { ok: false; error?: string }
+  >
+  /** Drop one catalog row by (name, source_file); prune name-keyed refs if no siblings remain. */
+  removeStyleRow: (style: Pick<Style, 'name' | 'source_file'>) => void
   
   // Derived
   categories: () => string[]
+}
+
+/**
+ * Favorites grid pool: name-keyed Set ∩ current source/search (+ All-Sources
+ * name dedupe). Same list the Favorites view renders — use for badge counts too.
+ */
+export function filterFavoriteStyles(
+  styles: Style[],
+  search: string,
+  activeSource: string | null,
+  favorites: Set<string>,
+): Style[] {
+  const bySource = (s: Style) => !activeSource || s.source_file === activeSource
+  let favStyles = styles.filter(
+    (s) => favorites.has(s.name) && bySource(s) && matchesSearch(s, search),
+  )
+  if (!activeSource) favStyles = dedupeStylesByNameForAllSources(favStyles)
+  return favStyles
 }
 
 export function selectFilteredStyles(
@@ -193,13 +244,13 @@ export function selectFilteredStyles(
 ): Style[] {
   const bySource = (s: Style) => !activeSource || s.source_file === activeSource
 
-  if (activeCategory === '★ Favorites') {
-    let favStyles = styles.filter(s => favorites.has(s.name) && bySource(s) && matchesSearch(s, search))
-    if (!activeSource) favStyles = dedupeStylesByNameForAllSources(favStyles)
-    return favStyles
+  if (activeCategory === FAVORITES_VIEW) {
+    return filterFavoriteStyles(styles, search, activeSource, favorites)
   }
 
-  if (activeCategory === '🕑 Recent') {
+  // Name-only identity (same as Favorites/Presets/selection): first styles.find wins;
+  // re-apply from Recent with cross-CSV dupes may not hit the originally applied pack.
+  if (activeCategory === RECENT_VIEW) {
     return recentNames
       .map(name => styles.find(s => s.name === name && bySource(s)))
       .filter(Boolean)
@@ -224,7 +275,7 @@ export function selectFilteredStyles(
   }
 
   let filtered = styles.filter(s => {
-    const matchCat = !activeCategory || s.category === activeCategory
+    const matchCat = !activeCategory || (s.category || 'OTHER') === activeCategory
     return bySource(s) && matchCat && matchesSearch(s, search)
   })
 
@@ -233,6 +284,33 @@ export function selectFilteredStyles(
   }
 
   return filtered
+}
+
+/** Comma-split tokens like server detect_conflicts: trim, lower, skip empty/{prompt}. */
+function conflictTokenSet(str: string): Set<string> {
+  const out = new Set<string>()
+  for (const part of (str || '').split(',')) {
+    const t = part.trim().toLowerCase()
+    if (t && t !== '{prompt}') out.add(t)
+  }
+  return out
+}
+
+function tokenSetsIntersect(a: Set<string>, b: Set<string>): boolean {
+  for (const t of a) {
+    if (b.has(t)) return true
+  }
+  return false
+}
+
+/** Prefer live catalog prompt/neg; fall back to the selection snapshot if missing. */
+function resolveSelectedForConflicts(selected: Style, live: Style[]): Style {
+  const bySource = live.find(
+    s => s.name === selected.name && s.source_file === selected.source_file
+  )
+  if (bySource) return bySource
+  const byName = live.find(s => s.name === selected.name)
+  return byName ?? selected
 }
 
 export const useStylesStore = create<StylesStore>((set, get) => ({
@@ -245,22 +323,42 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   selectedStyles: [],
   conflicts: [],
   usageCounts: {},
-  categoryOrder: JSON.parse(
-    localStorage.getItem('sg_v2_category_order') || '[]'
-  ) as string[],
+  categoryOrder: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sg_v2_category_order') || '[]')
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch {
+      return []
+    }
+  })(),
   collapsedCategories: new Set(),
   compactMode: false,
-  favorites: new Set(
-    JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
-  ),
-  recentNames: JSON.parse(
-    localStorage.getItem('sg_v2_recent') || '[]'
-  ),
+  favorites: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
+      return new Set(Array.isArray(parsed) ? (parsed as string[]) : [])
+    } catch {
+      return new Set<string>()
+    }
+  })(),
+  recentNames: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sg_v2_recent') || '[]')
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch {
+      return []
+    }
+  })(),
   presets: {},
+  activePresetName: null,
 
   setStyles: (styles) => {
+    const normalized = styles.map((s) => ({
+      ...s,
+      has_thumbnail: Boolean(s.has_thumbnail),
+    }))
     const sources = [...new Set(
-      styles.map(s => s.source_file).filter(Boolean)
+      normalized.map(s => s.source_file).filter(Boolean)
     )].sort()
 
     // Restore selection: exact match can fail when host path strings differ from LS (basename must match)
@@ -270,11 +368,26 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       resolveSourceInList(sources, prevActive) ??
       resolveSourceInList(sources, lastSource)
 
-    set({ styles, sources, activeSource })
+    // Drop favorite names that no longer exist in the loaded catalog.
+    const names = new Set(normalized.map(s => s.name))
+    const prevFavs = get().favorites
+    let favorites = prevFavs
+    if ([...prevFavs].some(n => !names.has(n))) {
+      favorites = new Set([...prevFavs].filter(n => names.has(n)))
+      localStorage.setItem('sg_v2_favorites', JSON.stringify([...favorites]))
+    }
+
+    const patch: Partial<StylesStore> = { styles: normalized, sources, activeSource, favorites }
+    if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
+      patch.activeCategory = null
+    }
+    set(patch)
     if (activeSource) {
       localStorage.setItem('sg_v2_last_source', activeSource)
       sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
     }
+    // List endpoint returns names only (not name+source); merge flags after catalog lands.
+    void get().loadThumbnails()
   },
   setSearch: (search) => set({ search }),
   setCategory: (activeCategory) => set({ activeCategory }),
@@ -299,16 +412,22 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const src = activeSource
       ? styles.filter(s => s.source_file === activeSource)
       : styles
-    const cats = [...new Set(src.map(s => s.category).filter(Boolean))]
+    const cats = [...new Set(src.map(s => s.category || 'OTHER'))]
     set({ collapsedCategories: new Set(cats) })
   },
   expandAll: () => set({ collapsedCategories: new Set() }),
   selectAllInCategory: (cat) => {
-    const { styles, activeSource, selectedStyles } = get()
-    const src = activeSource
-      ? styles.filter(s => s.source_file === activeSource)
-      : styles
-    const catStyles = src.filter(s => s.category === cat)
+    const {
+      styles, search, activeCategory, activeSource,
+      selectedStyles, favorites, recentNames, presets,
+    } = get()
+    // Same pool as StyleGrid (search/source/special views + All-Sources dedupe).
+    const visible = selectFilteredStyles(
+      styles, search, activeCategory, activeSource, favorites, recentNames, presets,
+    )
+    const catStyles = visible.filter(s => (s.category || 'OTHER') === cat)
+    if (catStyles.length === 0) return
+
     const allSelected = catStyles.every(s =>
       selectedStyles.some(sel => sel.name === s.name)
     )
@@ -331,7 +450,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     set({ selectedStyles: [...selectedStyles, ...toAdd] })
     toAdd.forEach((style) => {
-      get().addToRecent(style.name)
+      // Bulk: bump usage.last_used, but not client Recent MRU (intentional; see Recent P1/P2).
+      get().incrementUsage(style.name)
       sendToHost({
         type: 'SG_APPLY',
         styleId: style.name,
@@ -339,20 +459,43 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         neg: style.negative_prompt,
       })
     })
+    get().detectConflicts()
   },
+  // Name-only key (same as Recent/Presets/selection): ★ one name ★ all CSV rows with that name.
   toggleFavorite: (name) => {
     const favs = new Set(get().favorites)
     if (favs.has(name)) favs.delete(name)
     else favs.add(name)
     localStorage.setItem('sg_v2_favorites', JSON.stringify([...favs]))
-    set({ favorites: favs })
+    // Leave Favorites view when the list is empty (sidebar row hides at count 0).
+    if (favs.size === 0 && get().activeCategory === FAVORITES_VIEW) {
+      set({ favorites: favs, activeCategory: null })
+    } else {
+      set({ favorites: favs })
+    }
+  },
+  clearFavorites: () => {
+    localStorage.setItem('sg_v2_favorites', '[]')
+    if (get().activeCategory === FAVORITES_VIEW) {
+      set({ favorites: new Set(), activeCategory: null })
+    } else {
+      set({ favorites: new Set() })
+    }
   },
   isFavorite: (name) => get().favorites.has(name),
   addToRecent: (name) => {
     const recent = [name, ...get().recentNames.filter(n => n !== name)]
-      .slice(0, 10)
+      .slice(0, RECENT_CAP)
     localStorage.setItem('sg_v2_recent', JSON.stringify(recent))
     set({ recentNames: recent })
+  },
+  clearRecent: () => {
+    localStorage.setItem('sg_v2_recent', '[]')
+    if (get().activeCategory === RECENT_VIEW) {
+      set({ recentNames: [], activeCategory: null })
+    } else {
+      set({ recentNames: [] })
+    }
   },
 
   toggleStyle: (style) => {
@@ -382,7 +525,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     selectedStyles.forEach(s =>
       sendToHost({ type: 'SG_UNAPPLY', styleId: s.name })
     )
-    set({ selectedStyles: [], conflicts: [] })
+    set({ selectedStyles: [], conflicts: [], activePresetName: null })
   },
   activeWildcards: [],
   setActiveWildcards: (categories) => set({ activeWildcards: categories }),
@@ -398,33 +541,33 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })), 3000)
   },
   detectConflicts: () => {
-    // Conflict heuristic: compare normalized prompt tags against each
-    // other style's negative tags; any overlap is treated as a conflict.
-    const { selectedStyles } = get()
+    // Mirror server detect_conflicts: exact token-set intersection, not substring.
+    // Resolve prompt/neg from the live catalog so edits/refreshes aren't missed.
+    const { selectedStyles, styles } = get()
     const conflicts: Conflict[] = []
 
     for (let i = 0; i < selectedStyles.length; i++) {
       for (let j = i + 1; j < selectedStyles.length; j++) {
-        const a = selectedStyles[i]
-        const b = selectedStyles[j]
+        const a = resolveSelectedForConflicts(selectedStyles[i], styles)
+        const b = resolveSelectedForConflicts(selectedStyles[j], styles)
 
-        // Check if style A's negative prompt contains tags from B's prompt
-        const aTags = a.prompt.toLowerCase().split(',').map(t => t.trim())
-        const bTags = b.prompt.toLowerCase().split(',').map(t => t.trim())
-        const aNeg = (a.negative_prompt || '').toLowerCase().split(',').map(t => t.trim())
-        const bNeg = (b.negative_prompt || '').toLowerCase().split(',').map(t => t.trim())
+        const aPos = conflictTokenSet(a.prompt)
+        const bPos = conflictTokenSet(b.prompt)
+        const aNeg = conflictTokenSet(a.negative_prompt || '')
+        const bNeg = conflictTokenSet(b.negative_prompt || '')
 
-        const aKillsB = bTags.some(tag => tag && aNeg.some(n => n && n.includes(tag)))
-        const bKillsA = aTags.some(tag => tag && bNeg.some(n => n && n.includes(tag)))
-
-        if (aKillsB) conflicts.push({
-          styleA: a.name, styleB: b.name,
-          reason: `${a.name} negates tags from ${b.name}`
-        })
-        if (bKillsA) conflicts.push({
-          styleA: b.name, styleB: a.name,
-          reason: `${b.name} negates tags from ${a.name}`
-        })
+        if (tokenSetsIntersect(bPos, aNeg)) {
+          conflicts.push({
+            styleA: a.name, styleB: b.name,
+            reason: `${a.name} negates tags from ${b.name}`
+          })
+        }
+        if (tokenSetsIntersect(aPos, bNeg)) {
+          conflicts.push({
+            styleA: b.name, styleB: a.name,
+            reason: `${b.name} negates tags from ${a.name}`
+          })
+        }
       }
     }
     set({ conflicts })
@@ -446,6 +589,43 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       // ignore usage load errors
     }
   },
+  loadThumbnails: async () => {
+    try {
+      const r = await fetch('/style_grid/thumbnails/list')
+      if (!r.ok) return
+      const data = await r.json().catch(() => null)
+      const raw = data && typeof data === 'object' ? (data as { has_thumbnail?: unknown }).has_thumbnail : null
+      const withThumb = new Set(
+        Array.isArray(raw)
+          ? raw.filter((n): n is string => typeof n === 'string')
+          : [],
+      )
+      set((s) => ({
+        styles: s.styles.map((st) => ({
+          ...st,
+          has_thumbnail: withThumb.has(st.name),
+        })),
+      }))
+    } catch {
+      // ignore thumbnail list errors — leave prior flags
+    }
+  },
+  loadCategoryOrder: async () => {
+    // Prefer server; keep LS init on empty/error (migration + offline).
+    try {
+      const r = await fetch('/style_grid/category_order')
+      if (!r.ok) return
+      const data = await r.json()
+      if (!Array.isArray(data) || data.length === 0) return
+      const order = data.filter((x): x is string => typeof x === 'string')
+      if (order.length === 0) return
+      localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
+      localStorage.setItem('sg_v2_category_order_source', 'all')
+      set({ categoryOrder: order })
+    } catch {
+      // keep localStorage-initialized order
+    }
+  },
   incrementUsage: (name: string) => {
     const counts = { ...get().usageCounts }
     counts[name] = (counts[name] || 0) + 1
@@ -463,29 +643,144 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         ? raw as Record<string, { styles: string[]; created: string }>
         : {}
     try {
-      let r = await fetch('/style_grid/presets/list')
-      if (!r.ok) {
-        r = await fetch('/style_grid/presets')
-      }
+      const r = await fetch('/style_grid/presets/list')
       if (!r.ok) return
       const data = parse(await r.json())
       set({ presets: data })
     } catch {
-      try {
-        const r = await fetch('/style_grid/presets')
-        if (!r.ok) return
-        const data = parse(await r.json())
-        set({ presets: data })
-      } catch {
-        // ignore
-      }
+      // ignore
     }
   },
+  savePreset: async (name, styles) => {
+    try {
+      const res = await fetch('/style_grid/presets/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, styles }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      if (data.presets) {
+        set({ presets: data.presets })
+      } else {
+        await get().fetchPresets()
+      }
+      return { ok: true as const }
+    } catch {
+      return { ok: false as const }
+    }
+  },
+  deletePreset: async (name) => {
+    try {
+      const res = await fetch('/style_grid/presets/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      if (data.presets) {
+        set({
+          presets: data.presets,
+          ...(get().activePresetName === name ? { activePresetName: null } : {}),
+        })
+      } else {
+        if (get().activePresetName === name) {
+          set({ activePresetName: null })
+        }
+        await get().fetchPresets()
+      }
+      return { ok: true as const }
+    } catch {
+      return { ok: false as const }
+    }
+  },
+  saveStyle: async (payload) => {
+    try {
+      const res = await fetch('/style_grid/style/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: payload.name,
+          prompt: payload.prompt,
+          negative_prompt: payload.negative_prompt,
+          description: payload.description,
+          category: payload.category,
+          source: payload.source,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+      const flat = Object.values(fresh.categories || {}).flat() as Style[]
+      get().setStyles(flat)
+      return { ok: true as const, styles: flat }
+    } catch {
+      return { ok: false as const }
+    }
+  },
+  removeStyleRow: ({ name, source_file }) => {
+    const styles = get().styles.filter(
+      (s) => !(s.name === name && s.source_file === source_file),
+    )
+    const selectedStyles = get().selectedStyles.filter(
+      (s) => !(s.name === name && s.source_file === source_file),
+    )
+    const patch: Partial<StylesStore> = { styles, selectedStyles }
+
+    // favorites / recent / usage are name-keyed — only drop the name when no
+    // sibling CSV row still carries it. presets.json orphans stay server-side;
+    // load already skips missing names.
+    if (!styles.some((s) => s.name === name)) {
+      const favorites = new Set(get().favorites)
+      if (favorites.delete(name)) {
+        localStorage.setItem('sg_v2_favorites', JSON.stringify([...favorites]))
+        patch.favorites = favorites
+        if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
+          patch.activeCategory = null
+        }
+      }
+
+      const recentNames = get().recentNames.filter((n) => n !== name)
+      if (recentNames.length !== get().recentNames.length) {
+        localStorage.setItem('sg_v2_recent', JSON.stringify(recentNames))
+        patch.recentNames = recentNames
+        if (recentNames.length === 0 && get().activeCategory === RECENT_VIEW) {
+          patch.activeCategory = null
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(get().usageCounts, name)) {
+        const usageCounts = { ...get().usageCounts }
+        delete usageCounts[name]
+        patch.usageCounts = usageCounts
+      }
+    }
+
+    set(patch)
+  },
   setCategoryOrder: (order: string[]) => {
+    // Only All Sources owns the persisted order. Under a CSV filter, categories()
+    // is alphabetical anyway — skip so we don't poison the global All order.
+    if (get().activeSource) return
     localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
     localStorage.setItem('sg_v2_category_order_source', 'all')
     set({ categoryOrder: order })
-    // Sync to backend same as old panel
     fetch('/style_grid/category_order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -499,7 +794,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       ? styles.filter(s => s.source_file === activeSource)
       : styles
     const all = [...new Set(
-      filtered.map(s => s.category).filter(Boolean)
+      filtered.map(s => s.category || 'OTHER')
     )]
 
     // When specific source selected — always alphabetical
@@ -522,7 +817,17 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const coverage = relevantOrder.length / all.length
 
     // If saved order covers less than 80% of current categories — ignore it
-    if (coverage < 0.8) return allSorted
+    if (coverage < 0.8) {
+      if (!categoryOrderCoverageToastShown) {
+        categoryOrderCoverageToastShown = true
+        // categories() is called during render — defer store writes
+        queueMicrotask(() => {
+          get().showToast('Category order reset — new categories detected', 'info')
+        })
+      }
+      return allSorted
+    }
+    categoryOrderCoverageToastShown = false
 
     const rest = all.filter(c => !relevantOrder.includes(c)).sort()
     return [...relevantOrder, ...rest]

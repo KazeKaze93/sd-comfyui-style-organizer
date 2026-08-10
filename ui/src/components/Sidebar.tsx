@@ -1,15 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Reorder } from 'framer-motion'
 import { BookMarked } from 'lucide-react'
-import { onHostMessage, sendToHost } from '../bridge'
-import { getCategoryColor, useStylesStore } from '../store/stylesStore'
+import {
+  FAVORITES_VIEW,
+  RECENT_VIEW,
+  filterFavoriteStyles,
+  getCategoryColor,
+  selectFilteredStyles,
+  useStylesStore,
+} from '../store/stylesStore'
 import { useShallow } from 'zustand/react/shallow'
+import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 
 export function Sidebar() {
   const {
     activeCategory, setCategory, categories, favorites, recentNames,
-    setCategoryOrder, presets,
+    setCategoryOrder, presets, styles, activeSource, search,
+    clearFavorites, clearRecent,
   } = useStylesStore(
     useShallow(s => ({
       activeCategory: s.activeCategory,
@@ -19,6 +27,13 @@ export function Sidebar() {
       recentNames: s.recentNames,
       setCategoryOrder: s.setCategoryOrder,
       presets: s.presets,
+      clearFavorites: s.clearFavorites,
+      clearRecent: s.clearRecent,
+      // categories() deps — subscribe so list/order refresh without App re-renders
+      styles: s.styles,
+      activeSource: s.activeSource,
+      categoryOrder: s.categoryOrder,
+      search: s.search,
     }))
   )
   const [catMenu, setCatMenu] = useState<{
@@ -26,20 +41,29 @@ export function Sidebar() {
     y: number
     cat: string
   } | null>(null)
-  const cats = categories()
+  const [favMenu, setFavMenu] = useState<{ x: number; y: number } | null>(null)
+  const [recentMenu, setRecentMenu] = useState<{ x: number; y: number } | null>(null)
+  // Local order while dragging; persist only on Reorder.Item onDragEnd.
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null)
+  const dragOrderRef = useRef<string[] | null>(null)
+  const cats = dragOrder ?? categories()
   const specialCategories = [
-    { id: '★ Favorites', label: '★ Favorites', count: favorites.size },
-    { id: '🕑 Recent', label: '🕑 Recent', count: recentNames.length },
+    {
+      id: FAVORITES_VIEW,
+      label: FAVORITES_VIEW,
+      count: filterFavoriteStyles(styles, search, activeSource, favorites).length,
+    },
+    {
+      id: RECENT_VIEW,
+      label: RECENT_VIEW,
+      count: selectFilteredStyles(
+        styles, search, RECENT_VIEW, activeSource, favorites, recentNames, presets,
+      ).length,
+    },
   ]
 
   useEffect(() => {
     void useStylesStore.getState().fetchPresets()
-    const unsub = onHostMessage((msg) => {
-      if (msg.type === 'SG_PRESETS_UPDATED') {
-        void useStylesStore.getState().fetchPresets()
-      }
-    })
-    return unsub
   }, [])
 
   const count = (cat: string | null) => {
@@ -48,8 +72,15 @@ export function Sidebar() {
       ? styles.filter(s => s.source_file === activeSource)
       : styles
     return cat
-      ? src.filter(s => s.category === cat).length
+      ? src.filter(s => (s.category || 'OTHER') === cat).length
       : src.length
+  }
+
+  const commitDragOrder = () => {
+    const next = dragOrderRef.current
+    dragOrderRef.current = null
+    setDragOrder(null)
+    if (next) setCategoryOrder(next)
   }
 
   return (
@@ -81,10 +112,24 @@ export function Sidebar() {
           key={id}
           type="button"
           onClick={() => setCategory(activeCategory === id ? null : id)}
+          onContextMenu={
+            id === FAVORITES_VIEW ? (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setFavMenu({ x: e.clientX, y: e.clientY })
+            }
+            : id === RECENT_VIEW ? (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setRecentMenu({ x: e.clientX, y: e.clientY })
+            }
+            : undefined
+          }
           className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors
       ${activeCategory === id
         ? 'bg-sg-accent text-white'
-        : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
+        : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
+      ${id === FAVORITES_VIEW || id === RECENT_VIEW ? 'cursor-context-menu' : ''}`}
         >
           {label}
           <span className="ml-auto float-right text-xs opacity-60">{count}</span>
@@ -117,7 +162,10 @@ export function Sidebar() {
       <Reorder.Group
         axis="y"
         values={cats}
-        onReorder={(newOrder) => setCategoryOrder(newOrder)}
+        onReorder={(newOrder) => {
+          dragOrderRef.current = newOrder
+          setDragOrder(newOrder)
+        }}
         as="div"
         className="flex flex-col gap-1"
       >
@@ -130,10 +178,10 @@ export function Sidebar() {
               as="div"
               whileDrag={{ scale: 1.02, opacity: 0.9 }}
               className="cursor-grab active:cursor-grabbing"
+              onDragEnd={commitDragOrder}
             >
               <button
                 type="button"
-                onPointerDown={e => e.stopPropagation()}
                 onClick={() => setCategory(activeCategory === cat ? null : cat)}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -164,27 +212,53 @@ export function Sidebar() {
           )
         })}
       </Reorder.Group>
-      {catMenu && (
+      {favMenu && (
         <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setCatMenu(null)} />
+          <div className="fixed inset-0 z-[9998]" onClick={() => setFavMenu(null)} />
           <div
             className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
-            style={{ left: catMenu.x, top: catMenu.y }}
+            style={{ left: favMenu.x, top: favMenu.y }}
           >
             <button
+              type="button"
               className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
               onClick={() => {
-                sendToHost({
-                  type: 'SG_WILDCARD_CATEGORY',
-                  category: catMenu.cat
-                })
-                setCatMenu(null)
+                clearFavorites()
+                setFavMenu(null)
               }}
             >
-              🎲 Add category as wildcard
+              Clear Favorites
             </button>
           </div>
         </>
+      )}
+      {recentMenu && (
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setRecentMenu(null)} />
+          <div
+            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
+            style={{ left: recentMenu.x, top: recentMenu.y }}
+          >
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+              onClick={() => {
+                clearRecent()
+                setRecentMenu(null)
+              }}
+            >
+              Clear Recent
+            </button>
+          </div>
+        </>
+      )}
+      {catMenu && (
+        <WildcardCategoryMenu
+          category={catMenu.cat}
+          x={catMenu.x}
+          y={catMenu.y}
+          onClose={() => setCatMenu(null)}
+        />
       )}
     </div>
   )

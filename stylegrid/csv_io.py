@@ -4,7 +4,7 @@ import csv
 import os
 
 from .cache import invalidate_styles_cache
-from .config import DATA_DIR, SAMPLES_DIR, get_all_styles_file_paths, logger
+from .config import DATA_DIR, IMPORTS_DIR, SAMPLES_DIR, get_all_styles_file_paths, logger
 
 FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
 
@@ -127,8 +127,8 @@ def categorize_styles(styles):
 
 
 def _resolve_write_target(source_file):
-    """Resolve a CSV path for writes. Only matches files under DATA_DIR — samples/ is
-    never a write target, even if a same-named file exists there.
+    """Resolve a CSV path for writes. Matches files under DATA_DIR or IMPORTS_DIR —
+    samples/ is never a write target, even if a same-named file exists there.
     """
     if source_file:
         source_file = os.path.basename(source_file)
@@ -137,7 +137,7 @@ def _resolve_write_target(source_file):
     if not source_file:
         source_file = "styles.csv"
     for fp in get_all_styles_file_paths():
-        if os.path.dirname(fp) == DATA_DIR and os.path.basename(fp) == source_file:
+        if os.path.dirname(fp) in (DATA_DIR, IMPORTS_DIR) and os.path.basename(fp) == source_file:
             return fp
     return os.path.join(DATA_DIR, source_file)
 
@@ -165,29 +165,46 @@ def save_style_to_csv(name, prompt, negative_prompt, description="", source_file
         else:
             cat_cell = str(category).strip()
             cat_cell = _sanitize_csv_cell(cat_cell) if cat_cell else ""
-        return [name, prompt, negative_prompt, _sanitize_csv_cell(description), cat_cell]
+        # All five cells: spreadsheet apps treat leading =+-@\t\r as formulas.
+        # SD/ComfyUI weight syntax uses (tag:1.2) / [tag] / trailing +/- — not a
+        # leading =+-@ on the whole cell — so prompt/neg are safe to escape.
+        return [
+            _sanitize_csv_cell(name),
+            _sanitize_csv_cell(prompt),
+            _sanitize_csv_cell(negative_prompt),
+            _sanitize_csv_cell(description),
+            cat_cell,
+        ]
 
+    # Match the on-disk name cell (already-sanitized rows from a prior save).
+    name_cell = _sanitize_csv_cell(name)
     found = False
     for i, row in enumerate(rows):
-        if row and row[0].strip() == name:
+        if row and row[0].strip() == name_cell:
             rows[i] = make_row(rows[i])
             found = True
             break
     if not found:
         rows.append(make_row())
 
-    with open(target_path, "w", encoding="utf-8-sig", newline="") as f:
+    directory = os.path.dirname(target_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = target_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(header)
         for row in rows:
             writer.writerow(row)
+    os.replace(tmp, target_path)
     invalidate_styles_cache()
     return True
 
 
 def delete_style_from_csv(name, source_file=None):
-    """Delete a style row by name from a data/ CSV. Returns False if the style is not
-    found under data/ (including when it only exists in the read-only samples/ pack).
+    """Delete a style row by name from a data/ or imports/ CSV. Returns False if the
+    style is not found there (including when it only exists in the read-only samples/
+    pack).
     """
     if not source_file:
         for s in load_all_styles():
@@ -201,21 +218,27 @@ def delete_style_from_csv(name, source_file=None):
         source_file += ".csv"
     target_path = None
     for fp in get_all_styles_file_paths():
-        if os.path.dirname(fp) == DATA_DIR and os.path.basename(fp) == source_file:
+        if os.path.dirname(fp) in (DATA_DIR, IMPORTS_DIR) and os.path.basename(fp) == source_file:
             target_path = fp
             break
     if not target_path:
         return False
     rows = []
     header = None
+    removed = False
     with open(target_path, "r", encoding="utf-8-sig") as f:
         reader = csv.reader(f)
         for row in reader:
             if header is None and row and row[0].strip().lower() == "name":
                 header = row
                 continue
-            if row and row[0].strip() != name:
+            if row and row[0].strip() == name:
+                removed = True
+                continue
+            if row:
                 rows.append(row)
+    if not removed:
+        return False
     with open(target_path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()

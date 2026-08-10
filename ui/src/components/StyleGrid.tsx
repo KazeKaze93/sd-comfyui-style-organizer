@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
-import { sendToHost, type Style } from '../bridge'
+import { type Style } from '../bridge'
 import {
   getCategoryColor,
   selectFilteredStyles,
@@ -9,6 +9,7 @@ import {
   useStylesStore,
 } from '../store/stylesStore'
 import { StyleCard } from './StyleCard'
+import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 
 export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   const {
@@ -16,6 +17,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     favorites, recentNames, presets,
     compactMode, collapsedCategories, toggleCollapse,
     selectedStyles, selectAllInCategory,
+    categories,
   } = useStylesStore(
     useShallow(s => ({
       styles: s.styles,
@@ -30,6 +32,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       toggleCollapse: s.toggleCollapse,
       selectedStyles: s.selectedStyles,
       selectAllInCategory: s.selectAllInCategory,
+      categories: s.categories,
+      // subscribe so sidebar reorder re-renders group order
+      categoryOrder: s.categoryOrder,
     }))
   )
   const [catMenu, setCatMenu] = useState<{
@@ -45,15 +50,27 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   )
 
   if (activeCategory === 'presets') {
-    const presetNames = Object.keys(presets).sort((a, b) => a.localeCompare(b))
-    if (presetNames.length === 0) {
+    const q = search.toLowerCase()
+    const presetNames = Object.keys(presets)
+      .filter((name) => name.toLowerCase().includes(q))
+      .sort((a, b) => a.localeCompare(b))
+    if (Object.keys(presets).length === 0) {
       return (
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
           <p className="text-sg-muted text-sm">No presets saved yet</p>
           <p className="max-w-sm text-sg-muted/70 text-xs leading-relaxed">
-            Open the toolbar <span className="text-sg-text/90">Presets</span> control, then use{' '}
-            <span className="text-sg-text/90">Save current</span> in the Style Presets dialog.
+            Select styles, then use the toolbar{' '}
+            <span className="text-sg-text/90">Save preset</span> button.
+            Click a card to load; use ✕ on a card to delete.
           </p>
+        </div>
+      )
+    }
+    if (presetNames.length === 0) {
+      return (
+        <div className="flex items-center justify-center h-32 
+                        text-sg-muted text-sm">
+          No styles found
         </div>
       )
     }
@@ -70,6 +87,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
         }`}
       >
         {presetNames.map((name) => {
+          // Deliberate StyleCard reuse (layout/styling); not a type-hack — dedicated PresetCard deferred.
           const style: Style = {
             name,
             prompt: '',
@@ -102,10 +120,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     )
   }
 
-  // If specific category selected - flat grid, no headers
-  if (activeCategory &&
-      activeCategory !== '★ Favorites' &&
-      activeCategory !== '🕑 Recent') {
+  // Specific category / Favorites / Recent — flat grid, no section headers.
+  // (presets already returned above; All/null falls through to grouped view)
+  if (activeCategory) {
     return (
       <div className={`grid content-start ${
         compactMode
@@ -131,9 +148,17 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     return acc
   }, {} as Record<string, typeof filtered>)
 
-  const sortedGroups = Object.entries(groups).sort(([a], [b]) =>
-    a.localeCompare(b)
-  )
+  // Same order as Sidebar via store.categories(); leftover keys (e.g. OTHER) append sorted.
+  const catOrder = categories()
+  const sortedGroups: [string, typeof filtered][] = [
+    ...catOrder
+      .filter(cat => groups[cat])
+      .map(cat => [cat, groups[cat]] as [string, typeof filtered]),
+    ...Object.keys(groups)
+      .filter(cat => !catOrder.includes(cat))
+      .sort()
+      .map(cat => [cat, groups[cat]] as [string, typeof filtered]),
+  ]
 
   return (
     <div className="space-y-4">
@@ -175,7 +200,10 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
               </span>
               <div className="flex-1" />
               <button
-                onClick={() => selectAllInCategory(cat)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  selectAllInCategory(cat)
+                }}
                 className="text-xs text-sg-muted hover:text-sg-accent 
                            transition-colors px-2 py-0.5 rounded
                            hover:bg-sg-accent/10"
@@ -214,29 +242,12 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
         )
       })}
       {catMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-[9998]"
-            onClick={() => setCatMenu(null)}
-          />
-          <div
-            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
-            style={{ left: catMenu.x, top: catMenu.y }}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                sendToHost({
-                  type: 'SG_WILDCARD_CATEGORY',
-                  category: catMenu.cat
-                })
-                setCatMenu(null)
-              }}
-            >
-              🎲 Add category as wildcard
-            </button>
-          </div>
-        </>
+        <WildcardCategoryMenu
+          category={catMenu.cat}
+          x={catMenu.x}
+          y={catMenu.y}
+          onClose={() => setCatMenu(null)}
+        />
       )}
     </div>
   )
