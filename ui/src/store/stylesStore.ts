@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { sendToHost, type Style, type Tab } from '../bridge'
+import { sendToHost, type Style } from '../bridge'
 
 interface Conflict {
   styleA: string
@@ -127,7 +127,6 @@ interface StylesStore {
   toasts: { id: number; message: string; variant: 'success' | 'error' | 'info' }[]
   // Data
   styles: Style[]
-  tab: Tab
   
   // Filters
   search: string
@@ -154,7 +153,7 @@ interface StylesStore {
   presets: Record<string, { styles: string[]; created: string }>
   
   // Actions
-  setStyles: (styles: Style[], tab: Tab) => void
+  setStyles: (styles: Style[]) => void
   setSearch: (q: string) => void
   setCategory: (cat: string | null) => void
   setActiveSource: (src: string | null) => void
@@ -239,7 +238,6 @@ export function selectFilteredStyles(
 export const useStylesStore = create<StylesStore>((set, get) => ({
   toasts: [],
   styles: [],
-  tab: 'txt2img',
   search: '',
   activeCategory: null,
   activeSource: null,
@@ -260,7 +258,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   ),
   presets: {},
 
-  setStyles: (styles, tab) => {
+  setStyles: (styles) => {
     const sources = [...new Set(
       styles.map(s => s.source_file).filter(Boolean)
     )].sort()
@@ -272,7 +270,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       resolveSourceInList(sources, prevActive) ??
       resolveSourceInList(sources, lastSource)
 
-    set({ styles, tab, sources, activeSource })
+    set({ styles, sources, activeSource })
     if (activeSource) {
       localStorage.setItem('sg_v2_last_source', activeSource)
       sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
