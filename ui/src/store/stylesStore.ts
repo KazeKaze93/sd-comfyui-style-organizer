@@ -235,6 +235,23 @@ export function selectFilteredStyles(
   return filtered
 }
 
+/** Comma-split tokens like server detect_conflicts: trim, lower, skip empty/{prompt}. */
+function conflictTokenSet(str: string): Set<string> {
+  const out = new Set<string>()
+  for (const part of (str || '').split(',')) {
+    const t = part.trim().toLowerCase()
+    if (t && t !== '{prompt}') out.add(t)
+  }
+  return out
+}
+
+function tokenSetsIntersect(a: Set<string>, b: Set<string>): boolean {
+  for (const t of a) {
+    if (b.has(t)) return true
+  }
+  return false
+}
+
 export const useStylesStore = create<StylesStore>((set, get) => ({
   toasts: [],
   styles: [],
@@ -401,8 +418,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })), 3000)
   },
   detectConflicts: () => {
-    // Conflict heuristic: compare normalized prompt tags against each
-    // other style's negative tags; any overlap is treated as a conflict.
+    // Mirror server detect_conflicts: exact token-set intersection, not substring.
     const { selectedStyles } = get()
     const conflicts: Conflict[] = []
 
@@ -411,23 +427,23 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         const a = selectedStyles[i]
         const b = selectedStyles[j]
 
-        // Check if style A's negative prompt contains tags from B's prompt
-        const aTags = a.prompt.toLowerCase().split(',').map(t => t.trim())
-        const bTags = b.prompt.toLowerCase().split(',').map(t => t.trim())
-        const aNeg = (a.negative_prompt || '').toLowerCase().split(',').map(t => t.trim())
-        const bNeg = (b.negative_prompt || '').toLowerCase().split(',').map(t => t.trim())
+        const aPos = conflictTokenSet(a.prompt)
+        const bPos = conflictTokenSet(b.prompt)
+        const aNeg = conflictTokenSet(a.negative_prompt || '')
+        const bNeg = conflictTokenSet(b.negative_prompt || '')
 
-        const aKillsB = bTags.some(tag => tag && aNeg.some(n => n && n.includes(tag)))
-        const bKillsA = aTags.some(tag => tag && bNeg.some(n => n && n.includes(tag)))
-
-        if (aKillsB) conflicts.push({
-          styleA: a.name, styleB: b.name,
-          reason: `${a.name} negates tags from ${b.name}`
-        })
-        if (bKillsA) conflicts.push({
-          styleA: b.name, styleB: a.name,
-          reason: `${b.name} negates tags from ${a.name}`
-        })
+        if (tokenSetsIntersect(bPos, aNeg)) {
+          conflicts.push({
+            styleA: a.name, styleB: b.name,
+            reason: `${a.name} negates tags from ${b.name}`
+          })
+        }
+        if (tokenSetsIntersect(aPos, bNeg)) {
+          conflicts.push({
+            styleA: b.name, styleB: a.name,
+            reason: `${b.name} negates tags from ${a.name}`
+          })
+        }
       }
     }
     set({ conflicts })
