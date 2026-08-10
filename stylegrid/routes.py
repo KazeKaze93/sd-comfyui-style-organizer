@@ -19,9 +19,11 @@ from .cache import (
 )
 from .config import DATA_DIR, IMPORTS_DIR
 from .csv_io import (
+    FIELDNAMES,
     categorize_styles,
     delete_style_from_csv,
     load_all_styles,
+    parse_styles_csv,
     save_style_to_csv,
 )
 from .data_files import (
@@ -132,8 +134,13 @@ def _register_style_routes(routes):
 
     @routes.get("/style_grid/export")
     async def api_export(request):
+        styles = [
+            {k: v for k, v in s.items() if k != "source_file"}
+            for s in load_all_styles()
+            if not s.get("read_only")
+        ]
         return web.json_response({
-            "styles": load_all_styles(),
+            "styles": styles,
             "presets": load_presets(),
             "usage": load_usage(),
             "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -143,45 +150,133 @@ def _register_style_routes(routes):
     async def api_import(request):
         raw = await request.read()
         if not raw:
-            return web.json_response({"ok": True})
+            return web.json_response({"error": "No importable data found in file"})
+        max_import = 50 * 1024 * 1024
+        if len(raw) > max_import:
+            return web.json_response({"error": "Import too large (max 50MB)"})
         if len(raw) >= 2 and raw[:2] == b"PK":
             try:
                 with zipfile.ZipFile(BytesIO(raw)) as zf:
-                    if "presets.json" in zf.namelist():
-                        data = json.loads(zf.read("presets.json").decode("utf-8"))
-                        if isinstance(data, dict):
-                            p = load_presets()
-                            p.update(data)
-                            save_presets(p)
+                    if "presets.json" not in zf.namelist():
+                        return web.json_response(
+                            {"error": "No importable data found in file"}
+                        )
+                    data = json.loads(zf.read("presets.json").decode("utf-8"))
+                    if not isinstance(data, dict) or not data:
+                        return web.json_response(
+                            {"error": "No importable data found in file"}
+                        )
+                    p = load_presets()
+                    p.update(data)
+                    save_presets(p)
+                    return web.json_response({
+                        "ok": True,
+                        "imported": 0,
+                        "skipped": 0,
+                        "presets_imported": len(data),
+                        "presets_skipped": 0,
+                    })
             except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
                 return web.json_response({"error": f"Invalid ZIP archive: {e}"}, status=422)
-            return web.json_response({"ok": True})
         try:
             data = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             return web.json_response({"error": "Invalid JSON"}, status=422)
         if not isinstance(data, dict):
-            return web.json_response({"ok": True})
+            return web.json_response({"error": "No importable data found in file"})
+        presets_imported = 0
+        presets_skipped = 0
         if "presets" in data:
+            incoming = data["presets"]
+            if not isinstance(incoming, dict):
+                return web.json_response({"error": "presets must be an object"})
             p = load_presets()
-            p.update(data["presets"])
-            save_presets(p)
-        if "styles" in data and data["styles"]:
-            os.makedirs(IMPORTS_DIR, exist_ok=True)
-            target = os.path.join(IMPORTS_DIR, f"imported_{time.strftime('%Y%m%d_%H%M%S')}.csv")
-            with open(target, "w", encoding="utf-8", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["name", "prompt", "negative_prompt", "description", "category"])
-                for s in data["styles"]:
-                    w.writerow([
-                        s.get("name", ""),
-                        s.get("prompt", ""),
-                        s.get("negative_prompt", ""),
-                        s.get("description", ""),
-                        s.get("category", "") or s.get("category_explicit", ""),
-                    ])
-            invalidate_styles_cache()
-        return web.json_response({"ok": True})
+            for name, entry in incoming.items():
+                if not isinstance(name, str) or not name.strip():
+                    presets_skipped += 1
+                    continue
+                if not isinstance(entry, dict):
+                    presets_skipped += 1
+                    continue
+                styles = entry.get("styles")
+                if not isinstance(styles, list) or not all(
+                    isinstance(n, str) for n in styles
+                ):
+                    presets_skipped += 1
+                    continue
+                created = entry.get("created")
+                if not isinstance(created, str) or not created:
+                    created = time.strftime("%Y-%m-%dT%H:%M:%S")
+                p[name.strip()] = {"styles": styles, "created": created}
+                presets_imported += 1
+            if presets_imported:
+                save_presets(p)
+        imported = 0
+        skipped = 0
+        duplicate_import = False
+        if "styles" in data:
+            styles = data["styles"]
+            if not isinstance(styles, list):
+                return web.json_response({"error": "styles must be a list"})
+            valid = []
+            for s in styles:
+                if isinstance(s, dict):
+                    valid.append(s)
+                else:
+                    skipped += 1
+            if valid:
+                incoming_names = frozenset(
+                    (s.get("name") or "").strip()
+                    for s in valid
+                    if (s.get("name") or "").strip()
+                )
+                if incoming_names and os.path.isdir(IMPORTS_DIR):
+                    for fname in sorted(os.listdir(IMPORTS_DIR)):
+                        if not fname.lower().endswith(".csv"):
+                            continue
+                        existing = frozenset(
+                            row["name"]
+                            for row in parse_styles_csv(os.path.join(IMPORTS_DIR, fname))
+                            if row.get("name")
+                        )
+                        if existing == incoming_names:
+                            duplicate_import = True
+                            break
+                if not duplicate_import:
+                    os.makedirs(IMPORTS_DIR, exist_ok=True)
+                    target = os.path.join(
+                        IMPORTS_DIR, f"imported_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+                    )
+                    # Seed so _resolve_write_target matches IMPORTS_DIR, not DATA_DIR.
+                    with open(target, "w", encoding="utf-8-sig", newline="") as f:
+                        csv.writer(f).writerow(FIELDNAMES)
+                    for s in valid:
+                        cat = s.get("category", "") or s.get("category_explicit", "")
+                        save_style_to_csv(
+                            s.get("name", ""),
+                            s.get("prompt", ""),
+                            s.get("negative_prompt", ""),
+                            s.get("description", ""),
+                            source_file=target,
+                            category=cat if cat else None,
+                        )
+                    imported = len(valid)
+        if duplicate_import and imported == 0 and presets_imported == 0:
+            return web.json_response({
+                "error": "This looks like a duplicate of an existing import",
+            })
+        if imported == 0 and presets_imported == 0:
+            return web.json_response({"error": "No importable data found in file"})
+        resp = {
+            "ok": True,
+            "imported": imported,
+            "skipped": skipped,
+            "presets_imported": presets_imported,
+            "presets_skipped": presets_skipped,
+        }
+        if duplicate_import:
+            resp["warning"] = "This looks like a duplicate of an existing import"
+        return web.json_response(resp)
 
     @routes.get("/style_grid/category_order")
     async def api_get_category_order(request):

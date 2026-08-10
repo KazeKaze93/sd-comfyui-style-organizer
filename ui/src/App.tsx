@@ -542,11 +542,13 @@ export default function App() {
               )
               return
             }
+            const stylesN = Number(data.imported) || 0
+            const presetsN = Number(data.presets_imported) || 0
             const fresh = await fetch('/style_grid/styles').then((r) => r.json())
             const flat = Object.values(fresh.categories || {}).flat()
             setStyles(flat)
             await fetchPresets()
-            showToast('Import complete', 'success')
+            showToast(`Imported ${stylesN} styles, ${presetsN} presets`, 'success')
           } catch {
             showToast('Import failed', 'error')
           }
