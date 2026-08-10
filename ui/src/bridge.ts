@@ -1,9 +1,7 @@
 /** Messages sent from Forge host script to the React iframe. */
 export type HostMessage =
   | { type: 'SG_CLEAR_SELECTION' }
-  | { type: 'SG_INIT';           tab: Tab; styles: Style[] }
-  | { type: 'SG_HOST_TAB';       tab: Tab }
-  | { type: 'SG_STYLES_UPDATE';  styles: Style[] }
+  | { type: 'SG_INIT';           styles: Style[] }
   | { type: 'SG_TOAST'; message: string; variant: 'success' | 'error' | 'info' }
   | { type: 'SG_STYLE_APPLIED'; style: Style }
   | { type: 'SG_WILDCARDS_ACTIVE'; categories: string[] }
@@ -26,8 +24,6 @@ export type FrameMessage =
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
 
 // ── Shared types ──────────────────────────────────────────────
-export type Tab = 'txt2img' | 'img2img'
-
 export interface Style {
   name:              string
   prompt:            string
