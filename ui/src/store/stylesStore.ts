@@ -171,6 +171,7 @@ interface StylesStore {
   showToast: (message: string, variant?: 'success' | 'error' | 'info') => void
   detectConflicts: () => void
   loadUsage: () => Promise<void>
+  loadCategoryOrder: () => Promise<void>
   incrementUsage: (name: string) => void
   setCategoryOrder: (order: string[]) => void
   toggleFavorite: (name: string) => void
@@ -272,9 +273,14 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   selectedStyles: [],
   conflicts: [],
   usageCounts: {},
-  categoryOrder: JSON.parse(
-    localStorage.getItem('sg_v2_category_order') || '[]'
-  ) as string[],
+  categoryOrder: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sg_v2_category_order') || '[]')
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch {
+      return []
+    }
+  })(),
   collapsedCategories: new Set(),
   compactMode: false,
   favorites: new Set(
@@ -476,6 +482,22 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       set({ usageCounts: counts })
     } catch {
       // ignore usage load errors
+    }
+  },
+  loadCategoryOrder: async () => {
+    // Prefer server; keep LS init on empty/error (migration + offline).
+    try {
+      const r = await fetch('/style_grid/category_order')
+      if (!r.ok) return
+      const data = await r.json()
+      if (!Array.isArray(data) || data.length === 0) return
+      const order = data.filter((x): x is string => typeof x === 'string')
+      if (order.length === 0) return
+      localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
+      localStorage.setItem('sg_v2_category_order_source', 'all')
+      set({ categoryOrder: order })
+    } catch {
+      // keep localStorage-initialized order
     }
   },
   incrementUsage: (name: string) => {

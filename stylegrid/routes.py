@@ -166,6 +166,21 @@ def _register_style_routes(routes):
             invalidate_styles_cache()
         return web.json_response({"ok": True})
 
+    @routes.get("/style_grid/category_order")
+    async def api_get_category_order(request):
+        order_file = os.path.join(DATA_DIR, "category_order.json")
+        if not os.path.isfile(order_file):
+            return web.json_response([])
+        try:
+            with open(order_file, "r", encoding="utf-8") as f:
+                order = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return web.json_response([])
+        if not isinstance(order, list):
+            return web.json_response([])
+        return web.json_response(order)
+
+    @routes.post("/style_grid/category_order")
     @routes.post("/style_grid/category_order/save")
     async def api_save_category_order(request):
         data = await _read_json(request)

@@ -93,6 +93,7 @@ export default function App() {
 
   useEffect(() => {
     useStylesStore.getState().loadUsage()
+    void useStylesStore.getState().loadCategoryOrder()
     const unsub = onHostMessage((msg) => {
       if (msg.type === 'SG_INIT') {
         const raw: unknown = (msg as { styles?: unknown }).styles

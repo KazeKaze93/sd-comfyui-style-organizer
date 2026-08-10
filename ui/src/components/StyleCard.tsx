@@ -30,6 +30,10 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
   const [editOpen, setEditOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isSelected = !presetName && selectedStyles.some(s => s.name === style.name)
+  // When the picker applied a non-first-wins pack, render that row's meta
+  // (thumb/prompt/read_only) instead of the deduped grid prop.
+  const selectedForName = selectedStyles.find(s => s.name === style.name)
+  const displayStyle = selectedForName ?? style
   const fav = isFavorite(style.name)
   const usageCount = usageCounts[style.name] || 0
   const duplicates = styles.filter(s => s.name === style.name)
@@ -41,11 +45,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
   const maxSourceLabelLen = sourceLabels.reduce((max, label) => Math.max(max, label.length), 0)
   const pickerWidthCh = Math.min(48, Math.max(18, maxSourceLabelLen + 4))
 
-  const displayName = style.name.includes('_')
-    ? style.name.split('_').slice(1).join(' ')
-    : style.name
+  const displayName = displayStyle.name.includes('_')
+    ? displayStyle.name.split('_').slice(1).join(' ')
+    : displayStyle.name
 
-  const borderColor = getCategoryColor(style.category || 'OTHER')
+  const borderColor = getCategoryColor(displayStyle.category || 'OTHER')
 
   useEffect(() => {
     if (!menuPos) return
@@ -75,10 +79,10 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
 
   return (
     <>
-      <ThumbnailPreview style={style} presetName={presetName}>
+      <ThumbnailPreview style={displayStyle} presetName={presetName}>
         <motion.div
           data-sg-card="true"
-          title={presetName ? undefined : style.name}
+          title={presetName ? undefined : displayStyle.name}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
@@ -212,14 +216,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             <div className="h-px my-1 bg-sg-border" />
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { navigator.clipboard.writeText(style.prompt); setMenuPos(null) }}
+              onClick={() => { navigator.clipboard.writeText(displayStyle.prompt); setMenuPos(null) }}
             >
               📋 Copy prompt
             </button>
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => {
-                if (style.read_only) {
+                if (displayStyle.read_only) {
                   setMenuPos(null)
                   showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.', 'info')
                   return
@@ -238,7 +242,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => {
-                if (style.read_only) {
+                if (displayStyle.read_only) {
                   setMenuPos(null)
                   showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.', 'info')
                   return
@@ -260,39 +264,39 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/20 transition-colors"
               onClick={async () => {
                 setMenuPos(null)
-                if (style.read_only) {
+                if (displayStyle.read_only) {
                   showToast('This style is from the protected samples pack (read-only) and cannot be deleted.', 'info')
                   return
                 }
-                if (!window.confirm(`Delete "${style.name}"? This cannot be undone.`)) return
+                if (!window.confirm(`Delete "${displayStyle.name}"? This cannot be undone.`)) return
                 try {
                   const res = await fetch('/style_grid/style/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: style.name, source: style.source_file }),
+                    body: JSON.stringify({ name: displayStyle.name, source: displayStyle.source_file }),
                   })
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok || data.ok === false) {
                     showToast(
                       typeof data.error === 'string' && data.error
                         ? data.error
-                        : `Failed to delete ${style.name}`,
+                        : `Failed to delete ${displayStyle.name}`,
                       'error',
                     )
                     return
                   }
-                  sendToHost({ type: 'SG_UNAPPLY', styleId: style.name })
-                  if (selectedStyles.some((s) => s.name === style.name)) {
+                  sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+                  if (selectedStyles.some((s) => s.name === displayStyle.name)) {
                     useStylesStore.setState((state) => ({
-                      selectedStyles: state.selectedStyles.filter((s) => s.name !== style.name),
+                      selectedStyles: state.selectedStyles.filter((s) => s.name !== displayStyle.name),
                     }))
                   }
                   useStylesStore.setState((state) => ({
-                    styles: state.styles.filter((s) => s.name !== style.name),
+                    styles: state.styles.filter((s) => s.name !== displayStyle.name),
                   }))
-                  showToast(`Deleted "${style.name}"`, 'success')
+                  showToast(`Deleted "${displayStyle.name}"`, 'success')
                 } catch {
-                  showToast(`Failed to delete ${style.name}`, 'error')
+                  showToast(`Failed to delete ${displayStyle.name}`, 'error')
                 }
               }}
             >
@@ -349,8 +353,8 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       <Portal>
         <ConfirmInputDialog
           open={duplicateOpen}
-          title={`Duplicate "${style.name}"`}
-          initialValue={`${style.name} copy`}
+          title={`Duplicate "${displayStyle.name}"`}
+          initialValue={`${displayStyle.name} copy`}
           placeholder="New style name"
           confirmLabel="Duplicate"
           onCancel={() => setDuplicateOpen(false)}
@@ -369,11 +373,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   name: newName,
-                  prompt: style.prompt,
-                  negative_prompt: style.negative_prompt,
-                  description: style.description,
-                  category: style.category,
-                  source: style.source_file,
+                  prompt: displayStyle.prompt,
+                  negative_prompt: displayStyle.negative_prompt,
+                  description: displayStyle.description,
+                  category: displayStyle.category,
+                  source: displayStyle.source_file,
                 }),
               })
               const data = await res.json().catch(() => ({}))
@@ -405,14 +409,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       <Portal>
         <ConfirmInputDialog
           open={moveOpen}
-          title={`Move "${style.name}" to category`}
-          initialValue={style.category}
+          title={`Move "${displayStyle.name}" to category`}
+          initialValue={displayStyle.category}
           placeholder="Category name"
           confirmLabel="Move"
-          suggestions={categories().filter((c) => c !== style.category)}
+          suggestions={categories().filter((c) => c !== displayStyle.category)}
           onCancel={() => setMoveOpen(false)}
           onConfirm={async (newCategory) => {
-            if (newCategory === style.category) {
+            if (newCategory === displayStyle.category) {
               setMoveOpen(false)
               return
             }
@@ -421,12 +425,12 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  name: style.name,
-                  prompt: style.prompt,
-                  negative_prompt: style.negative_prompt,
-                  description: style.description,
+                  name: displayStyle.name,
+                  prompt: displayStyle.prompt,
+                  negative_prompt: displayStyle.negative_prompt,
+                  description: displayStyle.description,
                   category: newCategory,
-                  source: style.source_file,
+                  source: displayStyle.source_file,
                 }),
               })
               const data = await res.json().catch(() => ({}))
@@ -442,7 +446,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               const fresh = await fetch('/style_grid/styles').then((r) => r.json())
               const flat = Object.values(fresh.categories || {}).flat()
               useStylesStore.getState().setStyles(flat)
-              showToast(`Moved "${style.name}" to "${newCategory}"`, 'success')
+              showToast(`Moved "${displayStyle.name}" to "${newCategory}"`, 'success')
               setMoveOpen(false)
             } catch {
               showToast('Move failed', 'error')
@@ -454,8 +458,8 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       <Portal>
         <EditStyleDialog
           open={editOpen}
-          style={style}
-          categories={categories().filter((c) => c !== style.category)}
+          style={displayStyle}
+          categories={categories().filter((c) => c !== displayStyle.category)}
           onCancel={() => setEditOpen(false)}
           onSave={async (fields) => {
             try {
@@ -463,12 +467,12 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  name: style.name,
+                  name: displayStyle.name,
                   prompt: fields.prompt,
                   negative_prompt: fields.negative_prompt,
                   description: fields.description,
                   category: fields.category,
-                  source: style.source_file,
+                  source: displayStyle.source_file,
                 }),
               })
               const data = await res.json().catch(() => ({}))
@@ -484,7 +488,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               const fresh = await fetch('/style_grid/styles').then((r) => r.json())
               const flat = Object.values(fresh.categories || {}).flat()
               useStylesStore.getState().setStyles(flat)
-              showToast(`Saved "${style.name}"`, 'success')
+              showToast(`Saved "${displayStyle.name}"`, 'success')
               setEditOpen(false)
             } catch {
               showToast('Save failed', 'error')
@@ -513,7 +517,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               const res = await fetch('/style_grid/thumbnail/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: style.name, image: reader.result }),
+                body: JSON.stringify({ name: displayStyle.name, image: reader.result }),
               })
               const data = await res.json().catch(() => ({}))
               if (!res.ok || data.ok === false || data.error) {
@@ -529,7 +533,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               // (bridge.ts) — a same-window postMessage reaches it directly,
               // no host round-trip needed.
               window.postMessage(
-                { type: 'SG_THUMB_DONE', styleId: style.name, version: Date.now() },
+                { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now() },
                 '*',
               )
               showToast('Preview updated', 'success')

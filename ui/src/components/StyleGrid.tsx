@@ -16,6 +16,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     favorites, recentNames, presets,
     compactMode, collapsedCategories, toggleCollapse,
     selectedStyles, selectAllInCategory,
+    categories,
   } = useStylesStore(
     useShallow(s => ({
       styles: s.styles,
@@ -30,6 +31,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       toggleCollapse: s.toggleCollapse,
       selectedStyles: s.selectedStyles,
       selectAllInCategory: s.selectAllInCategory,
+      categories: s.categories,
+      // subscribe so sidebar reorder re-renders group order
+      categoryOrder: s.categoryOrder,
     }))
   )
   const [catMenu, setCatMenu] = useState<{
@@ -131,9 +135,17 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     return acc
   }, {} as Record<string, typeof filtered>)
 
-  const sortedGroups = Object.entries(groups).sort(([a], [b]) =>
-    a.localeCompare(b)
-  )
+  // Same order as Sidebar via store.categories(); leftover keys (e.g. OTHER) append sorted.
+  const catOrder = categories()
+  const sortedGroups: [string, typeof filtered][] = [
+    ...catOrder
+      .filter(cat => groups[cat])
+      .map(cat => [cat, groups[cat]] as [string, typeof filtered]),
+    ...Object.keys(groups)
+      .filter(cat => !catOrder.includes(cat))
+      .sort()
+      .map(cat => [cat, groups[cat]] as [string, typeof filtered]),
+  ]
 
   return (
     <div className="space-y-4">
