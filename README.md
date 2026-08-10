@@ -122,7 +122,7 @@ folder:
 | `data/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
 | `data/thumbnails/` | Uploaded/generated preview images | Yes, previews just won't show until re-uploaded |
 
-`samples/styles_sfw.csv` (the bundled demo pack) is read-only by
+`samples/demo.csv` (the bundled demo pack) is read-only by
 design — Edit, Move, and Delete are blocked on styles from this file.
 Use Duplicate to create an editable copy in `data/` first.
 

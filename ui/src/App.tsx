@@ -89,6 +89,7 @@ export default function App() {
     fetchPresets,
     savePreset,
     activeSource,
+    setActiveSource,
     categories,
   } = useStylesStore()
 
@@ -292,6 +293,14 @@ export default function App() {
                   showToast('⚠️ Select a specific CSV source before creating a style', 'info')
                   return
                 }
+                // samples/ is write-protected — style/save rematerializes to
+                // data/<basename>.csv. Tell the user before they fill the form.
+                if (styles.some((s) => s.source_file === activeSource && s.read_only)) {
+                  showToast(
+                    'This pack is from the protected samples pack (read-only). New styles will be created in data/ instead.',
+                    'info',
+                  )
+                }
                 setNewStyleOpen(true)
               }}
             />
@@ -403,35 +412,39 @@ export default function App() {
             showToast(`A style named "${fields.name}" already exists`, 'error')
             return
           }
-          try {
-            const res = await fetch('/style_grid/style/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: fields.name,
-                prompt: fields.prompt,
-                negative_prompt: fields.negative_prompt,
-                description: fields.description,
-                category: fields.category,
-                source: activeSource,
-              }),
-            })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || data.ok === false || data.error) {
-              showToast(
-                typeof data.error === 'string' && data.error ? data.error : 'Create failed',
-                'error',
-              )
-              return
-            }
-            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
-            const flat = Object.values(fresh.categories || {}).flat()
-            setStyles(flat)
-            showToast(`Created "${fields.name}"`, 'success')
-            setNewStyleOpen(false)
-          } catch {
-            showToast('Create failed', 'error')
+          // style/save returns {ok} only — resolve the real write target
+          // from the created row after refetch (samples → data/<basename>).
+          const fromSamples = styles.some(
+            (s) => s.source_file === activeSource && s.read_only,
+          )
+          const result = await useStylesStore.getState().saveStyle({
+            name: fields.name,
+            prompt: fields.prompt,
+            negative_prompt: fields.negative_prompt,
+            description: fields.description,
+            category: fields.category,
+            source: activeSource,
+          })
+          if (!result.ok) {
+            showToast(
+              typeof result.error === 'string' && result.error ? result.error : 'Create failed',
+              'error',
+            )
+            return
           }
+          showToast(`Created "${fields.name}"`, 'success')
+          if (fromSamples) {
+            const created =
+              result.styles.find((s) => s.name === fields.name && !s.read_only) ??
+              result.styles.find((s) => s.name === fields.name)
+            if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
+              setActiveSource(created.source_file)
+              const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
+                .replace(/\.csv$/i, '')
+              showToast(`Created in ${base} (data/) — switched source`, 'info')
+            }
+          }
+          setNewStyleOpen(false)
         }}
       />
       <ConfirmInputDialog

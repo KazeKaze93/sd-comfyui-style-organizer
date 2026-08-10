@@ -19,10 +19,20 @@ interface Props {
 const Portal = ({ children }: { children: React.ReactNode }) =>
   createPortal(children, document.body)
 
+/** Suggest `${name} copy`, then `copy 2`, `copy 3`, … — same global name scope as the Duplicate collision check. */
+function nextDuplicateName(baseName: string, catalog: Style[]): string {
+  const taken = new Set(catalog.map((s) => s.name))
+  const first = `${baseName} copy`
+  if (!taken.has(first)) return first
+  let n = 2
+  while (taken.has(`${baseName} copy ${n}`)) n += 1
+  return `${baseName} copy ${n}`
+}
+
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
     selectedStyles, toggleStyle, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
-    presets, clearAll, activePresetName, deletePreset,
+    presets, clearAll, activePresetName, deletePreset, setActiveSource,
   } = useStylesStore(
     useShallow(s => ({
       selectedStyles: s.selectedStyles,
@@ -37,6 +47,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       clearAll: s.clearAll,
       activePresetName: s.activePresetName,
       deletePreset: s.deletePreset,
+      setActiveSource: s.setActiveSource,
     }))
   )
   const fav = useStylesStore(s => s.favorites.has(style.name))
@@ -279,7 +290,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               📋 Copy prompt
             </button>
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                displayStyle.read_only
+                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                  : 'text-sg-text hover:bg-sg-accent/20'
+              }`}
               onClick={() => {
                 if (displayStyle.read_only) {
                   setMenuPos(null)
@@ -289,7 +304,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                 setMenuPos(null); setEditOpen(true)
               }}
             >
-              ✏️ Edit
+              {displayStyle.read_only ? '🔒 Edit' : '✏️ Edit'}
             </button>
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
@@ -298,7 +313,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               📄 Duplicate
             </button>
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                displayStyle.read_only
+                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                  : 'text-sg-text hover:bg-sg-accent/20'
+              }`}
               onClick={() => {
                 if (displayStyle.read_only) {
                   setMenuPos(null)
@@ -308,7 +327,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                 setMenuPos(null); setMoveOpen(true)
               }}
             >
-              📂 Move to category...
+              {displayStyle.read_only ? '🔒 Move to category...' : '📂 Move to category...'}
             </button>
             <div className="h-px my-1 bg-sg-border" />
             <button
@@ -319,7 +338,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             </button>
             <div className="h-px my-1 bg-sg-border" />
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/20 transition-colors"
+              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                displayStyle.read_only
+                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                  : 'text-red-400 hover:bg-red-500/20'
+              }`}
               onClick={async () => {
                 setMenuPos(null)
                 if (displayStyle.read_only) {
@@ -344,21 +367,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                     return
                   }
                   sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
-                  if (selectedStyles.some((s) => s.name === displayStyle.name)) {
-                    useStylesStore.setState((state) => ({
-                      selectedStyles: state.selectedStyles.filter((s) => s.name !== displayStyle.name),
-                    }))
-                  }
-                  useStylesStore.setState((state) => ({
-                    styles: state.styles.filter((s) => s.name !== displayStyle.name),
-                  }))
+                  useStylesStore.getState().removeStyleRow(displayStyle)
                   showToast(`Deleted "${displayStyle.name}"`, 'success')
                 } catch {
                   showToast(`Failed to delete ${displayStyle.name}`, 'error')
                 }
               }}
             >
-              🗑️ Delete
+              {displayStyle.read_only ? '🔒 Delete' : '🗑️ Delete'}
             </button>
           </div>
           <div
@@ -412,7 +428,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
         <ConfirmInputDialog
           open={duplicateOpen}
           title={`Duplicate "${displayStyle.name}"`}
-          initialValue={`${displayStyle.name} copy`}
+          initialValue={nextDuplicateName(displayStyle.name, styles)}
           placeholder="New style name"
           confirmLabel="Duplicate"
           onCancel={() => setDuplicateOpen(false)}
@@ -425,41 +441,38 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               showToast(`A style named "${newName}" already exists`, 'error')
               return  // keep dialog open so the user can retype
             }
-            try {
-              const res = await fetch('/style_grid/style/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  name: newName,
-                  prompt: displayStyle.prompt,
-                  negative_prompt: displayStyle.negative_prompt,
-                  description: displayStyle.description,
-                  category: displayStyle.category,
-                  source: displayStyle.source_file,
-                }),
-              })
-              const data = await res.json().catch(() => ({}))
-              if (!res.ok || data.ok === false || data.error) {
-                showToast(
-                  typeof data.error === 'string' && data.error
-                    ? data.error
-                    : 'Duplicate failed',
-                  'error',
-                )
-                return  // keep dialog open
-              }
-              // Refresh the catalog the same way SG_INIT/SG_STYLES_UPDATE do —
-              // GET /style_grid/styles returns { categories, usage, presets },
-              // not a flat array.
-              const fresh = await fetch('/style_grid/styles').then((r) => r.json())
-              const flat = Object.values(fresh.categories || {}).flat()
-              useStylesStore.getState().setStyles(flat)
-              showToast(`Duplicated as "${newName}"`, 'success')
-              setDuplicateOpen(false)
-            } catch {
-              showToast('Duplicate failed', 'error')
-              // keep dialog open on network failure too
+            const result = await useStylesStore.getState().saveStyle({
+              name: newName,
+              prompt: displayStyle.prompt,
+              negative_prompt: displayStyle.negative_prompt,
+              description: displayStyle.description,
+              category: displayStyle.category,
+              source: displayStyle.source_file,
+            })
+            if (!result.ok) {
+              showToast(
+                typeof result.error === 'string' && result.error
+                  ? result.error
+                  : 'Duplicate failed',
+                'error',
+              )
+              return  // keep dialog open
             }
+            // style/save only returns {ok}; write path comes from the new
+            // row's source_file after refetch (samples basename → data/).
+            showToast(`Duplicated as "${newName}"`, 'success')
+            if (displayStyle.read_only) {
+              const created =
+                result.styles.find((s) => s.name === newName && !s.read_only) ??
+                result.styles.find((s) => s.name === newName)
+              if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
+                setActiveSource(created.source_file)
+                const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
+                  .replace(/\.csv$/i, '')
+                showToast(`Created in ${base} (data/) — switched source`, 'info')
+              }
+            }
+            setDuplicateOpen(false)
           }}
         />
       </Portal>
@@ -478,37 +491,25 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               setMoveOpen(false)
               return
             }
-            try {
-              const res = await fetch('/style_grid/style/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  name: displayStyle.name,
-                  prompt: displayStyle.prompt,
-                  negative_prompt: displayStyle.negative_prompt,
-                  description: displayStyle.description,
-                  category: newCategory,
-                  source: displayStyle.source_file,
-                }),
-              })
-              const data = await res.json().catch(() => ({}))
-              if (!res.ok || data.ok === false || data.error) {
-                showToast(
-                  typeof data.error === 'string' && data.error
-                    ? data.error
-                    : 'Move failed',
-                  'error',
-                )
-                return
-              }
-              const fresh = await fetch('/style_grid/styles').then((r) => r.json())
-              const flat = Object.values(fresh.categories || {}).flat()
-              useStylesStore.getState().setStyles(flat)
-              showToast(`Moved "${displayStyle.name}" to "${newCategory}"`, 'success')
-              setMoveOpen(false)
-            } catch {
-              showToast('Move failed', 'error')
+            const result = await useStylesStore.getState().saveStyle({
+              name: displayStyle.name,
+              prompt: displayStyle.prompt,
+              negative_prompt: displayStyle.negative_prompt,
+              description: displayStyle.description,
+              category: newCategory,
+              source: displayStyle.source_file,
+            })
+            if (!result.ok) {
+              showToast(
+                typeof result.error === 'string' && result.error
+                  ? result.error
+                  : 'Move failed',
+                'error',
+              )
+              return
             }
+            showToast(`Moved "${displayStyle.name}" to "${newCategory}"`, 'success')
+            setMoveOpen(false)
           }}
         />
       </Portal>
@@ -520,38 +521,68 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           categories={categories().filter((c) => c !== displayStyle.category)}
           onCancel={() => setEditOpen(false)}
           onSave={async (fields) => {
-            try {
-              const res = await fetch('/style_grid/style/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  name: displayStyle.name,
-                  prompt: fields.prompt,
-                  negative_prompt: fields.negative_prompt,
-                  description: fields.description,
-                  category: fields.category,
-                  source: displayStyle.source_file,
-                }),
-              })
-              const data = await res.json().catch(() => ({}))
-              if (!res.ok || data.ok === false || data.error) {
-                showToast(
-                  typeof data.error === 'string' && data.error
-                    ? data.error
-                    : 'Save failed',
-                  'error',
-                )
-                return  // keep dialog open so edits aren't lost
-              }
-              const fresh = await fetch('/style_grid/styles').then((r) => r.json())
-              const flat = Object.values(fresh.categories || {}).flat()
-              useStylesStore.getState().setStyles(flat)
-              showToast(`Saved "${displayStyle.name}"`, 'success')
-              setEditOpen(false)
-            } catch {
-              showToast('Save failed', 'error')
-              // keep dialog open on network failure too
+            const result = await useStylesStore.getState().saveStyle({
+              name: displayStyle.name,
+              prompt: fields.prompt,
+              negative_prompt: fields.negative_prompt,
+              description: fields.description,
+              category: fields.category,
+              source: displayStyle.source_file,
+            })
+            if (!result.ok) {
+              showToast(
+                typeof result.error === 'string' && result.error
+                  ? result.error
+                  : 'Save failed',
+                'error',
+              )
+              return  // keep dialog open so edits aren't lost
             }
+
+            // styles[] is fresh; selectedStyles still holds the pre-edit
+            // Style objects (detectConflicts / re-apply would read stale
+            // prompt/neg). Patch matching selection rows from the refetch.
+            const updated =
+              result.styles.find(
+                (s) =>
+                  s.name === displayStyle.name &&
+                  s.source_file === displayStyle.source_file,
+              ) ?? {
+                ...displayStyle,
+                prompt: fields.prompt,
+                negative_prompt: fields.negative_prompt,
+                description: fields.description,
+                category: fields.category,
+              }
+            const wasSelected = useStylesStore.getState().selectedStyles.some(
+              (s) =>
+                s.name === displayStyle.name &&
+                s.source_file === displayStyle.source_file,
+            )
+            useStylesStore.setState((state) => ({
+              selectedStyles: state.selectedStyles.map((s) =>
+                s.name === displayStyle.name &&
+                s.source_file === displayStyle.source_file
+                  ? updated
+                  : s,
+              ),
+            }))
+            // Host keeps apply-time prompt/neg in a ledger and in the
+            // node widgets — nothing else refreshes them on edit. Swap
+            // so the canvas text matches the saved style.
+            if (wasSelected) {
+              sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+              sendToHost({
+                type: 'SG_APPLY',
+                styleId: displayStyle.name,
+                prompt: updated.prompt,
+                neg: updated.negative_prompt,
+              })
+            }
+            useStylesStore.getState().detectConflicts()
+
+            showToast(`Saved "${displayStyle.name}"`, 'success')
+            setEditOpen(false)
           }}
         />
       </Portal>

@@ -195,6 +195,20 @@ interface StylesStore {
   deletePreset: (
     name: string,
   ) => Promise<{ ok: true } | { ok: false; error?: string }>
+  /** POST /style_grid/style/save then refetch catalog into styles[]. */
+  saveStyle: (payload: {
+    name: string
+    prompt: string
+    negative_prompt: string
+    description: string
+    category: string
+    source?: string | null
+  }) => Promise<
+    | { ok: true; styles: Style[] }
+    | { ok: false; error?: string }
+  >
+  /** Drop one catalog row by (name, source_file); prune name-keyed refs if no siblings remain. */
+  removeStyleRow: (style: Pick<Style, 'name' | 'source_file'>) => void
   
   // Derived
   categories: () => string[]
@@ -662,6 +676,75 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     } catch {
       return { ok: false as const }
     }
+  },
+  saveStyle: async (payload) => {
+    try {
+      const res = await fetch('/style_grid/style/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: payload.name,
+          prompt: payload.prompt,
+          negative_prompt: payload.negative_prompt,
+          description: payload.description,
+          category: payload.category,
+          source: payload.source,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+      const flat = Object.values(fresh.categories || {}).flat() as Style[]
+      get().setStyles(flat)
+      return { ok: true as const, styles: flat }
+    } catch {
+      return { ok: false as const }
+    }
+  },
+  removeStyleRow: ({ name, source_file }) => {
+    const styles = get().styles.filter(
+      (s) => !(s.name === name && s.source_file === source_file),
+    )
+    const selectedStyles = get().selectedStyles.filter(
+      (s) => !(s.name === name && s.source_file === source_file),
+    )
+    const patch: Partial<StylesStore> = { styles, selectedStyles }
+
+    // favorites / recent / usage are name-keyed — only drop the name when no
+    // sibling CSV row still carries it. presets.json orphans stay server-side;
+    // load already skips missing names.
+    if (!styles.some((s) => s.name === name)) {
+      const favorites = new Set(get().favorites)
+      if (favorites.delete(name)) {
+        localStorage.setItem('sg_v2_favorites', JSON.stringify([...favorites]))
+        patch.favorites = favorites
+        if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
+          patch.activeCategory = null
+        }
+      }
+
+      const recentNames = get().recentNames.filter((n) => n !== name)
+      if (recentNames.length !== get().recentNames.length) {
+        localStorage.setItem('sg_v2_recent', JSON.stringify(recentNames))
+        patch.recentNames = recentNames
+        if (recentNames.length === 0 && get().activeCategory === RECENT_VIEW) {
+          patch.activeCategory = null
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(get().usageCounts, name)) {
+        const usageCounts = { ...get().usageCounts }
+        delete usageCounts[name]
+        patch.usageCounts = usageCounts
+      }
+    }
+
+    set(patch)
   },
   setCategoryOrder: (order: string[]) => {
     // Only All Sources owns the persisted order. Under a CSV filter, categories()
