@@ -5,8 +5,10 @@ import { BookMarked } from 'lucide-react'
 import { onHostMessage } from '../bridge'
 import {
   FAVORITES_VIEW,
+  RECENT_VIEW,
   filterFavoriteStyles,
   getCategoryColor,
+  selectFilteredStyles,
   useStylesStore,
 } from '../store/stylesStore'
 import { useShallow } from 'zustand/react/shallow'
@@ -15,7 +17,8 @@ import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 export function Sidebar() {
   const {
     activeCategory, setCategory, categories, favorites, recentNames,
-    setCategoryOrder, presets, styles, activeSource, search, clearFavorites,
+    setCategoryOrder, presets, styles, activeSource, search,
+    clearFavorites, clearRecent,
   } = useStylesStore(
     useShallow(s => ({
       activeCategory: s.activeCategory,
@@ -26,6 +29,7 @@ export function Sidebar() {
       setCategoryOrder: s.setCategoryOrder,
       presets: s.presets,
       clearFavorites: s.clearFavorites,
+      clearRecent: s.clearRecent,
       // categories() deps — subscribe so list/order refresh without App re-renders
       styles: s.styles,
       activeSource: s.activeSource,
@@ -39,6 +43,7 @@ export function Sidebar() {
     cat: string
   } | null>(null)
   const [favMenu, setFavMenu] = useState<{ x: number; y: number } | null>(null)
+  const [recentMenu, setRecentMenu] = useState<{ x: number; y: number } | null>(null)
   // Local order while dragging; persist only on Reorder.Item onDragEnd.
   const [dragOrder, setDragOrder] = useState<string[] | null>(null)
   const dragOrderRef = useRef<string[] | null>(null)
@@ -49,7 +54,13 @@ export function Sidebar() {
       label: FAVORITES_VIEW,
       count: filterFavoriteStyles(styles, search, activeSource, favorites).length,
     },
-    { id: '🕑 Recent', label: '🕑 Recent', count: recentNames.length },
+    {
+      id: RECENT_VIEW,
+      label: RECENT_VIEW,
+      count: selectFilteredStyles(
+        styles, search, RECENT_VIEW, activeSource, favorites, recentNames, presets,
+      ).length,
+    },
   ]
 
   useEffect(() => {
@@ -108,16 +119,24 @@ export function Sidebar() {
           key={id}
           type="button"
           onClick={() => setCategory(activeCategory === id ? null : id)}
-          onContextMenu={id === FAVORITES_VIEW ? (e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setFavMenu({ x: e.clientX, y: e.clientY })
-          } : undefined}
+          onContextMenu={
+            id === FAVORITES_VIEW ? (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setFavMenu({ x: e.clientX, y: e.clientY })
+            }
+            : id === RECENT_VIEW ? (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setRecentMenu({ x: e.clientX, y: e.clientY })
+            }
+            : undefined
+          }
           className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors
       ${activeCategory === id
         ? 'bg-sg-accent text-white'
         : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
-      ${id === FAVORITES_VIEW ? 'cursor-context-menu' : ''}`}
+      ${id === FAVORITES_VIEW || id === RECENT_VIEW ? 'cursor-context-menu' : ''}`}
         >
           {label}
           <span className="ml-auto float-right text-xs opacity-60">{count}</span>
@@ -216,6 +235,26 @@ export function Sidebar() {
               }}
             >
               Clear Favorites
+            </button>
+          </div>
+        </>
+      )}
+      {recentMenu && (
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setRecentMenu(null)} />
+          <div
+            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
+            style={{ left: recentMenu.x, top: recentMenu.y }}
+          >
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+              onClick={() => {
+                clearRecent()
+                setRecentMenu(null)
+              }}
+            >
+              Clear Recent
             </button>
           </div>
         </>

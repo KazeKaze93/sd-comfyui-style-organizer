@@ -124,7 +124,9 @@ function resolveSourceInList(sources: string[], preferred: string | null): strin
  * Matches Favorites / Recent; use the same checks in grid layout as those.
  */
 export const FAVORITES_VIEW = '★ Favorites' as const
-export type ActiveSpecialView = typeof FAVORITES_VIEW | '🕑 Recent' | 'presets'
+export const RECENT_VIEW = '🕑 Recent' as const
+export const RECENT_CAP = 10
+export type ActiveSpecialView = typeof FAVORITES_VIEW | typeof RECENT_VIEW | 'presets'
 
 /** Central UI state for style filtering, selection, and host-side actions. */
 interface StylesStore {
@@ -182,6 +184,7 @@ interface StylesStore {
   clearFavorites: () => void
   isFavorite: (name: string) => boolean
   addToRecent: (name: string) => void
+  clearRecent: () => void
   fetchPresets: () => Promise<void>
   
   // Derived
@@ -221,7 +224,7 @@ export function selectFilteredStyles(
     return filterFavoriteStyles(styles, search, activeSource, favorites)
   }
 
-  if (activeCategory === '🕑 Recent') {
+  if (activeCategory === RECENT_VIEW) {
     return recentNames
       .map(name => styles.find(s => s.name === name && bySource(s)))
       .filter(Boolean)
@@ -414,7 +417,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     set({ selectedStyles: [...selectedStyles, ...toAdd] })
     toAdd.forEach((style) => {
-      get().addToRecent(style.name)
       get().incrementUsage(style.name)
       sendToHost({
         type: 'SG_APPLY',
@@ -449,9 +451,17 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   isFavorite: (name) => get().favorites.has(name),
   addToRecent: (name) => {
     const recent = [name, ...get().recentNames.filter(n => n !== name)]
-      .slice(0, 10)
+      .slice(0, RECENT_CAP)
     localStorage.setItem('sg_v2_recent', JSON.stringify(recent))
     set({ recentNames: recent })
+  },
+  clearRecent: () => {
+    localStorage.setItem('sg_v2_recent', '[]')
+    if (get().activeCategory === RECENT_VIEW) {
+      set({ recentNames: [], activeCategory: null })
+    } else {
+      set({ recentNames: [] })
+    }
   },
 
   toggleStyle: (style) => {
