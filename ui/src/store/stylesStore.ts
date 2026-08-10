@@ -60,6 +60,39 @@ export function styleRowKey(s: Pick<Style, 'name' | 'source_file'>): string {
   return `${s.source_file}\0${s.name}`
 }
 
+const COMBOS_CONFLICTS_RE = /\b(?:Combos|Conflicts):\s*[^.]*\.?/gi
+
+function stripStyleReferences(description: string): string {
+  return description.replace(COMBOS_CONFLICTS_RE, '').trim()
+}
+
+function nameSearchText(style: Style): string {
+  const spaced = style.name.replace(/_/g, ' ')
+  const displayName = style.name.includes('_')
+    ? style.name.split('_').slice(1).join(' ')
+    : style.name
+  return [style.name, spaced, displayName].join(' ').toLowerCase()
+}
+
+function buildStyleSearchText(style: Style): string {
+  const cleanDescription = stripStyleReferences(style.description || '')
+  return [nameSearchText(style), cleanDescription].filter(Boolean).join(' ').toLowerCase()
+}
+
+export function matchesSearch(style: Style, rawQuery: string): boolean {
+  const query = rawQuery.trim().toLowerCase()
+  if (!query) return true
+  const haystack = buildStyleSearchText(style)
+  return query.split(/\s+/).filter(Boolean).every(token => haystack.includes(token))
+}
+
+export function matchesNameSearch(style: Style, rawQuery: string): boolean {
+  const query = rawQuery.trim().toLowerCase()
+  if (!query) return true
+  const haystack = nameSearchText(style)
+  return query.split(/\s+/).filter(Boolean).every(token => haystack.includes(token))
+}
+
 /** First occurrence wins; use only when the active source is "All sources". */
 export function dedupeStylesByNameForAllSources(styles: Style[]): Style[] {
   const seen = new Set<string>()
@@ -159,14 +192,19 @@ export function selectFilteredStyles(
   recentNames: string[],
   presets: Record<string, { styles: string[]; created: string }>,
 ): Style[] {
+  const bySource = (s: Style) => !activeSource || s.source_file === activeSource
+
   if (activeCategory === '★ Favorites') {
-    return styles.filter(s => favorites.has(s.name))
+    let favStyles = styles.filter(s => favorites.has(s.name) && bySource(s) && matchesSearch(s, search))
+    if (!activeSource) favStyles = dedupeStylesByNameForAllSources(favStyles)
+    return favStyles
   }
 
   if (activeCategory === '🕑 Recent') {
     return recentNames
-      .map(name => styles.find(s => s.name === name))
-      .filter(Boolean) as Style[]
+      .map(name => styles.find(s => s.name === name && bySource(s)))
+      .filter(Boolean)
+      .filter(s => matchesSearch(s as Style, search)) as Style[]
   }
 
   if (activeCategory === 'presets') {
@@ -181,16 +219,14 @@ export function selectFilteredStyles(
       }
     }
     return order
-      .map(name => styles.find(s => s.name === name))
-      .filter(Boolean) as Style[]
+      .map(name => styles.find(s => s.name === name && bySource(s)))
+      .filter(Boolean)
+      .filter(s => matchesSearch(s as Style, search)) as Style[]
   }
 
   let filtered = styles.filter(s => {
-    const matchSource = !activeSource || s.source_file === activeSource
     const matchCat = !activeCategory || s.category === activeCategory
-    const matchSearch = !search ||
-      s.name.toLowerCase().includes(search.toLowerCase())
-    return matchSource && matchCat && matchSearch
+    return bySource(s) && matchCat && matchesSearch(s, search)
   })
 
   if (!activeSource) {
