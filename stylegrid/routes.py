@@ -90,11 +90,19 @@ def _register_style_routes(routes):
     async def get_styles(request):
         styles = get_cached_styles()
         categories = categorize_styles(styles)
-        etag = hashlib.md5(json.dumps(styles_cache_hashes(), sort_keys=True).encode()).hexdigest()
+        presets = load_presets()
+        # Presets are embedded in the body; include them so save/delete busts ETag.
+        etag = hashlib.md5(
+            (
+                json.dumps(styles_cache_hashes(), sort_keys=True)
+                + "\0"
+                + json.dumps(presets, sort_keys=True)
+            ).encode()
+        ).hexdigest()
         if_none_match = request.headers.get("If-None-Match", "").strip().strip('"')
         if if_none_match and if_none_match == etag:
             return web.Response(status=304)
-        response = web.json_response({"categories": categories, "usage": load_usage(), "presets": load_presets()})
+        response = web.json_response({"categories": categories, "usage": load_usage(), "presets": presets})
         response.headers["ETag"] = etag
         return response
 
@@ -135,7 +143,9 @@ def _register_style_routes(routes):
                     if "presets.json" in zf.namelist():
                         data = json.loads(zf.read("presets.json").decode("utf-8"))
                         if isinstance(data, dict):
-                            save_presets(data)
+                            p = load_presets()
+                            p.update(data)
+                            save_presets(p)
             except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
                 return web.json_response({"error": f"Invalid ZIP archive: {e}"}, status=422)
             return web.json_response({"ok": True})
@@ -194,19 +204,25 @@ def _register_style_routes(routes):
 
 
 def _register_preset_routes(routes):
-    @routes.get("/style_grid/presets")
-    async def get_presets(request):
-        return web.json_response(load_presets())
-
     @routes.post("/style_grid/presets/save")
     async def api_save_preset(request):
         data = await _read_json(request)
         presets = load_presets()
         name = data.get("name", "").strip()
-        styles = data.get("styles", [])
+        styles = data.get("styles")
+        if styles is None:
+            styles = []
         if not name:
             return web.json_response({"error": "Name required"})
-        presets[name] = {"styles": styles, "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        if not isinstance(styles, list) or not all(isinstance(n, str) for n in styles):
+            return web.json_response({"error": "styles must be a list of strings"})
+        prev = presets.get(name)
+        created = (
+            prev["created"]
+            if isinstance(prev, dict) and prev.get("created")
+            else time.strftime("%Y-%m-%dT%H:%M:%S")
+        )
+        presets[name] = {"styles": styles, "created": created}
         save_presets(presets)
         return web.json_response({"ok": True, "presets": presets})
 

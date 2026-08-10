@@ -111,7 +111,12 @@ export default function App() {
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
       }
       if (msg.type === 'SG_CLEAR_SELECTION') {
-        useStylesStore.setState({ selectedStyles: [], conflicts: [], activeWildcards: [] })
+        useStylesStore.setState({
+          selectedStyles: [],
+          conflicts: [],
+          activeWildcards: [],
+          activePresetName: null,
+        })
       }
       if (msg.type === 'SG_STYLE_APPLIED') {
         const { selectedStyles, detectConflicts } = useStylesStore.getState()
@@ -214,7 +219,7 @@ export default function App() {
             />
             <ToolBtn
               icon="📦"
-              label="Presets"
+              label="Save preset"
               onClick={() => {
                 if (selectedStyles.length === 0) {
                   showToast('Select at least one style first', 'info')

@@ -50,15 +50,27 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   )
 
   if (activeCategory === 'presets') {
-    const presetNames = Object.keys(presets).sort((a, b) => a.localeCompare(b))
-    if (presetNames.length === 0) {
+    const q = search.toLowerCase()
+    const presetNames = Object.keys(presets)
+      .filter((name) => name.toLowerCase().includes(q))
+      .sort((a, b) => a.localeCompare(b))
+    if (Object.keys(presets).length === 0) {
       return (
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
           <p className="text-sg-muted text-sm">No presets saved yet</p>
           <p className="max-w-sm text-sg-muted/70 text-xs leading-relaxed">
-            Open the toolbar <span className="text-sg-text/90">Presets</span> control, then use{' '}
-            <span className="text-sg-text/90">Save current</span> in the Style Presets dialog.
+            Select styles, then use the toolbar{' '}
+            <span className="text-sg-text/90">Save preset</span> button.
+            Click a card to load; use ✕ on a card to delete.
           </p>
+        </div>
+      )
+    }
+    if (presetNames.length === 0) {
+      return (
+        <div className="flex items-center justify-center h-32 
+                        text-sg-muted text-sm">
+          No styles found
         </div>
       )
     }

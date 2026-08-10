@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Reorder } from 'framer-motion'
 import { BookMarked } from 'lucide-react'
-import { onHostMessage } from '../bridge'
 import {
   FAVORITES_VIEW,
   RECENT_VIEW,
@@ -65,12 +64,6 @@ export function Sidebar() {
 
   useEffect(() => {
     void useStylesStore.getState().fetchPresets()
-    const unsub = onHostMessage((msg) => {
-      if (msg.type === 'SG_PRESETS_UPDATED') {
-        void useStylesStore.getState().fetchPresets()
-      }
-    })
-    return unsub
   }, [])
 
   const count = (cat: string | null) => {

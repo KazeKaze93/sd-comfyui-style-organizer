@@ -22,7 +22,7 @@ const Portal = ({ children }: { children: React.ReactNode }) =>
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
     selectedStyles, toggleStyle, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
-    presets, clearAll,
+    presets, clearAll, activePresetName,
   } = useStylesStore(
     useShallow(s => ({
       selectedStyles: s.selectedStyles,
@@ -35,6 +35,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       categories: s.categories,
       presets: s.presets,
       clearAll: s.clearAll,
+      activePresetName: s.activePresetName,
     }))
   )
   const fav = useStylesStore(s => s.favorites.has(style.name))
@@ -45,11 +46,24 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
   const [editOpen, setEditOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isSelected = !presetName && selectedStyles.some(s => s.name === style.name)
+  const isPresetActive = Boolean(presetName && activePresetName === presetName)
+  const cardActive = presetName ? isPresetActive : isSelected
   // When the picker applied a non-first-wins pack, render that row's meta
   // (thumb/prompt/read_only) instead of the deduped grid prop.
   const selectedForName = selectedStyles.find(s => s.name === style.name)
   const displayStyle = selectedForName ?? style
   const usageCount = usageCounts[style.name] || 0
+  const presetMembers = presetName ? (presets[presetName]?.styles ?? []) : []
+  const presetTotal = presetMembers.length
+  const presetFound = presetMembers.filter((n) =>
+    styles.some((st) => st.name === n),
+  ).length
+  const presetCountLabel =
+    presetTotal === 0
+      ? '0 styles'
+      : presetFound < presetTotal
+        ? `${presetFound}/${presetTotal} styles`
+        : `${presetTotal} styles`
   const duplicates = styles.filter(s => s.name === style.name)
   const hasMultipleSources = duplicates.length > 1
   const sourceLabels = duplicates.map((dup) =>
@@ -117,18 +131,42 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             if (presetName) {
               const preset = presets[presetName]
               if (!preset) return
-              const currentNames = new Set(selectedStyles.map((s) => s.name))
-              const presetNames = new Set(preset.styles)
-              const isFullyLoaded =
-                presetNames.size > 0 &&
-                presetNames.size === currentNames.size &&
-                [...presetNames].every((n) => currentNames.has(n))
+              // Identity signal, not set-equality: partial/ghost members never
+              // make isFullyLoaded true, so unload would be unreachable.
+              if (activePresetName === presetName) {
+                clearAll()
+                return
+              }
               clearAll()
-              if (!isFullyLoaded) {
-                preset.styles.forEach((n) => {
-                  const s = styles.find((st) => st.name === n)
-                  if (s) toggleStyle(s)
+              let loaded = 0
+              const total = preset.styles.length
+              const toLoad: Style[] = []
+              preset.styles.forEach((n) => {
+                // Name-only by design (same as Favorites/Recent): first-wins on cross-CSV duplicates.
+                const s = styles.find((st) => st.name === n)
+                if (s) toLoad.push(s)
+              })
+              loaded = toLoad.length
+              // Bulk: bump usage, not client Recent MRU (same split as selectAllInCategory / Recent P1).
+              const store = useStylesStore.getState()
+              store.setSelectedStyles(toLoad)
+              toLoad.forEach((s) => {
+                store.incrementUsage(s.name)
+                sendToHost({
+                  type: 'SG_APPLY',
+                  styleId: s.name,
+                  prompt: s.prompt,
+                  neg: s.negative_prompt,
                 })
+              })
+              store.detectConflicts()
+              useStylesStore.setState({ activePresetName: presetName })
+              const missing = total - loaded
+              if (missing > 0) {
+                showToast(
+                  `Loaded ${loaded} of ${total} styles (${missing} missing)`,
+                  'info',
+                )
               }
               return
             }
@@ -144,12 +182,12 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           className={`
             relative cursor-pointer rounded-lg border ${windowed ? 'p-2' : 'p-3'}
             transition-colors duration-150 select-none
-            ${isSelected
+            ${cardActive
               ? 'border-sg-accent bg-sg-accent/10'
               : 'border-sg-border bg-sg-surface hover:border-sg-accent/50'}
           `}
           style={{
-            borderLeftColor: isSelected ? undefined : borderColor,
+            borderLeftColor: cardActive ? undefined : borderColor,
             borderLeftWidth: '3px'
           }}
         >
@@ -158,7 +196,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           </div>
 
           {/* Selected indicator */}
-          {!presetName && isSelected && (
+          {cardActive && (
             <div className="absolute bottom-2 right-2 w-2 h-2
                             rounded-full bg-sg-accent" />
           )}
@@ -166,6 +204,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             <span className="absolute bottom-1.5 left-2 text-[10px] 
                      text-sg-muted/60 font-mono">
               {usageCount > 99 ? '99+' : usageCount}
+            </span>
+          )}
+          {presetName && (
+            <span
+              className="absolute bottom-1.5 left-2 text-[10px] text-sg-muted/60 font-mono truncate max-w-[calc(100%-1.5rem)]"
+              title={presetCountLabel}
+            >
+              {presetCountLabel}
             </span>
           )}
           {!presetName && fav && (
@@ -199,7 +245,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                     return
                   }
                   if (data.presets) {
-                    useStylesStore.setState({ presets: data.presets })
+                    useStylesStore.setState({
+                      presets: data.presets,
+                      ...(activePresetName === presetName
+                        ? { activePresetName: null }
+                        : {}),
+                    })
+                  } else if (activePresetName === presetName) {
+                    useStylesStore.setState({ activePresetName: null })
                   }
                   showToast(`Deleted preset "${presetName}"`, 'success')
                 } catch {

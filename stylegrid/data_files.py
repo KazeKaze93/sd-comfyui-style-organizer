@@ -9,19 +9,35 @@ import zipfile
 from .config import BACKUP_DIR, PRESETS_FILE, USAGE_FILE, get_all_styles_file_paths, logger
 
 
+def _read_presets():
+    """Load presets.json. Returns (data, corrupt) — corrupt when the file exists but is unusable."""
+    if not os.path.isfile(PRESETS_FILE):
+        return {}, False
+    try:
+        with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            logger.warning("[Style Grid] presets.json is not a JSON object; treating as empty")
+            return {}, True
+        return data, False
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("[Style Grid] presets.json unreadable (%s); treating as empty", e)
+        return {}, True
+
+
 def load_presets():
-    if os.path.isfile(PRESETS_FILE):
-        try:
-            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError):
-            pass
-    return {}
+    presets, _ = _read_presets()
+    return presets
 
 
 def save_presets(presets):
-    with open(PRESETS_FILE, "w", encoding="utf-8") as f:
+    directory = os.path.dirname(PRESETS_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = PRESETS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(presets, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, PRESETS_FILE)
 
 
 def _read_usage():

@@ -155,8 +155,10 @@ interface StylesStore {
   usageCounts: Record<string, number>
   /** User-defined category order for All Sources view. */
   categoryOrder: string[]
-  /** Saved style presets from backend (`/style_grid/presets` / list API). */
+  /** Saved style presets from backend (`/style_grid/presets/list`). */
   presets: Record<string, { styles: string[]; created: string }>
+  /** Last preset loaded via StyleCard click; drives toggle-unload for partial sets. */
+  activePresetName: string | null
   
   // Actions
   setStyles: (styles: Style[]) => void
@@ -326,6 +328,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
   })(),
   presets: {},
+  activePresetName: null,
 
   setStyles: (styles) => {
     const sources = [...new Set(
@@ -494,7 +497,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     selectedStyles.forEach(s =>
       sendToHost({ type: 'SG_UNAPPLY', styleId: s.name })
     )
-    set({ selectedStyles: [], conflicts: [] })
+    set({ selectedStyles: [], conflicts: [], activePresetName: null })
   },
   activeWildcards: [],
   setActiveWildcards: (categories) => set({ activeWildcards: categories }),
@@ -591,22 +594,12 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         ? raw as Record<string, { styles: string[]; created: string }>
         : {}
     try {
-      let r = await fetch('/style_grid/presets/list')
-      if (!r.ok) {
-        r = await fetch('/style_grid/presets')
-      }
+      const r = await fetch('/style_grid/presets/list')
       if (!r.ok) return
       const data = parse(await r.json())
       set({ presets: data })
     } catch {
-      try {
-        const r = await fetch('/style_grid/presets')
-        if (!r.ok) return
-        const data = parse(await r.json())
-        set({ presets: data })
-      } catch {
-        // ignore
-      }
+      // ignore
     }
   },
   setCategoryOrder: (order: string[]) => {

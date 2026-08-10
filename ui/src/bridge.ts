@@ -9,7 +9,6 @@ export type HostMessage =
   | { type: 'SG_THUMB_PROGRESS'; status: string; styleId: string; progress?: number }
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
-  | { type: 'SG_PRESETS_UPDATED' }
 
 /** Messages sent from the React iframe back to Forge host script. */
 export type FrameMessage =
