@@ -123,7 +123,8 @@ function resolveSourceInList(sources: string[], preferred: string | null): strin
  * Values of `activeCategory` that are sidebar “special” views (not real CSV categories).
  * Matches Favorites / Recent; use the same checks in grid layout as those.
  */
-export type ActiveSpecialView = '★ Favorites' | '🕑 Recent' | 'presets'
+export const FAVORITES_VIEW = '★ Favorites' as const
+export type ActiveSpecialView = typeof FAVORITES_VIEW | '🕑 Recent' | 'presets'
 
 /** Central UI state for style filtering, selection, and host-side actions. */
 interface StylesStore {
@@ -178,12 +179,31 @@ interface StylesStore {
   incrementUsage: (name: string) => void
   setCategoryOrder: (order: string[]) => void
   toggleFavorite: (name: string) => void
+  clearFavorites: () => void
   isFavorite: (name: string) => boolean
   addToRecent: (name: string) => void
   fetchPresets: () => Promise<void>
   
   // Derived
   categories: () => string[]
+}
+
+/**
+ * Favorites grid pool: name-keyed Set ∩ current source/search (+ All-Sources
+ * name dedupe). Same list the Favorites view renders — use for badge counts too.
+ */
+export function filterFavoriteStyles(
+  styles: Style[],
+  search: string,
+  activeSource: string | null,
+  favorites: Set<string>,
+): Style[] {
+  const bySource = (s: Style) => !activeSource || s.source_file === activeSource
+  let favStyles = styles.filter(
+    (s) => favorites.has(s.name) && bySource(s) && matchesSearch(s, search),
+  )
+  if (!activeSource) favStyles = dedupeStylesByNameForAllSources(favStyles)
+  return favStyles
 }
 
 export function selectFilteredStyles(
@@ -197,10 +217,8 @@ export function selectFilteredStyles(
 ): Style[] {
   const bySource = (s: Style) => !activeSource || s.source_file === activeSource
 
-  if (activeCategory === '★ Favorites') {
-    let favStyles = styles.filter(s => favorites.has(s.name) && bySource(s) && matchesSearch(s, search))
-    if (!activeSource) favStyles = dedupeStylesByNameForAllSources(favStyles)
-    return favStyles
+  if (activeCategory === FAVORITES_VIEW) {
+    return filterFavoriteStyles(styles, search, activeSource, favorites)
   }
 
   if (activeCategory === '🕑 Recent') {
@@ -316,7 +334,20 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       resolveSourceInList(sources, prevActive) ??
       resolveSourceInList(sources, lastSource)
 
-    set({ styles, sources, activeSource })
+    // Drop favorite names that no longer exist in the loaded catalog.
+    const names = new Set(styles.map(s => s.name))
+    const prevFavs = get().favorites
+    let favorites = prevFavs
+    if ([...prevFavs].some(n => !names.has(n))) {
+      favorites = new Set([...prevFavs].filter(n => names.has(n)))
+      localStorage.setItem('sg_v2_favorites', JSON.stringify([...favorites]))
+    }
+
+    const patch: Partial<StylesStore> = { styles, sources, activeSource, favorites }
+    if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
+      patch.activeCategory = null
+    }
+    set(patch)
     if (activeSource) {
       localStorage.setItem('sg_v2_last_source', activeSource)
       sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
@@ -394,12 +425,26 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })
     get().detectConflicts()
   },
+  // Name-only key (same as Recent/Presets/selection): ★ one name ★ all CSV rows with that name.
   toggleFavorite: (name) => {
     const favs = new Set(get().favorites)
     if (favs.has(name)) favs.delete(name)
     else favs.add(name)
     localStorage.setItem('sg_v2_favorites', JSON.stringify([...favs]))
-    set({ favorites: favs })
+    // Leave Favorites view when the list is empty (sidebar row hides at count 0).
+    if (favs.size === 0 && get().activeCategory === FAVORITES_VIEW) {
+      set({ favorites: favs, activeCategory: null })
+    } else {
+      set({ favorites: favs })
+    }
+  },
+  clearFavorites: () => {
+    localStorage.setItem('sg_v2_favorites', '[]')
+    if (get().activeCategory === FAVORITES_VIEW) {
+      set({ favorites: new Set(), activeCategory: null })
+    } else {
+      set({ favorites: new Set() })
+    }
   },
   isFavorite: (name) => get().favorites.has(name),
   addToRecent: (name) => {

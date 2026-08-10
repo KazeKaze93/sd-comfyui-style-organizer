@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
 import { getCategoryColor, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
@@ -20,9 +21,23 @@ const Portal = ({ children }: { children: React.ReactNode }) =>
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
-    selectedStyles, toggleStyle, isFavorite, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
+    selectedStyles, toggleStyle, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
     presets, clearAll,
-  } = useStylesStore()
+  } = useStylesStore(
+    useShallow(s => ({
+      selectedStyles: s.selectedStyles,
+      toggleStyle: s.toggleStyle,
+      toggleFavorite: s.toggleFavorite,
+      usageCounts: s.usageCounts,
+      styles: s.styles,
+      activeSource: s.activeSource,
+      showToast: s.showToast,
+      categories: s.categories,
+      presets: s.presets,
+      clearAll: s.clearAll,
+    }))
+  )
+  const fav = useStylesStore(s => s.favorites.has(style.name))
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
@@ -34,7 +49,6 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
   // (thumb/prompt/read_only) instead of the deduped grid prop.
   const selectedForName = selectedStyles.find(s => s.name === style.name)
   const displayStyle = selectedForName ?? style
-  const fav = isFavorite(style.name)
   const usageCount = usageCounts[style.name] || 0
   const duplicates = styles.filter(s => s.name === style.name)
   const hasMultipleSources = duplicates.length > 1
@@ -152,6 +166,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             <span className="absolute bottom-1.5 left-2 text-[10px] 
                      text-sg-muted/60 font-mono">
               {usageCount > 99 ? '99+' : usageCount}
+            </span>
+          )}
+          {!presetName && fav && (
+            <span
+              className="absolute top-1.5 right-2 text-[10px] text-sg-muted/60"
+              aria-hidden
+            >
+              ★
             </span>
           )}
           {presetName && (
