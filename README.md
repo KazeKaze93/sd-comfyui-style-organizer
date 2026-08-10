@@ -14,7 +14,7 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Move styles between categories
 - Thumbnail previews with manual upload
 - Import and export styles, presets, and usage as JSON
-- Manual Backup: zip snapshot of CSVs + presets under `data/backups/`
+- Manual Backup: zip snapshot of `data/` + `imports/` CSVs and presets under `data/backups/`
 - Wildcard support: `{sg:category}` resolves to a random style from that category at generation time
 
 ![Wildcard category](docs/screenshots/wildcards.png)
@@ -88,8 +88,9 @@ Clicking an already-loaded preset unloads it.
 JSON file. Import can also restore a Backup zip (CSVs + presets).
 
 **Backup** (toolbar diskette) writes a manual zip snapshot of your
-style CSVs and `presets.json` into `data/backups/` — it is not
-automatic, and it is separate from Export.
+`data/` and `data/imports/` CSVs plus `presets.json` into
+`data/backups/` (bundled `samples/` is excluded). It is not automatic,
+and it is separate from Export.
 
 ![Import/Export menu](docs/screenshots/import-export-menu.png)
 
@@ -121,11 +122,12 @@ folder:
 | Path | What it is | Safe to delete? |
 |------|-----------|------------------|
 | `data/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
-| `data/imports/*.csv` | Style packs created by the Import feature | Yes, anytime |
-| `data/backups/` | Manual Backup `.zip` archives (CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
+| `data/imports/*.csv` | Style packs created by the Import feature (including restore from a Backup zip) | Yes, anytime |
+| `data/backups/` | Manual Backup `.zip` archives (`data/` + `imports/` CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
 | `data/presets.json` | Saved presets | Only if you don't need them |
 | `data/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
-| `data/thumbnails/` | Uploaded/generated preview images | Yes, previews just won't show until re-uploaded |
+| `data/category_order.json` | Persisted sidebar category order | Yes — order falls back to defaults |
+| `data/thumbnails/` | Uploaded preview images | Yes, previews just won't show until re-uploaded |
 
 `samples/demo.csv` (the bundled demo pack) is read-only by
 design — Edit, Move, and Delete are blocked on styles from this file.
