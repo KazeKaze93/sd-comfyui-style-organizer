@@ -391,7 +391,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               // not a flat array.
               const fresh = await fetch('/style_grid/styles').then((r) => r.json())
               const flat = Object.values(fresh.categories || {}).flat()
-              useStylesStore.getState().setStyles(flat, useStylesStore.getState().tab)
+              useStylesStore.getState().setStyles(flat)
               showToast(`Duplicated as "${newName}"`, 'success')
               setDuplicateOpen(false)
             } catch {
@@ -441,7 +441,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               }
               const fresh = await fetch('/style_grid/styles').then((r) => r.json())
               const flat = Object.values(fresh.categories || {}).flat()
-              useStylesStore.getState().setStyles(flat, useStylesStore.getState().tab)
+              useStylesStore.getState().setStyles(flat)
               showToast(`Moved "${style.name}" to "${newCategory}"`, 'success')
               setMoveOpen(false)
             } catch {
@@ -483,7 +483,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               }
               const fresh = await fetch('/style_grid/styles').then((r) => r.json())
               const flat = Object.values(fresh.categories || {}).flat()
-              useStylesStore.getState().setStyles(flat, useStylesStore.getState().tab)
+              useStylesStore.getState().setStyles(flat)
               showToast(`Saved "${style.name}"`, 'success')
               setEditOpen(false)
             } catch {

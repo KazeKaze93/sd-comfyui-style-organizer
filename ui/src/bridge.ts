@@ -1,9 +1,7 @@
 /** Messages sent from Forge host script to the React iframe. */
 export type HostMessage =
   | { type: 'SG_CLEAR_SELECTION' }
-  | { type: 'SG_INIT';           tab: Tab; styles: Style[] }
-  | { type: 'SG_HOST_TAB';       tab: Tab }
-  | { type: 'SG_STYLES_UPDATE';  styles: Style[] }
+  | { type: 'SG_INIT';           styles: Style[] }
   | { type: 'SG_TOAST'; message: string; variant: 'success' | 'error' | 'info' }
   | { type: 'SG_STYLE_APPLIED'; style: Style }
   | { type: 'SG_WILDCARDS_ACTIVE'; categories: string[] }
@@ -18,28 +16,14 @@ export type FrameMessage =
   | { type: 'SG_READY' }
   | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string }
   | { type: 'SG_UNAPPLY';       styleId: string }
-  | { type: 'SG_EDIT_STYLE';      styleId: string }
-  | { type: 'SG_DUPLICATE_STYLE'; styleId: string }
-  | { type: 'SG_MOVE_TO_CATEGORY'; styleId: string }
-  | { type: 'SG_UPLOAD_PREVIEW';   styleId: string }
   | { type: 'SG_WILDCARD_CATEGORY'; category: string }
   | { type: 'SG_REMOVE_WILDCARD'; category: string }
   | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
-  | { type: 'SG_DELETE_STYLE';  styleId: string }
   | { type: 'SG_CLOSE_REQUEST' }
-  | { type: 'SG_RANDOM' }
-  | { type: 'SG_PRESETS' }
-  | { type: 'SG_LOAD_PRESET'; name: string }
-  | { type: 'SG_BACKUP' }
-  | { type: 'SG_IMPORT_EXPORT' }
-  | { type: 'SG_NEW_STYLE'; sourceFile?: string }
-  | { type: 'SG_CSV_EDITOR' }
   | { type: 'SG_CLEAR_ALL' }
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
 
 // ── Shared types ──────────────────────────────────────────────
-export type Tab = 'txt2img' | 'img2img'
-
 export interface Style {
   name:              string
   prompt:            string

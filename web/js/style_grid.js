@@ -134,6 +134,57 @@ function unapplyStyleFromNode(node, style) {
     node.graph?.setDirtyCanvas(true, true);
 }
 
+// Reorders the tag-blocks belonging to currently-applied plain-tag styles to
+// match `styleIds` (new drag order from the SelectedBar chips), leaving any
+// free-typed text in place before them. Wrap-template styles (prompt/negative
+// containing "{prompt}") transform the whole string rather than adding
+// discrete tags, so they have no clean per-tag position to reorder — they're
+// left untouched and their wrapped text is treated as opaque "free" text.
+function reorderStylesInNode(node, styleIds) {
+    const { text, neg } = getTextWidgets(node);
+    const currentText = text ? text.value || "" : "";
+    const currentNeg = neg ? neg.value || "" : "";
+
+    const isReorderable = (s) =>
+        !(s.prompt || "").includes("{prompt}") && !(s.negative_prompt || "").includes("{prompt}");
+    const activeStyles = getActiveStyles(currentText, currentNeg, null).filter(isReorderable);
+    const activeByName = new Map(activeStyles.map((s) => [s.name, s]));
+
+    const rebuild = (baseText, field) => {
+        const ownedKeys = new Set();
+        for (const s of activeStyles) {
+            for (const t of parseTags(s[field] || "")) ownedKeys.add(tagKey(t));
+        }
+        const freeTags = parseTags(baseText).filter((t) => !ownedKeys.has(tagKey(t)));
+
+        const orderedStyleTags = [];
+        const seen = new Set();
+        const appendStyleTags = (style) => {
+            for (const t of parseTags(style[field] || "")) {
+                const key = tagKey(t);
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    orderedStyleTags.push(t);
+                }
+            }
+        };
+        for (const id of styleIds) {
+            const style = activeByName.get(id);
+            if (style) appendStyleTags(style);
+        }
+        // Safety net: an active reorderable style missing from styleIds
+        // (message out of sync with reality) still keeps its tags, appended
+        // after the ones that were explicitly ordered.
+        for (const s of activeStyles) appendStyleTags(s);
+
+        return [...freeTags, ...orderedStyleTags].join(", ");
+    };
+
+    if (text) text.value = rebuild(currentText, "prompt");
+    if (neg) neg.value = rebuild(currentNeg, "negative_prompt");
+    node.graph?.setDirtyCanvas(true, true);
+}
+
 function clearAllStyles(node) {
     const { text, neg } = getTextWidgets(node);
     let currentText = text ? text.value || "" : "";
@@ -215,7 +266,6 @@ function rehydrate() {
             allStylesCache = Object.values(data.categories || {}).flat();
             iframe.contentWindow.postMessage({
                 type: "SG_INIT",
-                tab: String(currentNode?.id ?? ""),
                 styles: allStylesCache,
             }, "*");
             iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
@@ -296,6 +346,9 @@ function ensureOverlay() {
         }
         if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
             removeWildcardCategory(currentNode, msg.category);
+        }
+        if (msg.type === "SG_REORDER_STYLES" && currentNode) {
+            reorderStylesInNode(currentNode, msg.styleIds);
         }
         if (msg.type === "SG_SOURCE_CHANGE" && currentNode) {
             setActiveSource(currentNode, msg.source);
