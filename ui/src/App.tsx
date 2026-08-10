@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { onHostMessage, sendToHost } from './bridge'
-import { useStylesStore } from './store/stylesStore'
+import { selectFilteredStyles, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
 import { Sidebar } from './components/Sidebar'
@@ -74,6 +74,10 @@ export default function App() {
     setStyles,
     selectedStyles,
     styles,
+    search,
+    activeCategory,
+    favorites,
+    recentNames,
     conflicts,
     toggleStyle,
     toggleCompact,
@@ -194,7 +198,10 @@ export default function App() {
               icon="🎲"
               label="Random style"
               onClick={() => {
-                const available = styles.filter(
+                const filtered = selectFilteredStyles(
+                  styles, search, activeCategory, activeSource, favorites, recentNames, presets,
+                )
+                const available = filtered.filter(
                   (s) => !selectedStyles.some((sel) => sel.name === s.name),
                 )
                 if (available.length === 0) {
