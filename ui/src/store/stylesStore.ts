@@ -224,6 +224,8 @@ export function selectFilteredStyles(
     return filterFavoriteStyles(styles, search, activeSource, favorites)
   }
 
+  // Name-only identity (same as Favorites/Presets/selection): first styles.find wins;
+  // re-apply from Recent with cross-CSV dupes may not hit the originally applied pack.
   if (activeCategory === RECENT_VIEW) {
     return recentNames
       .map(name => styles.find(s => s.name === name && bySource(s)))
@@ -417,6 +419,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     set({ selectedStyles: [...selectedStyles, ...toAdd] })
     toAdd.forEach((style) => {
+      // Bulk: bump usage.last_used, but not client Recent MRU (intentional; see Recent P1/P2).
       get().incrementUsage(style.name)
       sendToHost({
         type: 'SG_APPLY',
