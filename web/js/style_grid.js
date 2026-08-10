@@ -250,6 +250,7 @@ function removeWildcardCategory(node, category) {
     if (text) text.value = strip(text.value || "");
     if (neg) neg.value = strip(neg.value || "");
     node.graph?.setDirtyCanvas(true, true);
+    syncWildcards(node);
 }
 
 function setActiveSource(node, source) {
