@@ -2,11 +2,18 @@
 
 import json
 import os
-import shutil
 import time
 import zipfile
 
-from .config import BACKUP_DIR, PRESETS_FILE, USAGE_FILE, get_all_styles_file_paths, logger
+from .config import (
+    BACKUP_DIR,
+    DATA_DIR,
+    IMPORTS_DIR,
+    PRESETS_FILE,
+    USAGE_FILE,
+    _csvs_in,
+    logger,
+)
 
 
 def _read_presets():
@@ -88,45 +95,55 @@ def increment_usage(style_names):
     save_usage(usage)
 
 
-def backup_csv_files():
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    backup_subdir = os.path.join(BACKUP_DIR, ts)
-    backed_up = False
-
-    for fp in get_all_styles_file_paths():
-        if not os.path.isfile(fp):
-            continue
-        if not backed_up:
-            os.makedirs(backup_subdir, exist_ok=True)
-            backed_up = True
-        fname = os.path.basename(fp)
-        shutil.copy2(fp, os.path.join(backup_subdir, fname))
-
+def _backup_zip_entries():
+    """(abs_path, arcname) for user CSVs + presets. samples/ excluded; one collect.
+    Scope is packs+presets only — not usage.json, category_order.json, or thumbnails/.
+    """
+    entries = []
+    for fp in _csvs_in(DATA_DIR):
+        if os.path.isfile(fp):
+            entries.append((fp, "data/" + os.path.basename(fp)))
+    for fp in _csvs_in(IMPORTS_DIR):
+        if os.path.isfile(fp):
+            entries.append((fp, "imports/" + os.path.basename(fp)))
     if os.path.isfile(PRESETS_FILE):
-        if not backed_up:
-            os.makedirs(backup_subdir, exist_ok=True)
-            backed_up = True
-        shutil.copy2(PRESETS_FILE, os.path.join(backup_subdir, "presets.json"))
+        entries.append((PRESETS_FILE, "presets.json"))
+    return entries
 
-    if backed_up:
-        zip_path = backup_subdir + ".zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for fp in get_all_styles_file_paths():
-                if os.path.isfile(fp):
-                    zf.write(fp, arcname=os.path.basename(fp))
-            if os.path.isfile(PRESETS_FILE):
-                zf.write(PRESETS_FILE, arcname="presets.json")
 
-    if os.path.isdir(BACKUP_DIR):
-        backups = sorted(os.listdir(BACKUP_DIR))
-        while len(backups) > 20:
-            old_name = backups.pop(0)
-            old_path = os.path.join(BACKUP_DIR, old_name)
-            if os.path.isdir(old_path):
-                shutil.rmtree(old_path, ignore_errors=True)
-            elif os.path.isfile(old_path) and old_name.endswith(".zip"):
-                try:
-                    os.remove(old_path)
-                except OSError:
-                    pass
-    return backed_up
+def _unique_backup_zip_path():
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    candidate = os.path.join(BACKUP_DIR, ts + ".zip")
+    if not os.path.exists(candidate):
+        return candidate
+    n = 1
+    while True:
+        candidate = os.path.join(BACKUP_DIR, f"{ts}_{n}.zip")
+        if not os.path.exists(candidate):
+            return candidate
+        n += 1
+
+
+def backup_csv_files():
+    entries = _backup_zip_entries()
+    if not entries:
+        return False
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    zip_path = _unique_backup_zip_path()
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fp, arcname in entries:
+            zf.write(fp, arcname=arcname)
+
+    zips = sorted(
+        name
+        for name in os.listdir(BACKUP_DIR)
+        if name.endswith(".zip") and os.path.isfile(os.path.join(BACKUP_DIR, name))
+    )
+    while len(zips) > 20:
+        old_name = zips.pop(0)
+        try:
+            os.remove(os.path.join(BACKUP_DIR, old_name))
+        except OSError:
+            pass
+    return os.path.basename(zip_path)

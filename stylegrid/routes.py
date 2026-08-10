@@ -7,7 +7,7 @@ import json
 import os
 import time
 import zipfile
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from aiohttp import web
 
@@ -42,6 +42,84 @@ from .thumbnails import (
     get_thumbnail_path,
     list_thumbnails,
 )
+
+
+def _zip_csv_member_names(namelist):
+    """Stored zip names that are exactly data/*.csv or imports/*.csv (no traversal)."""
+    members = []
+    for name in namelist:
+        norm = name.replace("\\", "/")
+        if ".." in norm.split("/"):
+            continue
+        parts = norm.split("/")
+        if len(parts) != 2:
+            continue
+        root, fname = parts
+        if root not in ("data", "imports"):
+            continue
+        if not fname or not fname.lower().endswith(".csv"):
+            continue
+        members.append(name)
+    return members
+
+
+def _styles_from_csv_text(text):
+    """Parse style dicts from CSV text. Returns (styles, skipped)."""
+    styles = []
+    skipped = 0
+    reader = csv.reader(StringIO(text))
+    header = None
+    for row in reader:
+        try:
+            if not row or all(c.strip() == "" for c in row):
+                continue
+            if header is None and row[0].strip().lower() == "name":
+                header = row
+                continue
+            if header is None:
+                header = ["name", "prompt", "negative_prompt"]
+            name = row[0].strip() if len(row) > 0 else ""
+            if not name:
+                skipped += 1
+                continue
+            styles.append({
+                "name": name,
+                "prompt": row[1].strip() if len(row) > 1 else "",
+                "negative_prompt": row[2].strip() if len(row) > 2 else "",
+                "description": row[3].strip() if len(row) > 3 else "",
+                "category": row[4].strip() if len(row) > 4 else "",
+            })
+        except (IndexError, AttributeError):
+            skipped += 1
+            continue
+    return styles, skipped
+
+
+def _write_styles_to_new_import_csv(styles, name_hint):
+    """Seed a new IMPORTS_DIR CSV and upsert styles (same path as JSON import)."""
+    os.makedirs(IMPORTS_DIR, exist_ok=True)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    safe = name_hint.replace("\\", "/").replace("/", "_")
+    if not safe.lower().endswith(".csv"):
+        safe += ".csv"
+    target = os.path.join(IMPORTS_DIR, f"imported_{ts}_{safe}")
+    n = 1
+    while os.path.isfile(target):
+        target = os.path.join(IMPORTS_DIR, f"imported_{ts}_{n}_{safe}")
+        n += 1
+    with open(target, "w", encoding="utf-8-sig", newline="") as f:
+        csv.writer(f).writerow(FIELDNAMES)
+    for s in styles:
+        cat = s.get("category", "") or s.get("category_explicit", "")
+        save_style_to_csv(
+            s.get("name", ""),
+            s.get("prompt", ""),
+            s.get("negative_prompt", ""),
+            s.get("description", ""),
+            source_file=target,
+            category=cat if cat else None,
+        )
+    return len(styles)
 
 
 def detect_conflicts(style_names):
@@ -158,26 +236,69 @@ def _register_style_routes(routes):
         if len(raw) >= 2 and raw[:2] == b"PK":
             try:
                 with zipfile.ZipFile(BytesIO(raw)) as zf:
-                    if "presets.json" not in zf.namelist():
+                    names = zf.namelist()
+                    csv_members = _zip_csv_member_names(names)
+                    has_presets = "presets.json" in names
+                    if not csv_members and not has_presets:
                         return web.json_response(
                             {"error": "No importable data found in file"}
                         )
-                    data = json.loads(zf.read("presets.json").decode("utf-8"))
-                    if not isinstance(data, dict) or not data:
+
+                    presets_imported = 0
+                    presets_skipped = 0
+                    if has_presets:
+                        incoming = json.loads(zf.read("presets.json").decode("utf-8"))
+                        if not isinstance(incoming, dict):
+                            return web.json_response({"error": "presets must be an object"})
+                        p = load_presets()
+                        for name, entry in incoming.items():
+                            if not isinstance(name, str) or not name.strip():
+                                presets_skipped += 1
+                                continue
+                            if not isinstance(entry, dict):
+                                presets_skipped += 1
+                                continue
+                            styles = entry.get("styles")
+                            if not isinstance(styles, list) or not all(
+                                isinstance(n, str) for n in styles
+                            ):
+                                presets_skipped += 1
+                                continue
+                            created = entry.get("created")
+                            if not isinstance(created, str) or not created:
+                                created = time.strftime("%Y-%m-%dT%H:%M:%S")
+                            p[name.strip()] = {"styles": styles, "created": created}
+                            presets_imported += 1
+                        if presets_imported:
+                            save_presets(p)
+
+                    imported = 0
+                    skipped = 0
+                    for member in csv_members:
+                        try:
+                            text = zf.read(member).decode("utf-8-sig")
+                        except UnicodeDecodeError:
+                            skipped += 1
+                            continue
+                        rows, row_skipped = _styles_from_csv_text(text)
+                        skipped += row_skipped
+                        if rows:
+                            imported += _write_styles_to_new_import_csv(rows, member)
+
+                    if imported == 0 and presets_imported == 0:
                         return web.json_response(
                             {"error": "No importable data found in file"}
                         )
-                    p = load_presets()
-                    p.update(data)
-                    save_presets(p)
                     return web.json_response({
                         "ok": True,
-                        "imported": 0,
-                        "skipped": 0,
-                        "presets_imported": len(data),
-                        "presets_skipped": 0,
+                        "imported": imported,
+                        "skipped": skipped,
+                        "presets_imported": presets_imported,
+                        "presets_skipped": presets_skipped,
+                        "usage_imported": 0,
+                        "usage_skipped": 0,
                     })
-            except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
+            except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
                 return web.json_response({"error": f"Invalid ZIP archive: {e}"}, status=422)
         try:
             data = json.loads(raw.decode("utf-8"))
@@ -460,7 +581,10 @@ def _register_crud_routes(routes):
     @routes.post("/style_grid/backup")
     async def api_backup(request):
         try:
-            return web.json_response({"ok": backup_csv_files()})
+            created = backup_csv_files()
+            if not created:
+                return web.json_response({"ok": False, "empty": True})
+            return web.json_response({"ok": True, "file": created})
         except OSError as e:
             return web.json_response({"error": str(e)})
 

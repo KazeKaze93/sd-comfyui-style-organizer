@@ -231,11 +231,15 @@ export default function App() {
             />
             <ToolBtn
               icon="💾"
-              label="Backup CSV"
+              label="Backup (CSVs + presets)"
               onClick={async () => {
                 try {
                   const res = await fetch('/style_grid/backup', { method: 'POST' })
                   const data = await res.json().catch(() => ({}))
+                  if (data.empty === true) {
+                    showToast('Nothing to back up', 'info')
+                    return
+                  }
                   if (!res.ok || data.ok === false || data.error) {
                     showToast(
                       typeof data.error === 'string' && data.error
@@ -245,7 +249,12 @@ export default function App() {
                     )
                     return
                   }
-                  showToast('💾 Backup created', 'success')
+                  const file =
+                    typeof data.file === 'string' && data.file ? data.file : ''
+                  showToast(
+                    file ? `Backup created: ${file}` : 'Backup created',
+                    'success',
+                  )
                 } catch {
                   showToast('Backup failed', 'error')
                 }

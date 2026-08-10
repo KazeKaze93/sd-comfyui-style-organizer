@@ -13,7 +13,8 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Create, edit, duplicate, and delete styles from the grid
 - Move styles between categories
 - Thumbnail previews with manual upload
-- Import and export your styles and presets, with automatic backup
+- Import and export styles, presets, and usage as JSON
+- Manual Backup: zip snapshot of CSVs + presets under `data/backups/`
 - Wildcard support: `{sg:category}` resolves to a random style from that category at generation time
 
 ![Wildcard category](docs/screenshots/wildcards.png)
@@ -83,8 +84,12 @@ Clicking an already-loaded preset unloads it.
 
 ![Presets](docs/screenshots/presets.png)
 
-**Import/Export** backs up or shares your styles and presets as a
-single file.
+**Import/Export** shares your styles, presets, and usage as a single
+JSON file. Import can also restore a Backup zip (CSVs + presets).
+
+**Backup** (toolbar diskette) writes a manual zip snapshot of your
+style CSVs and `presets.json` into `data/backups/` — it is not
+automatic, and it is separate from Export.
 
 ![Import/Export menu](docs/screenshots/import-export-menu.png)
 
@@ -117,7 +122,7 @@ folder:
 |------|-----------|------------------|
 | `data/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
 | `data/imports/*.csv` | Style packs created by the Import feature | Yes, anytime |
-| `data/backups/` | CSV backup snapshots (created by the Backup button) | Yes, oldest are auto-pruned past 20 |
+| `data/backups/` | Manual Backup `.zip` archives (CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
 | `data/presets.json` | Saved presets | Only if you don't need them |
 | `data/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
 | `data/thumbnails/` | Uploaded/generated preview images | Yes, previews just won't show until re-uploaded |
