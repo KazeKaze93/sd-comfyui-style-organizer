@@ -362,6 +362,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     set({ selectedStyles: [...selectedStyles, ...toAdd] })
     toAdd.forEach((style) => {
       get().addToRecent(style.name)
+      get().incrementUsage(style.name)
       sendToHost({
         type: 'SG_APPLY',
         styleId: style.name,

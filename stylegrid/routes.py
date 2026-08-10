@@ -218,7 +218,15 @@ def _register_usage_routes(routes):
     @routes.post("/style_grid/usage/increment")
     async def api_increment(request):
         data = await _read_json(request)
-        increment_usage(data.get("styles", []))
+        style_names = data.get("styles")
+        if style_names is None:
+            return web.json_response({"ok": True})
+        if not isinstance(style_names, list) or not all(
+            isinstance(n, str) for n in style_names
+        ):
+            return web.json_response({"error": "styles must be a list of strings"})
+        style_names = [n for n in style_names if n]
+        increment_usage(style_names)
         return web.json_response({"ok": True})
 
 
