@@ -1,5 +1,6 @@
 """Prompt resolution: wildcard expansion, tag dedup, source scoping."""
 
+import os
 import re
 
 from .wildcards import resolve_sg_wildcards
@@ -30,13 +31,13 @@ def dedup_prompt(prompt_str):
 
 
 def build_styles_by_cat(styles, active_source=""):
-    """Group styles by lowercased category. When active_source (a basename) is given,
-    only styles from that pack are included; an unknown source falls back to all styles.
+    """Group styles by lowercased category. When active_source is set, only styles
+    whose basename source matches are included (UI may pass an abs path). No silent
+    fallback to the full library when the filter matches nothing.
     """
-    if active_source:
-        pool = [s for s in styles if (s.get("source") or "") == active_source]
-        if not pool:
-            pool = styles
+    normalized_source = os.path.basename(active_source) if active_source else None
+    if normalized_source:
+        pool = [s for s in styles if (s.get("source") or "") == normalized_source]
     else:
         pool = styles
     by_cat = {}

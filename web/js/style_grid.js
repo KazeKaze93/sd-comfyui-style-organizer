@@ -7,6 +7,8 @@ let iframe = null;
 let ready = false;
 let currentNode = null;
 let allStylesCache = [];
+/** node → Map<styleName, { prompt, negative_prompt }> written at apply time. */
+const appliedByNode = new Map();
 
 function closeStyleBrowser() {
     if (overlay) overlay.style.display = "none";
@@ -100,6 +102,15 @@ function styleTextPresent(baseText, template) {
     return styleTagsPresent(baseText, template);
 }
 
+/** True when the style has real prompt/neg content and both sides match the widgets. */
+function styleIsPresent(text, negativeText, style) {
+    const prompt = style.prompt || "";
+    const neg = style.negative_prompt || "";
+    // Empty-template rows (no pos and no neg) must never auto-select via rehydrate.
+    if (!prompt && !neg) return false;
+    return styleTextPresent(text, prompt) && styleTextPresent(negativeText, neg);
+}
+
 function getTextWidgets(node) {
     return {
         text: node?.widgets?.find((w) => w.name === "text"),
@@ -110,28 +121,69 @@ function getTextWidgets(node) {
 function getActiveStyles(text, negativeText, excludeName) {
     return allStylesCache.filter((s) => {
         if (s.name === excludeName) return false;
-        return styleTextPresent(text, s.prompt || "") &&
-               styleTextPresent(negativeText, s.negative_prompt || "");
+        return styleIsPresent(text, negativeText, s);
     });
+}
+
+function isWrapStyle(style) {
+    return (style.prompt || "").includes("{prompt}") ||
+        (style.negative_prompt || "").includes("{prompt}");
 }
 
 function applyStyleToNode(node, style) {
     const { text, neg } = getTextWidgets(node);
-    if (text) text.value = applyStyleText(text.value || "", style.prompt || "");
-    if (neg) neg.value = applyStyleText(neg.value || "", style.negative_prompt || "");
+    const currentText = text ? text.value || "" : "";
+    const currentNeg = neg ? neg.value || "" : "";
+
+    // Nesting a second {prompt}-wrap puts the new prefix/suffix on the
+    // boundaries, so removeStyleText can no longer find the inner wrap.
+    if (isWrapStyle(style)) {
+        const activeWrap = getActiveStyles(currentText, currentNeg, style.name)
+            .find(isWrapStyle);
+        if (activeWrap) {
+            const message = "Only one {prompt}-wrap style can be active at a time";
+            console.warn(`[Style Grid] ${message} (blocked: ${style.name}; active: ${activeWrap.name})`);
+            if (iframe?.contentWindow) {
+                iframe.contentWindow.postMessage(
+                    { type: "SG_TOAST", message, variant: "info" },
+                    "*"
+                );
+            }
+            return;
+        }
+    }
+
+    if (text) text.value = applyStyleText(currentText, style.prompt || "");
+    if (neg) neg.value = applyStyleText(currentNeg, style.negative_prompt || "");
     node.graph?.setDirtyCanvas(true, true);
+
+    let byName = appliedByNode.get(node);
+    if (!byName) {
+        byName = new Map();
+        appliedByNode.set(node, byName);
+    }
+    byName.set(style.name, {
+        prompt: style.prompt || "",
+        negative_prompt: style.negative_prompt || "",
+    });
 }
 
 function unapplyStyleFromNode(node, style) {
+    const recorded = appliedByNode.get(node)?.get(style.name);
+    const prompt = recorded ? recorded.prompt : (style.prompt || "");
+    const negTpl = recorded ? recorded.negative_prompt : (style.negative_prompt || "");
+
     const { text, neg } = getTextWidgets(node);
     const currentText = text ? text.value || "" : "";
     const currentNeg = neg ? neg.value || "" : "";
     const others = getActiveStyles(currentText, currentNeg, style.name);
     const protectPos = others.flatMap((s) => parseTags(s.prompt || ""));
     const protectNeg = others.flatMap((s) => parseTags(s.negative_prompt || ""));
-    if (text) text.value = removeStyleText(currentText, style.prompt || "", protectPos);
-    if (neg) neg.value = removeStyleText(currentNeg, style.negative_prompt || "", protectNeg);
+    if (text) text.value = removeStyleText(currentText, prompt, protectPos);
+    if (neg) neg.value = removeStyleText(currentNeg, negTpl, protectNeg);
     node.graph?.setDirtyCanvas(true, true);
+
+    appliedByNode.get(node)?.delete(style.name);
 }
 
 // Reorders the tag-blocks belonging to currently-applied plain-tag styles to
@@ -250,6 +302,7 @@ function removeWildcardCategory(node, category) {
     if (text) text.value = strip(text.value || "");
     if (neg) neg.value = strip(neg.value || "");
     node.graph?.setDirtyCanvas(true, true);
+    syncWildcards(node);
 }
 
 function setActiveSource(node, source) {
@@ -275,9 +328,7 @@ function rehydrate() {
             const currentText = text ? text.value || "" : "";
             const currentNeg = neg ? neg.value || "" : "";
             for (const style of allStylesCache) {
-                const present = styleTextPresent(currentText, style.prompt || "") &&
-                                 styleTextPresent(currentNeg, style.negative_prompt || "");
-                if (present) {
+                if (styleIsPresent(currentText, currentNeg, style)) {
                     iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
                 }
             }
@@ -335,8 +386,28 @@ function ensureOverlay() {
             applyStyleToNode(currentNode, { name: msg.styleId, prompt: msg.prompt, negative_prompt: msg.neg });
         }
         if (msg.type === "SG_UNAPPLY" && currentNode) {
-            const style = allStylesCache.find((s) => s.name === msg.styleId);
-            if (style) unapplyStyleFromNode(currentNode, style);
+            const recorded = appliedByNode.get(currentNode)?.get(msg.styleId);
+            const cached = allStylesCache.find((s) => s.name === msg.styleId);
+            if (recorded || cached) {
+                unapplyStyleFromNode(currentNode, {
+                    name: msg.styleId,
+                    prompt: recorded ? recorded.prompt : (cached.prompt || ""),
+                    negative_prompt: recorded
+                        ? recorded.negative_prompt
+                        : (cached.negative_prompt || ""),
+                });
+            } else {
+                const name = msg.styleId || "style";
+                const message =
+                    `Could not remove ${name} — style data not found; check the prompt text manually`;
+                console.warn(`[Style Grid] ${message}`);
+                if (iframe?.contentWindow) {
+                    iframe.contentWindow.postMessage(
+                        { type: "SG_TOAST", message, variant: "info" },
+                        "*"
+                    );
+                }
+            }
         }
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
             insertWildcardCategory(currentNode, msg.category);
@@ -363,6 +434,9 @@ function openStyleBrowser(node) {
     if (overlay && overlay.style.display === "block" && currentNode === node) {
         closeStyleBrowser();
         return;
+    }
+    if (currentNode !== node) {
+        appliedByNode.clear();
     }
     currentNode = node;
     ensureOverlay();

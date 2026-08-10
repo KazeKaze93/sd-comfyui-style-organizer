@@ -8,6 +8,8 @@ export interface EditStyleDialogProps {
     category: string
     prompt: string
     negative_prompt: string
+    /** Present for Edit; used to reset the form when switching same-name packs. */
+    source_file?: string
   }
   categories: string[]
   nameEditable?: boolean
@@ -17,20 +19,20 @@ export interface EditStyleDialogProps {
     category: string
     prompt: string
     negative_prompt: string
-  }) => void
+  }) => void | Promise<void>
   onCancel: () => void
 }
 
 const inputClassName =
-  'w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors'
+  'w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors disabled:opacity-45'
 
 const textareaClassName =
-  'w-full min-h-20 px-3 py-2 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors resize-y'
+  'w-full min-h-20 px-3 py-2 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors resize-y disabled:opacity-45'
 
 const labelClassName = 'text-xs text-sg-muted mb-1'
 
 const chipClassName =
-  'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors'
+  'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
 
 export function EditStyleDialog({
   open,
@@ -45,35 +47,63 @@ export function EditStyleDialog({
   const [category, setCategory] = useState(style.category)
   const [prompt, setPrompt] = useState(style.prompt)
   const [negativePrompt, setNegativePrompt] = useState(style.negative_prompt)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setIsSubmitting(false)
+      return
+    }
     setName(style.name)
     setDescription(style.description)
     setCategory(style.category)
     setPrompt(style.prompt)
     setNegativePrompt(style.negative_prompt)
-  }, [open, style.name])
+    setIsSubmitting(false)
+    // source_file distinguishes same-name rows from different packs.
+    // Do not depend on prompt/description/etc. — a background refetch
+    // while the dialog is open would wipe in-progress edits.
+  }, [open, style.name, style.source_file])
 
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onCancel()
+        if (!isSubmitting) onCancel()
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [open, onCancel])
+  }, [open, onCancel, isSubmitting])
 
   if (!open) return null
+
+  const canSave = !(nameEditable && name.trim() === '') && !isSubmitting
+
+  const submit = async () => {
+    if (!canSave) return
+    setIsSubmitting(true)
+    try {
+      await Promise.resolve(
+        onSave({
+          name: nameEditable ? name.trim() : style.name,
+          description,
+          category,
+          prompt,
+          negative_prompt: negativePrompt,
+        }),
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[9999]">
       <div
         className="absolute inset-0 bg-black/50"
-        onClick={onCancel}
+        onClick={() => { if (!isSubmitting) onCancel() }}
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div
@@ -86,6 +116,7 @@ export function EditStyleDialog({
               <input
                 type="text"
                 value={name}
+                disabled={isSubmitting}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Style name"
                 className={inputClassName}
@@ -103,6 +134,7 @@ export function EditStyleDialog({
             <input
               type="text"
               value={description}
+              disabled={isSubmitting}
               onChange={(e) => setDescription(e.target.value)}
               className={inputClassName}
             />
@@ -113,6 +145,7 @@ export function EditStyleDialog({
             <input
               type="text"
               value={category}
+              disabled={isSubmitting}
               onChange={(e) => setCategory(e.target.value)}
               className={inputClassName}
             />
@@ -122,6 +155,7 @@ export function EditStyleDialog({
                   <button
                     key={c}
                     type="button"
+                    disabled={isSubmitting}
                     onClick={() => setCategory(c)}
                     className={chipClassName}
                   >
@@ -136,6 +170,7 @@ export function EditStyleDialog({
             <div className={labelClassName}>Prompt</div>
             <textarea
               value={prompt}
+              disabled={isSubmitting}
               onChange={(e) => setPrompt(e.target.value)}
               className={textareaClassName}
             />
@@ -145,6 +180,7 @@ export function EditStyleDialog({
             <div className={labelClassName}>Negative prompt</div>
             <textarea
               value={negativePrompt}
+              disabled={isSubmitting}
               onChange={(e) => setNegativePrompt(e.target.value)}
               className={textareaClassName}
             />
@@ -153,23 +189,16 @@ export function EditStyleDialog({
           <div className="flex justify-end gap-2 mt-3">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onCancel}
-              className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors"
+              className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={nameEditable && name.trim() === ''}
-              onClick={() =>
-                onSave({
-                  name: nameEditable ? name.trim() : style.name,
-                  description,
-                  category,
-                  prompt,
-                  negative_prompt: negativePrompt,
-                })
-              }
+              disabled={!canSave}
+              onClick={() => void submit()}
               className="px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
             >
               Save
