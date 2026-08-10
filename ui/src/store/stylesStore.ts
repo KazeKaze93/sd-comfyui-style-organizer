@@ -359,6 +359,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         neg: style.negative_prompt,
       })
     })
+    get().detectConflicts()
   },
   toggleFavorite: (name) => {
     const favs = new Set(get().favorites)
