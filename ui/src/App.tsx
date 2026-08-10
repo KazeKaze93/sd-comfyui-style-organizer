@@ -256,7 +256,6 @@ export default function App() {
               title="Clear all selected styles"
               onClick={() => {
                 useStylesStore.getState().clearAll()
-                sendToHost({ type: 'SG_CLEAR_ALL' })
               }}
             />
             <ToolBtn
