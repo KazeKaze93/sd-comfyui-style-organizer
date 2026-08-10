@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
-import { sendToHost, type Style } from '../bridge'
+import { type Style } from '../bridge'
 import {
   getCategoryColor,
   selectFilteredStyles,
@@ -9,6 +9,7 @@ import {
   useStylesStore,
 } from '../store/stylesStore'
 import { StyleCard } from './StyleCard'
+import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 
 export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   const {
@@ -106,10 +107,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     )
   }
 
-  // If specific category selected - flat grid, no headers
-  if (activeCategory &&
-      activeCategory !== '★ Favorites' &&
-      activeCategory !== '🕑 Recent') {
+  // Specific category / Favorites / Recent — flat grid, no section headers.
+  // (presets already returned above; All/null falls through to grouped view)
+  if (activeCategory) {
     return (
       <div className={`grid content-start ${
         compactMode
@@ -187,7 +187,10 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
               </span>
               <div className="flex-1" />
               <button
-                onClick={() => selectAllInCategory(cat)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  selectAllInCategory(cat)
+                }}
                 className="text-xs text-sg-muted hover:text-sg-accent 
                            transition-colors px-2 py-0.5 rounded
                            hover:bg-sg-accent/10"
@@ -226,29 +229,12 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
         )
       })}
       {catMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-[9998]"
-            onClick={() => setCatMenu(null)}
-          />
-          <div
-            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
-            style={{ left: catMenu.x, top: catMenu.y }}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                sendToHost({
-                  type: 'SG_WILDCARD_CATEGORY',
-                  category: catMenu.cat
-                })
-                setCatMenu(null)
-              }}
-            >
-              🎲 Add category as wildcard
-            </button>
-          </div>
-        </>
+        <WildcardCategoryMenu
+          category={catMenu.cat}
+          x={catMenu.x}
+          y={catMenu.y}
+          onClose={() => setCatMenu(null)}
+        />
       )}
     </div>
   )

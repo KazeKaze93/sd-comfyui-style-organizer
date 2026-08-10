@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Reorder } from 'framer-motion'
 import { BookMarked } from 'lucide-react'
-import { onHostMessage, sendToHost } from '../bridge'
+import { onHostMessage } from '../bridge'
 import { getCategoryColor, useStylesStore } from '../store/stylesStore'
 import { useShallow } from 'zustand/react/shallow'
+import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 
 export function Sidebar() {
   const {
@@ -19,6 +20,10 @@ export function Sidebar() {
       recentNames: s.recentNames,
       setCategoryOrder: s.setCategoryOrder,
       presets: s.presets,
+      // categories() deps — subscribe so list/order refresh without App re-renders
+      styles: s.styles,
+      activeSource: s.activeSource,
+      categoryOrder: s.categoryOrder,
     }))
   )
   const [catMenu, setCatMenu] = useState<{
@@ -26,7 +31,10 @@ export function Sidebar() {
     y: number
     cat: string
   } | null>(null)
-  const cats = categories()
+  // Local order while dragging; persist only on Reorder.Item onDragEnd.
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null)
+  const dragOrderRef = useRef<string[] | null>(null)
+  const cats = dragOrder ?? categories()
   const specialCategories = [
     { id: '★ Favorites', label: '★ Favorites', count: favorites.size },
     { id: '🕑 Recent', label: '🕑 Recent', count: recentNames.length },
@@ -48,8 +56,15 @@ export function Sidebar() {
       ? styles.filter(s => s.source_file === activeSource)
       : styles
     return cat
-      ? src.filter(s => s.category === cat).length
+      ? src.filter(s => (s.category || 'OTHER') === cat).length
       : src.length
+  }
+
+  const commitDragOrder = () => {
+    const next = dragOrderRef.current
+    dragOrderRef.current = null
+    setDragOrder(null)
+    if (next) setCategoryOrder(next)
   }
 
   return (
@@ -117,7 +132,10 @@ export function Sidebar() {
       <Reorder.Group
         axis="y"
         values={cats}
-        onReorder={(newOrder) => setCategoryOrder(newOrder)}
+        onReorder={(newOrder) => {
+          dragOrderRef.current = newOrder
+          setDragOrder(newOrder)
+        }}
         as="div"
         className="flex flex-col gap-1"
       >
@@ -130,10 +148,10 @@ export function Sidebar() {
               as="div"
               whileDrag={{ scale: 1.02, opacity: 0.9 }}
               className="cursor-grab active:cursor-grabbing"
+              onDragEnd={commitDragOrder}
             >
               <button
                 type="button"
-                onPointerDown={e => e.stopPropagation()}
                 onClick={() => setCategory(activeCategory === cat ? null : cat)}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -165,26 +183,12 @@ export function Sidebar() {
         })}
       </Reorder.Group>
       {catMenu && (
-        <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setCatMenu(null)} />
-          <div
-            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
-            style={{ left: catMenu.x, top: catMenu.y }}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                sendToHost({
-                  type: 'SG_WILDCARD_CATEGORY',
-                  category: catMenu.cat
-                })
-                setCatMenu(null)
-              }}
-            >
-              🎲 Add category as wildcard
-            </button>
-          </div>
-        </>
+        <WildcardCategoryMenu
+          category={catMenu.cat}
+          x={catMenu.x}
+          y={catMenu.y}
+          onClose={() => setCatMenu(null)}
+        />
       )}
     </div>
   )

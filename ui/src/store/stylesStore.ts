@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { sendToHost, type Style } from '../bridge'
 
+/** Avoid toast spam: categories() runs during render while coverage stays low. */
+let categoryOrderCoverageToastShown = false
+
 interface Conflict {
   styleA: string
   styleB: string
@@ -225,7 +228,7 @@ export function selectFilteredStyles(
   }
 
   let filtered = styles.filter(s => {
-    const matchCat = !activeCategory || s.category === activeCategory
+    const matchCat = !activeCategory || (s.category || 'OTHER') === activeCategory
     return bySource(s) && matchCat && matchesSearch(s, search)
   })
 
@@ -283,12 +286,22 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   })(),
   collapsedCategories: new Set(),
   compactMode: false,
-  favorites: new Set(
-    JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
-  ),
-  recentNames: JSON.parse(
-    localStorage.getItem('sg_v2_recent') || '[]'
-  ),
+  favorites: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
+      return new Set(Array.isArray(parsed) ? (parsed as string[]) : [])
+    } catch {
+      return new Set<string>()
+    }
+  })(),
+  recentNames: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sg_v2_recent') || '[]')
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch {
+      return []
+    }
+  })(),
   presets: {},
 
   setStyles: (styles) => {
@@ -332,19 +345,22 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const src = activeSource
       ? styles.filter(s => s.source_file === activeSource)
       : styles
-    const cats = [...new Set(src.map(s => s.category).filter(Boolean))]
+    const cats = [...new Set(src.map(s => s.category || 'OTHER'))]
     set({ collapsedCategories: new Set(cats) })
   },
   expandAll: () => set({ collapsedCategories: new Set() }),
   selectAllInCategory: (cat) => {
-    const { styles, activeSource, selectedStyles } = get()
-    const src = activeSource
-      ? styles.filter(s => s.source_file === activeSource)
-      : styles
-    let catStyles = src.filter(s => s.category === cat)
-    if (!activeSource) {
-      catStyles = dedupeStylesByNameForAllSources(catStyles)
-    }
+    const {
+      styles, search, activeCategory, activeSource,
+      selectedStyles, favorites, recentNames, presets,
+    } = get()
+    // Same pool as StyleGrid (search/source/special views + All-Sources dedupe).
+    const visible = selectFilteredStyles(
+      styles, search, activeCategory, activeSource, favorites, recentNames, presets,
+    )
+    const catStyles = visible.filter(s => (s.category || 'OTHER') === cat)
+    if (catStyles.length === 0) return
+
     const allSelected = catStyles.every(s =>
       selectedStyles.some(sel => sel.name === s.name)
     )
@@ -536,10 +552,12 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
   },
   setCategoryOrder: (order: string[]) => {
+    // Only All Sources owns the persisted order. Under a CSV filter, categories()
+    // is alphabetical anyway — skip so we don't poison the global All order.
+    if (get().activeSource) return
     localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
     localStorage.setItem('sg_v2_category_order_source', 'all')
     set({ categoryOrder: order })
-    // Sync to backend same as old panel
     fetch('/style_grid/category_order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -553,7 +571,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       ? styles.filter(s => s.source_file === activeSource)
       : styles
     const all = [...new Set(
-      filtered.map(s => s.category).filter(Boolean)
+      filtered.map(s => s.category || 'OTHER')
     )]
 
     // When specific source selected — always alphabetical
@@ -576,7 +594,17 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const coverage = relevantOrder.length / all.length
 
     // If saved order covers less than 80% of current categories — ignore it
-    if (coverage < 0.8) return allSorted
+    if (coverage < 0.8) {
+      if (!categoryOrderCoverageToastShown) {
+        categoryOrderCoverageToastShown = true
+        // categories() is called during render — defer store writes
+        queueMicrotask(() => {
+          get().showToast('Category order reset — new categories detected', 'info')
+        })
+      }
+      return allSorted
+    }
+    categoryOrderCoverageToastShown = false
 
     const rest = all.filter(c => !relevantOrder.includes(c)).sort()
     return [...relevantOrder, ...rest]
