@@ -252,6 +252,16 @@ function tokenSetsIntersect(a: Set<string>, b: Set<string>): boolean {
   return false
 }
 
+/** Prefer live catalog prompt/neg; fall back to the selection snapshot if missing. */
+function resolveSelectedForConflicts(selected: Style, live: Style[]): Style {
+  const bySource = live.find(
+    s => s.name === selected.name && s.source_file === selected.source_file
+  )
+  if (bySource) return bySource
+  const byName = live.find(s => s.name === selected.name)
+  return byName ?? selected
+}
+
 export const useStylesStore = create<StylesStore>((set, get) => ({
   toasts: [],
   styles: [],
@@ -420,13 +430,14 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
   detectConflicts: () => {
     // Mirror server detect_conflicts: exact token-set intersection, not substring.
-    const { selectedStyles } = get()
+    // Resolve prompt/neg from the live catalog so edits/refreshes aren't missed.
+    const { selectedStyles, styles } = get()
     const conflicts: Conflict[] = []
 
     for (let i = 0; i < selectedStyles.length; i++) {
       for (let j = i + 1; j < selectedStyles.length; j++) {
-        const a = selectedStyles[i]
-        const b = selectedStyles[j]
+        const a = resolveSelectedForConflicts(selectedStyles[i], styles)
+        const b = resolveSelectedForConflicts(selectedStyles[j], styles)
 
         const aPos = conflictTokenSet(a.prompt)
         const bPos = conflictTokenSet(b.prompt)
