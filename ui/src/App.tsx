@@ -72,7 +72,6 @@ export default function App() {
   const importFileInputRef = useRef<HTMLInputElement>(null)
   const {
     setStyles,
-    tab,
     selectedStyles,
     styles,
     conflicts,
@@ -91,7 +90,7 @@ export default function App() {
   useEffect(() => {
     useStylesStore.getState().loadUsage()
     const unsub = onHostMessage((msg) => {
-      if (msg.type === 'SG_INIT' || msg.type === 'SG_STYLES_UPDATE') {
+      if (msg.type === 'SG_INIT') {
         const raw: unknown = (msg as { styles?: unknown }).styles
         const arr = Array.isArray(raw)
           ? raw
@@ -100,16 +99,8 @@ export default function App() {
             : (raw as { categories?: Record<string, unknown[]> } | null)?.categories
               ? Object.values((raw as { categories: Record<string, unknown[]> }).categories).flat()
               : []
-        setStyles(
-          arr,
-          msg.type === 'SG_INIT'
-            ? msg.tab
-            : useStylesStore.getState().tab,
-        )
+        setStyles(arr)
         void useStylesStore.getState().fetchPresets()
-      }
-      if (msg.type === 'SG_HOST_TAB') {
-        useStylesStore.setState({ tab: msg.tab })
       }
       if (msg.type === 'SG_CLOSE') {
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
@@ -422,7 +413,7 @@ export default function App() {
             }
             const fresh = await fetch('/style_grid/styles').then((r) => r.json())
             const flat = Object.values(fresh.categories || {}).flat()
-            setStyles(flat, tab)
+            setStyles(flat)
             showToast(`Created "${fields.name}"`, 'success')
             setNewStyleOpen(false)
           } catch {
@@ -545,7 +536,7 @@ export default function App() {
             }
             const fresh = await fetch('/style_grid/styles').then((r) => r.json())
             const flat = Object.values(fresh.categories || {}).flat()
-            setStyles(flat, tab)
+            setStyles(flat)
             await fetchPresets()
             showToast('Import complete', 'success')
           } catch {
