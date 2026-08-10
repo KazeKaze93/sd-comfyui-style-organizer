@@ -38,4 +38,4 @@ def get_all_styles_file_paths():
 
 def get_styles_dirs():
     """Directories searched for style CSVs, used to compute thumbnail-hash relpaths."""
-    return [DATA_DIR, SAMPLES_DIR]
+    return [DATA_DIR, IMPORTS_DIR, SAMPLES_DIR]

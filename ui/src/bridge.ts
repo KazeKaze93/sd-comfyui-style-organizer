@@ -6,7 +6,6 @@ export type HostMessage =
   | { type: 'SG_STYLE_APPLIED'; style: Style }
   | { type: 'SG_WILDCARDS_ACTIVE'; categories: string[] }
   | { type: 'SG_THUMB_DONE';     styleId: string; version: number }
-  | { type: 'SG_THUMB_PROGRESS'; status: string; styleId: string; progress?: number }
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
 

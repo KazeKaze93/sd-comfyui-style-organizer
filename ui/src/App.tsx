@@ -7,7 +7,6 @@ import { Sidebar } from './components/Sidebar'
 import { StyleGrid } from './components/StyleGrid'
 import { StyleInfoPanel } from './components/StyleInfoPanel'
 import { SelectedBar } from './components/SelectedBar'
-import { ThumbProgressModal } from './components/ThumbProgressModal'
 import { Toast } from './components/Toast'
 import { ConfirmInputDialog } from './components/ConfirmInputDialog'
 import { EditStyleDialog } from './components/EditStyleDialog'
@@ -400,7 +399,6 @@ export default function App() {
         <StyleInfoPanel />
         <SelectedBar />
       </div>
-      <ThumbProgressModal />
       <EditStyleDialog
         open={newStyleOpen}
         nameEditable

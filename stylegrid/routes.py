@@ -17,7 +17,7 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import DATA_DIR, IMPORTS_DIR, THUMBNAILS_DIR
+from .config import DATA_DIR, IMPORTS_DIR
 from .csv_io import (
     categorize_styles,
     delete_style_from_csv,
@@ -31,7 +31,14 @@ from .data_files import (
     load_usage,
     save_presets,
 )
-from .thumbnails import _thumbnail_hash_input, get_thumbnail_path, list_thumbnails
+from .thumbnails import (
+    cleanup_orphan_thumbnails,
+    clear_thumbnail_files,
+    detect_image_ext,
+    find_thumbnail_path,
+    get_thumbnail_path,
+    list_thumbnails,
+)
 
 
 def detect_conflicts(style_names):
@@ -304,8 +311,18 @@ def _register_thumbnail_routes(routes):
     @routes.get("/style_grid/thumbnail")
     async def api_get_thumbnail(request):
         name = request.rel_url.query.get("name", "")
-        path = get_thumbnail_path(name)
-        if os.path.isfile(path):
+        source = (request.rel_url.query.get("source") or "").strip()
+        # Prefer the source-aware path when the client names a pack.
+        if source:
+            path = find_thumbnail_path(name, source)
+            if path:
+                return web.FileResponse(
+                    path,
+                    headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+                )
+        # Legacy name-only hash (compat net for older uploads).
+        path = find_thumbnail_path(name)
+        if path:
             return web.FileResponse(
                 path,
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
@@ -316,14 +333,13 @@ def _register_thumbnail_routes(routes):
         seen = set()
         for style in reversed(matches):
             sf = style.get("source_file") or ""
-            candidate = get_thumbnail_path(name, sf)
-            if candidate not in seen:
+            candidate = find_thumbnail_path(name, sf)
+            if candidate and candidate not in seen:
                 seen.add(candidate)
-                if os.path.isfile(candidate):
-                    return web.FileResponse(
-                        candidate,
-                        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
-                    )
+                return web.FileResponse(
+                    candidate,
+                    headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+                )
 
         return web.Response(status=404)
 
@@ -337,22 +353,22 @@ def _register_thumbnail_routes(routes):
         try:
             if "," in image_data:
                 image_data = image_data.split(",", 1)[1]
-            raw = base64.b64decode(image_data)
-            if len(raw) > 10 * 1024 * 1024:
+            # Reject before decode: base64 expands ~4/3, so encoded len > 4/3*10MB
+            # would decode past the limit and waste a full raw allocation.
+            max_raw = 10 * 1024 * 1024
+            max_b64 = (max_raw * 4 + 2) // 3
+            if len(image_data) > max_b64:
                 return web.json_response({"error": "Image too large (max 10MB)"})
-            allowed_magic = [
-                b"\xff\xd8\xff",
-                b"\x89PNG\r\n\x1a\n",
-                b"RIFF",
-                b"GIF87a",
-                b"GIF89a",
-            ]
-            is_valid_image = any(raw.startswith(m) for m in allowed_magic)
-            if raw.startswith(b"RIFF") and raw[8:12] != b"WEBP":
-                is_valid_image = False
-            if not is_valid_image:
+            raw = base64.b64decode(image_data)
+            if len(raw) > max_raw:
+                return web.json_response({"error": "Image too large (max 10MB)"})
+            ext = detect_image_ext(raw)
+            if not ext:
                 return web.json_response({"error": "Invalid image format. Allowed: JPEG, PNG, WEBP, GIF"})
-            path = get_thumbnail_path(style_name)
+            # Prefer source-aware hash when client sends source; legacy name-only otherwise.
+            csv_path = (data.get("source") or data.get("csv_path") or "").strip()
+            clear_thumbnail_files(style_name, csv_path)
+            path = get_thumbnail_path(style_name, csv_path, ext=ext)
             with open(path, "wb") as f:
                 f.write(raw)
             return web.json_response({"ok": True})
@@ -362,34 +378,15 @@ def _register_thumbnail_routes(routes):
     @routes.delete("/style_grid/thumbnail")
     async def api_delete_thumbnail(request):
         name = request.rel_url.query.get("name", "")
-        path = get_thumbnail_path(name)
-        if os.path.isfile(path):
-            os.remove(path)
+        csv_path = (request.rel_url.query.get("source") or "").strip()
+        # source present → source-aware stem; absent → legacy name-only (same as upload).
+        clear_thumbnail_files(name, csv_path)
         return web.json_response({"ok": True})
 
     @routes.post("/style_grid/thumbnails/cleanup")
     async def api_cleanup_thumbnails(request):
         """Remove thumbnails for styles that no longer exist in any CSV."""
-        if not os.path.isdir(THUMBNAILS_DIR):
-            return web.json_response({"removed": 0})
-        valid_hashes = set()
-        for s in get_cached_styles():
-            h = hashlib.md5(
-                _thumbnail_hash_input(s["name"], s.get("source_file") or "").encode("utf-8")
-            ).hexdigest()
-            valid_hashes.add(h)
-        removed = 0
-        for fname in os.listdir(THUMBNAILS_DIR):
-            if not fname.endswith(".webp"):
-                continue
-            h = os.path.splitext(fname)[0]
-            if h not in valid_hashes:
-                try:
-                    os.remove(os.path.join(THUMBNAILS_DIR, fname))
-                    removed += 1
-                except OSError:
-                    pass
-        return web.json_response({"removed": removed})
+        return web.json_response({"removed": cleanup_orphan_thumbnails()})
 
 
 def register_api(routes):

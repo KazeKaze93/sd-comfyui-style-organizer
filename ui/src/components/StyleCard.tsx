@@ -336,6 +336,55 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
             >
               🖼️ Upload preview image
             </button>
+            {displayStyle.has_thumbnail && (
+              <button
+                className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                  displayStyle.read_only
+                    ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                    : 'text-sg-text hover:bg-sg-accent/20'
+                }`}
+                onClick={async () => {
+                  if (displayStyle.read_only) {
+                    setMenuPos(null)
+                    showToast(
+                      'This style is from the protected samples pack (read-only). Duplicate it into a data source to manage your own preview.',
+                      'info',
+                    )
+                    return
+                  }
+                  setMenuPos(null)
+                  try {
+                    const params = new URLSearchParams({ name: displayStyle.name })
+                    if (displayStyle.source_file) {
+                      params.set('source', displayStyle.source_file)
+                    }
+                    const res = await fetch(`/style_grid/thumbnail?${params}`, {
+                      method: 'DELETE',
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (!res.ok || data.ok === false || data.error) {
+                      showToast(
+                        typeof data.error === 'string' && data.error
+                          ? data.error
+                          : 'Delete preview failed',
+                        'error',
+                      )
+                      return
+                    }
+                    window.postMessage(
+                      { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now() },
+                      '*',
+                    )
+                    void useStylesStore.getState().loadThumbnails()
+                    showToast('Preview deleted', 'success')
+                  } catch {
+                    showToast('Delete preview failed', 'error')
+                  }
+                }}
+              >
+                {displayStyle.read_only ? '🔒 Delete preview' : '🗑️ Delete preview'}
+              </button>
+            )}
             <div className="h-px my-1 bg-sg-border" />
             <button
               className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
@@ -606,7 +655,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               const res = await fetch('/style_grid/thumbnail/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: displayStyle.name, image: reader.result }),
+                body: JSON.stringify({
+                  name: displayStyle.name,
+                  source: displayStyle.source_file,
+                  image: reader.result,
+                }),
               })
               const data = await res.json().catch(() => ({}))
               if (!res.ok || data.ok === false || data.error) {
@@ -625,6 +678,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                 { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now() },
                 '*',
               )
+              void useStylesStore.getState().loadThumbnails()
               showToast('Preview updated', 'success')
             } catch {
               showToast('Upload failed', 'error')

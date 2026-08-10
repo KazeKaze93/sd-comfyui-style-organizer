@@ -180,6 +180,7 @@ interface StylesStore {
   detectConflicts: () => void
   loadUsage: () => Promise<void>
   loadCategoryOrder: () => Promise<void>
+  loadThumbnails: () => Promise<void>
   incrementUsage: (name: string) => void
   setCategoryOrder: (order: string[]) => void
   toggleFavorite: (name: string) => void
@@ -352,8 +353,12 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   activePresetName: null,
 
   setStyles: (styles) => {
+    const normalized = styles.map((s) => ({
+      ...s,
+      has_thumbnail: Boolean(s.has_thumbnail),
+    }))
     const sources = [...new Set(
-      styles.map(s => s.source_file).filter(Boolean)
+      normalized.map(s => s.source_file).filter(Boolean)
     )].sort()
 
     // Restore selection: exact match can fail when host path strings differ from LS (basename must match)
@@ -364,7 +369,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       resolveSourceInList(sources, lastSource)
 
     // Drop favorite names that no longer exist in the loaded catalog.
-    const names = new Set(styles.map(s => s.name))
+    const names = new Set(normalized.map(s => s.name))
     const prevFavs = get().favorites
     let favorites = prevFavs
     if ([...prevFavs].some(n => !names.has(n))) {
@@ -372,7 +377,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       localStorage.setItem('sg_v2_favorites', JSON.stringify([...favorites]))
     }
 
-    const patch: Partial<StylesStore> = { styles, sources, activeSource, favorites }
+    const patch: Partial<StylesStore> = { styles: normalized, sources, activeSource, favorites }
     if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
       patch.activeCategory = null
     }
@@ -381,6 +386,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       localStorage.setItem('sg_v2_last_source', activeSource)
       sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
     }
+    // List endpoint returns names only (not name+source); merge flags after catalog lands.
+    void get().loadThumbnails()
   },
   setSearch: (search) => set({ search }),
   setCategory: (activeCategory) => set({ activeCategory }),
@@ -580,6 +587,27 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       set({ usageCounts: counts })
     } catch {
       // ignore usage load errors
+    }
+  },
+  loadThumbnails: async () => {
+    try {
+      const r = await fetch('/style_grid/thumbnails/list')
+      if (!r.ok) return
+      const data = await r.json().catch(() => null)
+      const raw = data && typeof data === 'object' ? (data as { has_thumbnail?: unknown }).has_thumbnail : null
+      const withThumb = new Set(
+        Array.isArray(raw)
+          ? raw.filter((n): n is string => typeof n === 'string')
+          : [],
+      )
+      set((s) => ({
+        styles: s.styles.map((st) => ({
+          ...st,
+          has_thumbnail: withThumb.has(st.name),
+        })),
+      }))
+    } catch {
+      // ignore thumbnail list errors — leave prior flags
     }
   },
   loadCategoryOrder: async () => {
