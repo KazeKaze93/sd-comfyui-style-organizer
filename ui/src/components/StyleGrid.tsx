@@ -87,6 +87,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
         }`}
       >
         {presetNames.map((name) => {
+          // Deliberate StyleCard reuse (layout/styling); not a type-hack — dedicated PresetCard deferred.
           const style: Style = {
             name,
             prompt: '',

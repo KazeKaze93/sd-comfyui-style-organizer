@@ -87,6 +87,7 @@ export default function App() {
     showToast,
     presets,
     fetchPresets,
+    savePreset,
     activeSource,
     categories,
   } = useStylesStore()
@@ -440,41 +441,25 @@ export default function App() {
         confirmLabel="Save"
         onCancel={() => setPresetSaveOpen(false)}
         onConfirm={async (name) => {
+          // Save = create/overwrite by name only; rename/reorder/inspect-members intentionally out of scope.
           if (presets[name] && !window.confirm(`Overwrite existing preset "${name}"?`)) {
             return  // keep dialog open, let them rename
           }
-          try {
-            const res = await fetch('/style_grid/presets/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name,
-                styles: selectedStyles.map((s) => s.name),
-              }),
-            })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || data.ok === false || data.error) {
-              showToast(
-                typeof data.error === 'string' && data.error
-                  ? data.error
-                  : 'Save preset failed',
-                'error',
-              )
-              return
-            }
-            // This endpoint returns the updated presets map directly —
-            // unlike style/save, no separate refetch of /style_grid/styles
-            // is needed here.
-            if (data.presets) {
-              useStylesStore.setState({ presets: data.presets })
-            } else {
-              await fetchPresets()
-            }
-            showToast(`Saved preset "${name}"`, 'success')
-            setPresetSaveOpen(false)
-          } catch {
-            showToast('Save preset failed', 'error')
+          const result = await savePreset(
+            name,
+            selectedStyles.map((s) => s.name),
+          )
+          if (!result.ok) {
+            showToast(
+              typeof result.error === 'string' && result.error
+                ? result.error
+                : 'Save preset failed',
+              'error',
+            )
+            return
           }
+          showToast(`Saved preset "${name}"`, 'success')
+          setPresetSaveOpen(false)
         }}
       />
       {ieMenuPos && (

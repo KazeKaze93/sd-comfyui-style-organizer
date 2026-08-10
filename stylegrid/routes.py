@@ -204,6 +204,7 @@ def _register_style_routes(routes):
 
 
 def _register_preset_routes(routes):
+    # Logical failures use HTTP 200 + {error}/{ok} (see register_api); not a presets-only quirk.
     @routes.post("/style_grid/presets/save")
     async def api_save_preset(request):
         data = await _read_json(request)

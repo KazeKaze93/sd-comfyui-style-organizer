@@ -188,6 +188,13 @@ interface StylesStore {
   addToRecent: (name: string) => void
   clearRecent: () => void
   fetchPresets: () => Promise<void>
+  savePreset: (
+    name: string,
+    styles: string[],
+  ) => Promise<{ ok: true } | { ok: false; error?: string }>
+  deletePreset: (
+    name: string,
+  ) => Promise<{ ok: true } | { ok: false; error?: string }>
   
   // Derived
   categories: () => string[]
@@ -600,6 +607,60 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       set({ presets: data })
     } catch {
       // ignore
+    }
+  },
+  savePreset: async (name, styles) => {
+    try {
+      const res = await fetch('/style_grid/presets/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, styles }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      if (data.presets) {
+        set({ presets: data.presets })
+      } else {
+        await get().fetchPresets()
+      }
+      return { ok: true as const }
+    } catch {
+      return { ok: false as const }
+    }
+  },
+  deletePreset: async (name) => {
+    try {
+      const res = await fetch('/style_grid/presets/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      if (data.presets) {
+        set({
+          presets: data.presets,
+          ...(get().activePresetName === name ? { activePresetName: null } : {}),
+        })
+      } else {
+        if (get().activePresetName === name) {
+          set({ activePresetName: null })
+        }
+        await get().fetchPresets()
+      }
+      return { ok: true as const }
+    } catch {
+      return { ok: false as const }
     }
   },
   setCategoryOrder: (order: string[]) => {

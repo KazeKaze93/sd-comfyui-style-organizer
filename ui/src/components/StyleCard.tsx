@@ -22,7 +22,7 @@ const Portal = ({ children }: { children: React.ReactNode }) =>
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
   const {
     selectedStyles, toggleStyle, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
-    presets, clearAll, activePresetName,
+    presets, clearAll, activePresetName, deletePreset,
   } = useStylesStore(
     useShallow(s => ({
       selectedStyles: s.selectedStyles,
@@ -36,6 +36,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       presets: s.presets,
       clearAll: s.clearAll,
       activePresetName: s.activePresetName,
+      deletePreset: s.deletePreset,
     }))
   )
   const fav = useStylesStore(s => s.favorites.has(style.name))
@@ -129,6 +130,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
           }}
           onClick={(e) => {
             if (presetName) {
+              // Card CRUD: load (click) / unload / delete (✕). Rename, reorder, inspect-members intentionally out of scope.
               const preset = presets[presetName]
               if (!preset) return
               // Identity signal, not set-equality: partial/ghost members never
@@ -228,36 +230,17 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               onClick={async (e) => {
                 e.stopPropagation()
                 if (!window.confirm(`Delete preset "${presetName}"?`)) return
-                try {
-                  const res = await fetch('/style_grid/presets/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: presetName }),
-                  })
-                  const data = await res.json().catch(() => ({}))
-                  if (!res.ok || data.ok === false || data.error) {
-                    showToast(
-                      typeof data.error === 'string' && data.error
-                        ? data.error
-                        : 'Delete preset failed',
-                      'error',
-                    )
-                    return
-                  }
-                  if (data.presets) {
-                    useStylesStore.setState({
-                      presets: data.presets,
-                      ...(activePresetName === presetName
-                        ? { activePresetName: null }
-                        : {}),
-                    })
-                  } else if (activePresetName === presetName) {
-                    useStylesStore.setState({ activePresetName: null })
-                  }
-                  showToast(`Deleted preset "${presetName}"`, 'success')
-                } catch {
-                  showToast('Delete preset failed', 'error')
+                const result = await deletePreset(presetName)
+                if (!result.ok) {
+                  showToast(
+                    typeof result.error === 'string' && result.error
+                      ? result.error
+                      : 'Delete preset failed',
+                    'error',
+                  )
+                  return
                 }
+                showToast(`Deleted preset "${presetName}"`, 'success')
               }}
               className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full text-sg-muted hover:bg-red-500/20 hover:text-red-400 transition-colors"
               title="Delete preset"
