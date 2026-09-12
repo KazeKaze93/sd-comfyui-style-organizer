@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.4 — 2026-09-12
+
+### Fixed
+- Wrap-style templates: prompts wrapping `{prompt}` more than once now have every occurrence replaced, not just the first
+- Thumbnails: styles with the same name across different packs no longer overwrite each other's cached preview version
+- Style delete: the thumbnail file is now removed along with the style row instead of being left orphaned on disk
+- Bundled demo pack: sample style names are now namespaced (`Demo` marker after the category prefix) so they no longer collide with real distributed packs sharing the same category taxonomy
+
+### Added
+- Click-outside-to-close: clicking outside the Style Grid panel closes it again, via a dedicated backdrop (replaces the old approach that stopped working reliably)
+
 ## 0.0.3 — 2026-08-11
 
 ### Fixed
