@@ -372,7 +372,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                       return
                     }
                     window.postMessage(
-                      { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now() },
+                      { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now(), source_file: displayStyle.source_file || '' },
                       '*',
                     )
                     void useStylesStore.getState().loadThumbnails()
@@ -675,7 +675,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               // (bridge.ts) — a same-window postMessage reaches it directly,
               // no host round-trip needed.
               window.postMessage(
-                { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now() },
+                { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now(), source_file: displayStyle.source_file || '' },
                 '*',
               )
               void useStylesStore.getState().loadThumbnails()
