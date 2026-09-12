@@ -306,7 +306,7 @@ function buildSgToken(category, spec) {
 function insertWildcardCategory(node, category) {
     const { text } = getTextWidgets(node);
     if (!text) return;
-    const token = `{sg:${category}}`;
+    const token = buildSgToken(category, "");
     const already = parseTags(text.value || "").some(
         (t) => t.toLowerCase() === token.toLowerCase()
     );
@@ -317,18 +317,24 @@ function insertWildcardCategory(node, category) {
 }
 
 function extractWildcardCategories(str) {
-    return [...(str || "").matchAll(/\{sg:([^}]+)\}/gi)].map((m) => m[1].trim());
+    return [...(str || "").matchAll(/\{sg:([^}]+)\}/gi)].map((m) => {
+        const parsed = parseSgInner(m[1]);
+        return { category: parsed.category, spec: parsed.spec, token: m[0] };
+    });
 }
 
 function activeWildcardCategories(text, negativeText) {
     const all = [...extractWildcardCategories(text), ...extractWildcardCategories(negativeText)];
     const seen = new Set();
     const result = [];
-    for (const c of all) {
-        const key = c.toLowerCase();
+    for (const entry of all) {
+        const key =
+            String(entry.category || "").toLowerCase() +
+            "\0" +
+            String(entry.spec || "").toLowerCase();
         if (!seen.has(key)) {
             seen.add(key);
-            result.push(c);
+            result.push(entry);
         }
     }
     return result;
@@ -336,14 +342,21 @@ function activeWildcardCategories(text, negativeText) {
 
 function syncWildcards(node) {
     const { text, neg } = getTextWidgets(node);
-    const categories = activeWildcardCategories(text ? text.value || "" : "", neg ? neg.value || "" : "");
+    const categories = activeWildcardCategories(
+        text ? text.value || "" : "",
+        neg ? neg.value || "" : ""
+    ).map((entry) => ({ category: entry.category, spec: entry.spec }));
     iframe.contentWindow.postMessage({ type: "SG_WILDCARDS_ACTIVE", categories }, "*");
 }
 
-function removeWildcardCategory(node, category) {
+function removeWildcardCategory(node, category, spec) {
     const { text, neg } = getTextWidgets(node);
-    const token = `{sg:${category}}`.toLowerCase();
-    const strip = (s) => parseTags(s).filter((t) => t.toLowerCase() !== token).join(", ");
+    const token = buildSgToken(category, spec || "").toLowerCase();
+    const strip = (s) =>
+        splitTopLevelCommas(s || "")
+            .map((t) => t.trim())
+            .filter((t) => t && t.toLowerCase() !== token)
+            .join(", ");
     if (text) text.value = strip(text.value || "");
     if (neg) neg.value = strip(neg.value || "");
     node.graph?.setDirtyCanvas(true, true);
@@ -476,7 +489,7 @@ function ensureOverlay() {
             clearAllStyles(currentNode);
         }
         if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
-            removeWildcardCategory(currentNode, msg.category);
+            removeWildcardCategory(currentNode, msg.category, msg.spec || "");
         }
         if (msg.type === "SG_REORDER_STYLES" && currentNode) {
             reorderStylesInNode(currentNode, msg.styleIds);
