@@ -303,10 +303,10 @@ function buildSgToken(category, spec) {
     return "{sg:" + cat + (sp ? ":" + sp : "") + "}";
 }
 
-function insertWildcardCategory(node, category) {
+function insertWildcardCategory(node, category, spec) {
     const { text } = getTextWidgets(node);
     if (!text) return;
-    const token = buildSgToken(category, "");
+    const token = buildSgToken(category, spec || "");
     const already = parseTags(text.value || "").some(
         (t) => t.toLowerCase() === token.toLowerCase()
     );
@@ -359,6 +359,63 @@ function removeWildcardCategory(node, category, spec) {
             .join(", ");
     if (text) text.value = strip(text.value || "");
     if (neg) neg.value = strip(neg.value || "");
+    node.graph?.setDirtyCanvas(true, true);
+    syncWildcards(node);
+}
+
+function reorderWildcardCategories(node, newOrder) {
+    const { text, neg } = getTextWidgets(node);
+    const order = Array.isArray(newOrder) ? newOrder : [];
+    const wcRe = /^\{sg:([^}]+)\}$/i;
+
+    function orderKey(category, spec) {
+        return String(category || "").toLowerCase() + "\0" + String(spec || "").toLowerCase();
+    }
+
+    function reorderOne(raw) {
+        const tokens = splitTopLevelCommas(raw || "");
+        const present = {};
+        let firstWcIdx = -1;
+        const nonWildcards = [];
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            const m = wcRe.exec(t);
+            if (m) {
+                if (firstWcIdx === -1) firstWcIdx = i;
+                const parsed = parseSgInner(m[1]);
+                present[orderKey(parsed.category, parsed.spec)] = true;
+            } else {
+                nonWildcards.push(t);
+            }
+        }
+        if (firstWcIdx === -1) return null;
+
+        const reorderedWc = [];
+        for (const item of order) {
+            if (!item || typeof item !== "object") continue;
+            const cat = String(item.category || "").trim();
+            const sp = item.spec == null ? "" : String(item.spec);
+            if (cat && present[orderKey(cat, sp)]) {
+                reorderedWc.push(buildSgToken(cat, sp));
+            }
+        }
+
+        const beforeCount = firstWcIdx;
+        return nonWildcards
+            .slice(0, beforeCount)
+            .concat(reorderedWc)
+            .concat(nonWildcards.slice(beforeCount))
+            .join(", ");
+    }
+
+    if (text) {
+        const nextP = reorderOne(text.value || "");
+        if (nextP !== null) text.value = nextP;
+    }
+    if (neg) {
+        const nextN = reorderOne(neg.value || "");
+        if (nextN !== null) neg.value = nextN;
+    }
     node.graph?.setDirtyCanvas(true, true);
     syncWildcards(node);
 }
@@ -485,11 +542,19 @@ function ensureOverlay() {
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
             insertWildcardCategory(currentNode, msg.category);
         }
+        if (msg.type === "SG_WILDCARD_SLICE" && currentNode) {
+            insertWildcardCategory(currentNode, msg.category, msg.spec || "");
+        }
         if (msg.type === "SG_CLEAR_ALL" && currentNode) {
             clearAllStyles(currentNode);
         }
         if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
             removeWildcardCategory(currentNode, msg.category, msg.spec || "");
+        }
+        if (msg.type === "SG_REORDER_WILDCARDS" && currentNode) {
+            if (Array.isArray(msg.categories) && msg.categories.length) {
+                reorderWildcardCategories(currentNode, msg.categories);
+            }
         }
         if (msg.type === "SG_REORDER_STYLES" && currentNode) {
             reorderStylesInNode(currentNode, msg.styleIds);
