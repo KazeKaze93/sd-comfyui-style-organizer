@@ -415,6 +415,10 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
                     )
                     return
                   }
+                  fetch(
+                    `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
+                    { method: 'DELETE' },
+                  ).catch(() => { /* best-effort, style delete already succeeded */ })
                   sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
                   useStylesStore.getState().removeStyleRow(displayStyle)
                   showToast(`Deleted "${displayStyle.name}"`, 'success')
