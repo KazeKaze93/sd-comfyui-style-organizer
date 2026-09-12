@@ -576,6 +576,8 @@ def _register_crud_routes(routes):
         if not name:
             return web.json_response({"error": "Name required"})
         deleted = delete_style_from_csv(name, data.get("source"))
+        if deleted:
+            clear_thumbnail_files(name, (data.get("source") or "").strip())
         return web.json_response({"ok": deleted})
 
     @routes.post("/style_grid/backup")
