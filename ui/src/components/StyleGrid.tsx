@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
-import { type Style } from '../bridge'
+import { sendToHost, type Style } from '../bridge'
+import { buildSliceSpec } from '../lib/wildcardSlice'
 import {
   getCategoryColor,
   selectFilteredStyles,
@@ -18,6 +19,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     compactMode, collapsedCategories, toggleCollapse,
     selectedStyles, selectAllInCategory,
     categories,
+    sliceMode, sliceSelection,
+    exitSliceMode, toggleSliceSelection,
+    selectAllSlice, clearSliceSelection,
   } = useStylesStore(
     useShallow(s => ({
       styles: s.styles,
@@ -35,6 +39,12 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       categories: s.categories,
       // subscribe so sidebar reorder re-renders group order
       categoryOrder: s.categoryOrder,
+      sliceMode: s.sliceMode,
+      sliceSelection: s.sliceSelection,
+      exitSliceMode: s.exitSliceMode,
+      toggleSliceSelection: s.toggleSliceSelection,
+      selectAllSlice: s.selectAllSlice,
+      clearSliceSelection: s.clearSliceSelection,
     }))
   )
   const [catMenu, setCatMenu] = useState<{
@@ -48,6 +58,153 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     () => selectFilteredStyles(styles, search, activeCategory, activeSource, favorites, recentNames, presets),
     [styles, search, activeCategory, activeSource, favorites, recentNames, presets]
   )
+
+  const sliceCategory = sliceMode?.category ?? null
+
+  /** Currently visible (search/filter-applied) cards for the slice category. */
+  const visibleSliceStyles = useMemo(() => {
+    if (!sliceCategory) return [] as Style[]
+    const want = sliceCategory.toLowerCase()
+    return filtered.filter((s) => (s.category || 'OTHER').toLowerCase() === want)
+  }, [filtered, sliceCategory])
+
+  /** Unfiltered category total for the compactor (source-scoped, not search-scoped). */
+  const allNamesInCategory = useMemo(() => {
+    if (!sliceCategory) return [] as string[]
+    const want = sliceCategory.toLowerCase()
+    return styles
+      .filter((s) => {
+        if ((s.category || 'OTHER').toLowerCase() !== want) return false
+        if (activeSource && s.source_file !== activeSource) return false
+        return true
+      })
+      .map((s) => s.name)
+  }, [styles, sliceCategory, activeSource])
+
+  const gridClass = `grid content-start ${
+    compactMode
+      ? (windowed
+          ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
+          : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1')
+      : (windowed
+          ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
+          : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
+  }`
+
+  const renderSliceCard = (style: Style) => {
+    const checked = sliceSelection.includes(style.name)
+    const label = style.name.includes('_')
+      ? style.name.split('_').slice(1).join(' ')
+      : style.name
+    return (
+      <div key={styleRowKey(style)} className="relative">
+        <StyleCard style={style} windowed={windowed} />
+        <button
+          type="button"
+          className={`absolute inset-0 z-20 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent ${
+            checked ? 'bg-purple-500/15 ring-1 ring-purple-400/50' : 'bg-transparent'
+          }`}
+          aria-pressed={checked}
+          aria-label={`${checked ? 'Deselect' : 'Select'} ${label} for wildcard slice`}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            toggleSliceSelection(style.name)
+          }}
+        >
+          <span className="absolute top-1.5 right-1.5 flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={checked}
+              readOnly
+              tabIndex={-1}
+              aria-hidden
+              className="pointer-events-none h-4 w-4 accent-purple-500"
+            />
+          </span>
+        </button>
+      </div>
+    )
+  }
+
+  const renderSliceModeBar = () => {
+    if (!sliceMode) return null
+    const cat = sliceMode.category
+    return (
+      <div
+        role="toolbar"
+        aria-label={`Wildcard slice selection for ${cat}`}
+        className="flex flex-wrap items-center gap-2 px-1 py-2 mb-2 rounded-md
+                   border border-purple-400/40 bg-purple-500/10"
+      >
+        <span className="text-sm text-sg-text font-medium">
+          Slice: <span className="text-purple-300">{cat}</span>
+        </span>
+        <span className="text-xs text-sg-muted" aria-live="polite">
+          {sliceSelection.length} selected
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          aria-label="Select all visible styles for wildcard slice"
+          className="text-xs px-2 py-1 rounded text-sg-muted hover:text-sg-text
+                     hover:bg-sg-surface/60 transition-colors"
+          onClick={() => selectAllSlice(visibleSliceStyles.map((s) => s.name))}
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          aria-label="Clear wildcard slice selection"
+          className="text-xs px-2 py-1 rounded text-sg-muted hover:text-sg-text
+                     hover:bg-sg-surface/60 transition-colors"
+          onClick={() => clearSliceSelection()}
+        >
+          Clear all
+        </button>
+        <button
+          type="button"
+          aria-label="Add selection as wildcard slice"
+          className="text-xs px-2.5 py-1 rounded bg-purple-500/30 border border-purple-400/50
+                     text-sg-text hover:bg-purple-500/45 transition-colors font-medium"
+          onClick={() => {
+            const spec = buildSliceSpec(cat, sliceSelection, allNamesInCategory)
+            sendToHost({ type: 'SG_WILDCARD_SLICE', category: cat, spec })
+            exitSliceMode()
+          }}
+        >
+          Add as wildcard
+        </button>
+        <button
+          type="button"
+          aria-label="Cancel wildcard slice selection"
+          className="text-xs px-2 py-1 rounded text-sg-muted hover:text-sg-text
+                     hover:bg-sg-surface/60 transition-colors"
+          onClick={() => exitSliceMode()}
+        >
+          Cancel
+        </button>
+      </div>
+    )
+  }
+
+  // Slice-selection mode: hide other categories; search still drives `filtered` → visibleSliceStyles.
+  if (sliceMode) {
+    return (
+      <div className="space-y-2">
+        {renderSliceModeBar()}
+        {visibleSliceStyles.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-sg-muted text-sm">
+            No styles found
+          </div>
+        ) : (
+          <div className={gridClass} style={{ contentVisibility: 'auto' }}>
+            {visibleSliceStyles.map(renderSliceCard)}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (activeCategory === 'presets') {
     const q = search.toLowerCase()
