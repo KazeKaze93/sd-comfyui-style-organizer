@@ -8,6 +8,7 @@ export default defineConfig({
   build: {
     outDir: '../web/ui',
     assetsDir: 'assets',
+    emptyOutDir: true,
   },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') }
