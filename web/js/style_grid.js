@@ -3,6 +3,7 @@ import { app } from "/scripts/app.js";
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
 
 let overlay = null;
+let backdrop = null;
 let iframe = null;
 let ready = false;
 let currentNode = null;
@@ -11,6 +12,7 @@ let allStylesCache = [];
 const appliedByNode = new Map();
 
 function closeStyleBrowser() {
+    if (backdrop) backdrop.style.display = "none";
     if (overlay) overlay.style.display = "none";
 }
 
@@ -339,6 +341,20 @@ function rehydrate() {
 function ensureOverlay() {
     if (overlay) return;
 
+    backdrop = document.createElement("div");
+    backdrop.id = "sg-backdrop";
+    backdrop.style.cssText = [
+        "position:fixed",
+        "inset:0",
+        "z-index:2147482999",
+        "background:rgba(0,0,0,0.4)",
+        "display:none",
+        "cursor:default",
+    ].join(";");
+    backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) closeStyleBrowser();
+    });
+
     overlay = document.createElement("div");
     overlay.id = "sg-overlay";
     overlay.style.cssText = [
@@ -365,6 +381,7 @@ function ensureOverlay() {
     iframe.src = `${IFRAME_SRC}?t=${Date.now()}`;
 
     overlay.appendChild(iframe);
+    document.body.appendChild(backdrop);
     document.body.appendChild(overlay);
 
     document.addEventListener("keydown", (e) => {
@@ -442,9 +459,11 @@ function openStyleBrowser(node) {
     ensureOverlay();
     if (ready) {
         rehydrate().then(() => {
+            backdrop.style.display = "block";
             overlay.style.display = "block";
         });
     } else {
+        backdrop.style.display = "block";
         overlay.style.display = "block";
     }
 }
