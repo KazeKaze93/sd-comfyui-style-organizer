@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { onHostMessage, sendToHost } from './bridge'
+import { onHostMessage, sendToHost, type Style } from './bridge'
 import { selectFilteredStyles, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
@@ -17,6 +17,9 @@ import {
   TooltipTrigger,
 } from './components/ui/tooltip'
 import { cn } from './lib/utils'
+
+/** Response shape for `GET /style_grid/styles`. */
+type StylesResponse = { categories?: Record<string, Style[]> }
 
 const ToolBtn = ({
   icon,
@@ -553,7 +556,7 @@ export default function App() {
             }
             const stylesN = Number(data.imported) || 0
             const presetsN = Number(data.presets_imported) || 0
-            const fresh = await fetch('/style_grid/styles').then((r) => r.json())
+            const fresh: StylesResponse = await fetch('/style_grid/styles').then((r) => r.json())
             const flat = Object.values(fresh.categories || {}).flat()
             setStyles(flat)
             await fetchPresets()

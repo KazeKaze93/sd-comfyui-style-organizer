@@ -1,14 +1,32 @@
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
 import { useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
+import { describeSpec } from '../lib/wildcardSlice'
 
 export function SelectedBar() {
-  const { selectedStyles, toggleStyle, setSelectedStyles, activeWildcards, removeWildcard } = useStylesStore()
+  const {
+    selectedStyles, toggleStyle, setSelectedStyles,
+    activeWildcards, setActiveWildcards, removeWildcard,
+    styles, activeSource,
+  } = useStylesStore()
 
   if (selectedStyles.length === 0 && activeWildcards.length === 0) return null
 
   const displayName = (name: string) =>
     name.includes('_') ? name.split('_').slice(1).join(' ') : name
+
+  /** Same scoping as StyleGrid's allNamesInCategory (category + activeSource).
+   * Category match is case-insensitive: chip categories come from lowercased tokens. */
+  const allNamesInCategory = (category: string) => {
+    const want = category.toLowerCase()
+    return styles
+      .filter((s) => {
+        if ((s.category || 'OTHER').toLowerCase() !== want) return false
+        if (activeSource && s.source_file !== activeSource) return false
+        return true
+      })
+      .map((s) => s.name)
+  }
 
   return (
     <AnimatePresence>
@@ -58,24 +76,45 @@ export function SelectedBar() {
         )}
 
         {activeWildcards.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-4 py-2">
-            {activeWildcards.map(category => (
-              <span
-                key={category}
-                className="flex items-center gap-1 px-2 py-1 rounded-full
-                           bg-purple-500/20 border border-purple-400/40
-                           text-xs text-sg-text select-none"
-              >
-                <span className="mr-0.5">🎲</span>
-                {category}
-                <button
-                  onClick={() => removeWildcard(category)}
-                  className="text-sg-muted hover:text-sg-text ml-1
-                             transition-colors leading-none"
-                >✕</button>
-              </span>
-            ))}
-          </div>
+          <Reorder.Group
+            axis="x"
+            values={activeWildcards}
+            onReorder={(newOrder) => {
+              setActiveWildcards(newOrder)
+              sendToHost({ type: 'SG_REORDER_WILDCARDS', categories: newOrder })
+            }}
+            className="flex flex-wrap gap-2 px-4 py-2"
+            as="div"
+          >
+            {activeWildcards.map((ref) => {
+              const { category, spec } = ref
+              const { count, names } = describeSpec(category, spec, allNamesInCategory(category))
+              const label = spec === '' ? category : `${category} (${count})`
+              const title = spec === '' ? undefined : names.join(', ')
+              return (
+                <Reorder.Item
+                  key={`${category}:${spec}`}
+                  value={ref}
+                  as="span"
+                  title={title}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full
+                             bg-purple-500/20 border border-purple-400/40
+                             text-xs text-sg-text cursor-grab active:cursor-grabbing
+                             hover:bg-purple-500/30 transition-colors select-none"
+                  whileDrag={{ scale: 1.05, zIndex: 50 }}
+                >
+                  <span className="text-sg-muted/50 mr-0.5 text-[10px]">⠿</span>
+                  <span className="mr-0.5">🎲</span>
+                  {label}
+                  <button
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={() => removeWildcard(ref)}
+                    className="text-sg-muted hover:text-sg-text ml-1 transition-colors leading-none"
+                  >✕</button>
+                </Reorder.Item>
+              )
+            })}
+          </Reorder.Group>
         )}
       </motion.div>
     </AnimatePresence>

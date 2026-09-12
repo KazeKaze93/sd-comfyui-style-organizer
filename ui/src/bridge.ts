@@ -4,7 +4,7 @@ export type HostMessage =
   | { type: 'SG_INIT';           styles: Style[] }
   | { type: 'SG_TOAST'; message: string; variant: 'success' | 'error' | 'info' }
   | { type: 'SG_STYLE_APPLIED'; style: Style }
-  | { type: 'SG_WILDCARDS_ACTIVE'; categories: string[] }
+  | { type: 'SG_WILDCARDS_ACTIVE'; categories: WildcardRef[] }
   | { type: 'SG_THUMB_DONE';     styleId: string; version: number; source_file: string }
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
@@ -15,13 +15,21 @@ export type FrameMessage =
   | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string }
   | { type: 'SG_UNAPPLY';       styleId: string }
   | { type: 'SG_WILDCARD_CATEGORY'; category: string }
-  | { type: 'SG_REMOVE_WILDCARD'; category: string }
+  | { type: 'SG_WILDCARD_SLICE'; category: string; spec: string }
+  | { type: 'SG_REMOVE_WILDCARD'; category: string; spec: string }
   | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
+  | { type: 'SG_REORDER_WILDCARDS'; categories: WildcardRef[] }
   | { type: 'SG_CLOSE_REQUEST' }
   | { type: 'SG_CLEAR_ALL' }
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
 
 // ── Shared types ──────────────────────────────────────────────
+/** Category + optional slice spec for `{sg:category}` / `{sg:category:spec}` tokens. */
+export interface WildcardRef {
+  category: string
+  spec: string
+}
+
 export interface Style {
   name:              string
   prompt:            string
