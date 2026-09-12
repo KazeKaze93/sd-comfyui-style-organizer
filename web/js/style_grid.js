@@ -63,7 +63,7 @@ function styleTagsPresent(baseText, requirement) {
 function applyStyleText(baseText, template) {
     if (!template) return baseText;
     if (template.includes("{prompt}")) {
-        return template.replace("{prompt}", baseText);
+        return template.split("{prompt}").join(baseText);
     }
     return mergeTagsIntoText(baseText, template);
 }
