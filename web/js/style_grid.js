@@ -17,7 +17,7 @@ function closeStyleBrowser() {
 }
 
 function parseTags(str) {
-    return (str || "").split(",").map((t) => t.trim()).filter(Boolean);
+    return splitTopLevelCommas(str).map((t) => t.trim()).filter(Boolean);
 }
 
 function tagKey(tag) {
