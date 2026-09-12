@@ -1,4 +1,5 @@
 import { sendToHost } from '../bridge'
+import { useStylesStore } from '../store/stylesStore'
 
 type WildcardCategoryMenuProps = {
   category: string
@@ -30,6 +31,16 @@ export function WildcardCategoryMenu({
           }}
         >
           🎲 Add category as wildcard
+        </button>
+        <button
+          type="button"
+          className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+          onClick={() => {
+            useStylesStore.getState().startSliceMode(category)
+            onClose()
+          }}
+        >
+          🎲 Select styles for wildcard...
         </button>
       </div>
     </>
