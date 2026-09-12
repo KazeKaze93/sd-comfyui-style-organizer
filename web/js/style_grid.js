@@ -260,6 +260,49 @@ function clearAllStyles(node) {
     syncWildcards(node);
 }
 
+// Slice tokens contain commas inside their spec, so any naive .split(",") over prompt text shreds them.
+function splitTopLevelCommas(s) {
+    if (!s || !String(s).trim()) return [];
+    const str = String(s);
+    const parts = [];
+    let parenDepth = 0;
+    let braceDepth = 0;
+    let cur = "";
+    for (let i = 0; i < str.length; i++) {
+        const c = str[i];
+        if (c === "(") parenDepth++;
+        else if (c === ")") parenDepth = Math.max(0, parenDepth - 1);
+        else if (c === "{") braceDepth++;
+        else if (c === "}") braceDepth = Math.max(0, braceDepth - 1);
+        if (c === "," && parenDepth === 0 && braceDepth === 0) {
+            if (cur.trim()) parts.push(cur.trim());
+            cur = "";
+        } else {
+            cur += c;
+        }
+    }
+    if (cur.trim()) parts.push(cur.trim());
+    return parts;
+}
+
+function parseSgInner(inner) {
+    const s = String(inner || "");
+    const idx = s.indexOf(":");
+    if (idx === -1) {
+        return { category: s.trim().toLowerCase(), spec: "" };
+    }
+    return {
+        category: s.slice(0, idx).trim().toLowerCase(),
+        spec: s.slice(idx + 1).trim(),
+    };
+}
+
+function buildSgToken(category, spec) {
+    const cat = String(category || "").toLowerCase();
+    const sp = spec == null ? "" : String(spec);
+    return "{sg:" + cat + (sp ? ":" + sp : "") + "}";
+}
+
 function insertWildcardCategory(node, category) {
     const { text } = getTextWidgets(node);
     if (!text) return;
