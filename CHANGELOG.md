@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.5 — 2026-09-13
+
+### Fixed
+- Clear all: the toolbar button now actually clears. It previously fanned out per-style unapply messages and left wildcard tokens and stale per-node bookkeeping behind; it now uses the host's complete clear path and resets the panel selection in one step
+- Slice selection mode listed no styles when it was opened for a category other than the one selected in the sidebar
+- Prompt text is now split on top-level commas only, treating braces as well as parentheses as grouping. Slice tokens contain commas inside their spec, so the previous splitting shredded them; this also stops weighted groups such as `(smiling, happy:1.2)` from being broken apart during apply, unapply and reorder
+- Package size: stale hashed bundles are no longer accumulated in the published package — roughly 28 MB of dead build output removed, and builds now replace the output directory instead of piling onto it
+
+### Added
+- Wildcard slices: a `{sg:<category>:<spec>}` token form that randomizes over a chosen subset of a category instead of the whole thing. Spec entries are style-name suffixes with the category prefix omitted; `-` excludes, a trailing `*` is a prefix glob, and the two combine. Includes are unioned first, then excludes subtract. A spec whose names have all been removed from the CSV falls back to the full category rather than vanishing from the prompt
+- Slice selection UI: the category context menu gains an entry that puts the grid into a checkbox selection mode with Select all / Clear all / Add as wildcard / Cancel. Search and the source filter stay active inside the mode, and Select all covers only what the current filter shows. The inserted token is compacted to the shortest correct form, so selecting almost an entire category writes a short exclude token rather than a long list
+- Wildcard chips can be dragged to reorder, and a slice chip shows how many styles it can resolve to, with their names in the tooltip
+- Test suite and CI: pytest coverage for the resolver, vitest coverage for the slice compactor, a shared fixture pinning the Python and TypeScript implementations of the slice grammar to each other, and a GitHub Actions workflow running both suites plus typechecks and lint on every push and pull request
+
 ## 0.0.4 — 2026-09-12
 
 ### Fixed
