@@ -1,0 +1,12 @@
+# Committed Vite build output: never apply EOL conversion.
+# core.autocrlf would otherwise smudge CRLF into the hashed index.js/css.
+# outDir is web/ui (not ui/dist).
+web/ui/** -text
+
+# Copied verbatim into web/ui by Vite (default publicDir). Same hazard:
+# a CRLF-smudged icons.svg re-dirties the -text build copy on every build.
+# Contents today: favicon.svg, icons.svg — both asset copies, not hand-edited prose.
+ui/public/** -text
+
+# web/js/*.js stays text on purpose: Forge-style plain JS loaded by ComfyUI,
+# hand-edited and line-diffable, not generated.
