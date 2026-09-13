@@ -63,6 +63,7 @@ export function EditStyleDialog({
     // source_file distinguishes same-name rows from different packs.
     // Do not depend on prompt/description/etc. — a background refetch
     // while the dialog is open would wipe in-progress edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: omit field deps so refetch cannot clobber edits
   }, [open, style.name, style.source_file])
 
   useEffect(() => {
