@@ -31,6 +31,7 @@ Right-click a category in the **sidebar** for wildcard actions:
 - **Whole category:** `{sg:body}` — category match is case-insensitive
 - **Slice:** `{sg:body:Tanned,Shortstack}` — comma-separated **suffixes without the category prefix** (not `BODY_Tanned`). Leading `-` excludes (`{sg:body:-Tanned}`); trailing `*` is a prefix glob (`{sg:body:Male_*}`)
 - **Resolution:** includes are unioned, then excludes subtract. If every listed name is missing, the token **falls back to the whole category** instead of vanishing. The UI writes the shortest correct form; the resolver understands all forms
+- **Chips:** each active `{sg:…}` appears as a chip in the selected bar. A slice chip shows the **resolved pool size** (how many styles the token can pick from), with those style names in the tooltip — not the number of raw spec entries
 - **When / what:** expanded when the Style Grid node runs. A wildcard in the positive field pulls the style’s `prompt`; in the negative field it pulls `negative_prompt`
 - **Source filter:** a specific CSV limits the pool to that pack; All Sources uses the merged library
 - **Unknown category:** the raw token is left in place through nested passes, then stripped with a warning
