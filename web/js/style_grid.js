@@ -258,6 +258,10 @@ function clearAllStyles(node) {
     if (neg) neg.value = currentNeg;
     node.graph?.setDirtyCanvas(true, true);
     syncWildcards(node);
+    appliedByNode.delete(node);
+    if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
+    }
 }
 
 // Slice tokens contain commas inside their spec, so any naive .split(",") over prompt text shreds them.
