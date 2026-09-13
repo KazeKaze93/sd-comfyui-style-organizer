@@ -15,13 +15,27 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Thumbnail previews with manual upload
 - Import and export styles, presets, and usage as JSON
 - Manual Backup: zip snapshot of `data/` + `imports/` CSVs and presets under `data/backups/`
-- Wildcard support: `{sg:category}` resolves to a random style from that category at generation time
+- Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob)
 
 ![Wildcard category](docs/screenshots/wildcards.png)
 
-Right-click any category header and choose "Add category as wildcard"
-to insert `{sg:category}` into the active text field — it resolves to
-a random style from that category each time the workflow runs.
+Right-click a category in the **sidebar** for wildcard actions:
+
+| Item | What it does |
+|---|---|
+| **Add category as wildcard** | Inserts `{sg:<category>}` into the active text field |
+| **Select styles for wildcard…** | Opens slice-selection mode: tick styles (search and source filter still apply; **Select all** covers the currently visible list). **Add as wildcard** inserts a compact `{sg:<category>:<spec>}` for that selection |
+
+**How `{sg:…}` works**
+
+- **Whole category:** `{sg:body}` — category match is case-insensitive
+- **Slice:** `{sg:body:Tanned,Shortstack}` — comma-separated **suffixes without the category prefix** (not `BODY_Tanned`). Leading `-` excludes (`{sg:body:-Tanned}`); trailing `*` is a prefix glob (`{sg:body:Male_*}`)
+- **Resolution:** includes are unioned, then excludes subtract. If every listed name is missing, the token **falls back to the whole category** instead of vanishing. The UI writes the shortest correct form; the resolver understands all forms
+- **When / what:** expanded when the Style Grid node runs. A wildcard in the positive field pulls the style’s `prompt`; in the negative field it pulls `negative_prompt`
+- **Source filter:** a specific CSV limits the pool to that pack; All Sources uses the merged library
+- **Unknown category:** the raw token is left in place through nested passes, then stripped with a warning
+
+You can also type or paste `{sg:…}` tokens by hand.
 
 - Works with multiple CSV sources at once, or filtered to one
 
@@ -132,6 +146,26 @@ folder:
 `samples/demo.csv` (the bundled demo pack) is read-only by
 design — Edit, Move, and Delete are blocked on styles from this file.
 Use Duplicate to create an editable copy in `data/` first.
+
+## Development
+
+Python tests (resolver / slice grammar) and UI tests (compactor + parity) run in CI on push and pull request to `master`.
+
+```bash
+# Python (from repo root; needs pytest)
+python -m pytest tests/ -v
+
+# UI (from ui/)
+npm ci
+npm test
+npx tsc --noEmit -p tsconfig.app.json
+npx tsc --noEmit -p tsconfig.node.json
+npx tsc --noEmit -p tsconfig.test.json
+npm run lint
+
+# Rebuild the committed panel bundle into web/ui/
+npm run build
+```
 
 ## License
 
