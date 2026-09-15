@@ -46,8 +46,6 @@ export function SearchBar() {
   }
 
   const handleSelect = (style: typeof styles[0]) => {
-    setInputValue('')
-    setSearch('')
     setOpen(false)
     setHighlight('')
     // Apply immediately if not already selected
