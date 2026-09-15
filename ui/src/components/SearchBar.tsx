@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import {
   dedupeStylesByNameForAllSources,
-  matchesNameSearch,
+  matchesSearch,
   styleRowKey,
   useStylesStore,
 } from '../store/stylesStore'
@@ -29,14 +29,14 @@ export function SearchBar() {
   // Top 8 matches by name
   const suggestions = inputValue.length > 0
     ? searchableStyles
-        .filter(s => matchesNameSearch(s, inputValue))
+        .filter(s => matchesSearch(s, inputValue))
         .slice(0, 8)
     : []
 
   const handleInput = (val: string) => {
     const nextSuggestions = val.length > 0
       ? searchableStyles
-          .filter(s => matchesNameSearch(s, val))
+          .filter(s => matchesSearch(s, val))
           .slice(0, 8)
       : []
     setInputValue(val)
