@@ -105,6 +105,9 @@ export default function App() {
     categories,
   } = useStylesStore()
 
+  const activeSourceIsReadOnly = !!activeSource &&
+    styles.some(s => s.source_file === activeSource && s.read_only)
+
   useEffect(() => {
     useStylesStore.getState().loadUsage()
     void useStylesStore.getState().loadCategoryOrder()
@@ -314,21 +317,18 @@ export default function App() {
             <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
             <ToolBtn
               icon={Plus}
-              label="New style"
+              label={
+                !activeSource
+                  ? 'Select a specific CSV source before creating a style'
+                  : activeSourceIsReadOnly
+                    ? 'This source is read-only (bundled samples). Pick or import another CSV to add styles.'
+                    : 'New style'
+              }
               colorClassName="text-emerald-400/80"
+              disabled={!activeSource || activeSourceIsReadOnly}
               onClick={() => {
-                if (!activeSource) {
-                  showToast('⚠️ Select a specific CSV source before creating a style', 'info')
-                  return
-                }
                 // samples/ is write-protected — style/save rematerializes to
                 // data/<basename>.csv. Tell the user before they fill the form.
-                if (styles.some((s) => s.source_file === activeSource && s.read_only)) {
-                  showToast(
-                    'This pack is from the protected samples pack (read-only). New styles will be created in data/ instead.',
-                    'info',
-                  )
-                }
                 setNewStyleOpen(true)
               }}
             />
