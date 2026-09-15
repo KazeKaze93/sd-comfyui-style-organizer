@@ -89,6 +89,13 @@ export function matchesSearch(style: Style, rawQuery: string): boolean {
   return query.split(/\s+/).filter(Boolean).every(token => haystack.includes(token))
 }
 
+export function matchesNameSearch(style: Style, rawQuery: string): boolean {
+  const query = rawQuery.trim().toLowerCase()
+  if (!query) return true
+  const haystack = nameSearchText(style)
+  return query.split(/\s+/).filter(Boolean).every(token => haystack.includes(token))
+}
+
 /** First occurrence wins; use only when the active source is "All sources". */
 export function dedupeStylesByNameForAllSources(styles: Style[]): Style[] {
   const seen = new Set<string>()
