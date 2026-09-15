@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
-  Dices, Package, Save, Import, Eraser, Rows3, ChevronsUpDown, Plus,
+  Package, Save, Import, Eraser, Rows3, ChevronsUpDown, Plus,
   type LucideIcon,
 } from 'lucide-react'
 import { onHostMessage, sendToHost, type Style } from './bridge'
-import { selectFilteredStyles, useStylesStore } from './store/stylesStore'
+import { useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
 import { Sidebar } from './components/Sidebar'
@@ -86,10 +86,6 @@ export default function App() {
     setStyles,
     selectedStyles,
     styles,
-    search,
-    activeCategory,
-    favorites,
-    recentNames,
     conflicts,
     toggleStyle,
     toggleCompact,
@@ -216,25 +212,6 @@ export default function App() {
         </div>
         <TooltipProvider>
           <div className="flex items-center gap-1.5 shrink-0">
-            <ToolBtn
-              icon={Dices}
-              label="Random style"
-              colorClassName="text-amber-400/80"
-              onClick={() => {
-                const filtered = selectFilteredStyles(
-                  styles, search, activeCategory, activeSource, favorites, recentNames, presets,
-                )
-                const available = filtered.filter(
-                  (s) => !selectedStyles.some((sel) => sel.name === s.name),
-                )
-                if (available.length === 0) {
-                  showToast('All styles already applied', 'info')
-                  return
-                }
-                const pick = available[Math.floor(Math.random() * available.length)]
-                toggleStyle(pick)
-              }}
-            />
             <ToolBtn
               icon={Package}
               label="Save preset"
