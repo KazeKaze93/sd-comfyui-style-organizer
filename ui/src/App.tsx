@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import {
+  Dices, Package, Save, Import, Eraser, Rows3, ChevronsUpDown, Plus,
+  type LucideIcon,
+} from 'lucide-react'
 import { onHostMessage, sendToHost, type Style } from './bridge'
 import { selectFilteredStyles, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
@@ -22,13 +26,13 @@ import { cn } from './lib/utils'
 type StylesResponse = { categories?: Record<string, Style[]> }
 
 const ToolBtn = ({
-  icon,
+  icon: Icon,
   label,
   title,
   onClick,
   disabled,
 }: {
-  icon: string
+  icon: LucideIcon
   label: string
   title?: string
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void
@@ -40,14 +44,15 @@ const ToolBtn = ({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title}
+      aria-label={label}
       className={cn(
-        'w-8 h-8 flex items-center justify-center rounded transition-colors text-sm border',
+        'w-8 h-8 flex items-center justify-center rounded transition-colors border',
         disabled
           ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
           : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
       )}
     >
-      {icon}
+      <Icon size={16} />
     </button>
   )
   return (
@@ -204,7 +209,7 @@ export default function App() {
         <TooltipProvider>
           <div className="flex items-center gap-1.5 shrink-0">
             <ToolBtn
-              icon="🎲"
+              icon={Dices}
               label="Random style"
               onClick={() => {
                 const filtered = selectFilteredStyles(
@@ -222,7 +227,7 @@ export default function App() {
               }}
             />
             <ToolBtn
-              icon="📦"
+              icon={Package}
               label="Save preset"
               onClick={() => {
                 if (selectedStyles.length === 0) {
@@ -233,7 +238,7 @@ export default function App() {
               }}
             />
             <ToolBtn
-              icon="💾"
+              icon={Save}
               label="Backup (CSVs + presets)"
               onClick={async () => {
                 try {
@@ -264,7 +269,7 @@ export default function App() {
               }}
             />
             <ToolBtn
-              icon="📥"
+              icon={Import}
               label="Import/Export"
               onClick={(e) => {
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -272,12 +277,7 @@ export default function App() {
               }}
             />
             <ToolBtn
-              icon="📋"
-              label={'CSV table editor is temporarily unavailable.'}
-              disabled
-            />
-            <ToolBtn
-              icon="🧹"
+              icon={Eraser}
               label="Clear all selected styles"
               title="Clear all selected styles"
               onClick={() => {
@@ -285,19 +285,19 @@ export default function App() {
               }}
             />
             <ToolBtn
-              icon="▪"
+              icon={Rows3}
               label="Compact mode"
               onClick={() => toggleCompact()}
             />
             <ToolBtn
-              icon="↕"
+              icon={ChevronsUpDown}
               label="Collapse all"
               onClick={() =>
                 collapsedCategories.size > 0 ? expandAll() : collapseAll()
               }
             />
             <ToolBtn
-              icon="➕"
+              icon={Plus}
               label="New style"
               onClick={() => {
                 if (!activeSource) {
