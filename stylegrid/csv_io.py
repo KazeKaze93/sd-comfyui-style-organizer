@@ -168,13 +168,17 @@ def save_style_to_csv(name, prompt, negative_prompt, description="", source_file
         # All five cells: spreadsheet apps treat leading =+-@\t\r as formulas.
         # SD/ComfyUI weight syntax uses (tag:1.2) / [tag] / trailing +/- — not a
         # leading =+-@ on the whole cell — so prompt/neg are safe to escape.
-        return [
+        base = [
             _sanitize_csv_cell(name),
             _sanitize_csv_cell(prompt),
             _sanitize_csv_cell(negative_prompt),
             _sanitize_csv_cell(description),
             cat_cell,
         ]
+        extra = list(existing_row[5:]) if existing_row and len(existing_row) > 5 else []
+        while len(base) + len(extra) < len(header):
+            extra.append("")
+        return base + extra
 
     # Match the on-disk name cell (already-sanitized rows from a prior save).
     name_cell = _sanitize_csv_cell(name)
@@ -240,13 +244,9 @@ def delete_style_from_csv(name, source_file=None):
     if not removed:
         return False
     with open(target_path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
-        writer.writeheader()
+        writer = csv.writer(f)
+        writer.writerow(header or FIELDNAMES)
         for row in rows:
-            row_dict = {
-                fn: (row[i].strip() if i < len(row) and row[i] is not None else "")
-                for i, fn in enumerate(FIELDNAMES)
-            }
-            writer.writerow(row_dict)
+            writer.writerow(row)
     invalidate_styles_cache()
     return True

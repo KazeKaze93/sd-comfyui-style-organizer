@@ -34,6 +34,18 @@ const labelClassName = 'text-xs text-sg-muted mb-1'
 const chipClassName =
   'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
 
+function splitDescriptionAndCombos(raw: string): { text: string; combos: string } {
+  const m = /^([\s\S]*?)\s*Combos?:\s*([^.]+)\.?\s*$/i.exec(raw || '')
+  if (!m) return { text: raw || '', combos: '' }
+  return { text: m[1].trim(), combos: m[2].trim() }
+}
+function joinDescriptionAndCombos(text: string, combos: string): string {
+  const t = (text || '').trim()
+  const c = (combos || '').trim()
+  if (!c) return t
+  return t ? `${t}${t.endsWith('.') ? ' ' : '. '}Combos: ${c}.` : `Combos: ${c}.`
+}
+
 export function EditStyleDialog({
   open,
   style,
@@ -43,7 +55,8 @@ export function EditStyleDialog({
   onCancel,
 }: EditStyleDialogProps) {
   const [name, setName] = useState(style.name)
-  const [description, setDescription] = useState(style.description)
+  const [descriptionText, setDescriptionText] = useState('')
+  const [combosText, setCombosText] = useState('')
   const [category, setCategory] = useState(style.category)
   const [prompt, setPrompt] = useState(style.prompt)
   const [negativePrompt, setNegativePrompt] = useState(style.negative_prompt)
@@ -55,7 +68,9 @@ export function EditStyleDialog({
       return
     }
     setName(style.name)
-    setDescription(style.description)
+    { const parsed = splitDescriptionAndCombos(style.description)
+      setDescriptionText(parsed.text)
+      setCombosText(parsed.combos) }
     setCategory(style.category)
     setPrompt(style.prompt)
     setNegativePrompt(style.negative_prompt)
@@ -89,7 +104,7 @@ export function EditStyleDialog({
       await Promise.resolve(
         onSave({
           name: nameEditable ? name.trim() : style.name,
-          description,
+          description: joinDescriptionAndCombos(descriptionText, combosText),
           category,
           prompt,
           negative_prompt: negativePrompt,
@@ -134,9 +149,21 @@ export function EditStyleDialog({
             <div className={labelClassName}>Description</div>
             <input
               type="text"
-              value={description}
+              value={descriptionText}
               disabled={isSubmitting}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => setDescriptionText(e.target.value)}
+              className={inputClassName}
+            />
+          </div>
+
+          <div className="mb-3">
+            <div className={labelClassName}>Combos (optional)</div>
+            <input
+              type="text"
+              value={combosText}
+              disabled={isSubmitting}
+              placeholder="STYLE_X; CATEGORY_*"
+              onChange={(e) => setCombosText(e.target.value)}
               className={inputClassName}
             />
           </div>
