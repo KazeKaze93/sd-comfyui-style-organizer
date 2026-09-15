@@ -31,12 +31,14 @@ const ToolBtn = ({
   title,
   onClick,
   disabled,
+  colorClassName,
 }: {
   icon: LucideIcon
   label: string
   title?: string
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
+  colorClassName?: string
 }) => {
   const button = (
     <button
@@ -49,7 +51,10 @@ const ToolBtn = ({
         'w-8 h-8 flex items-center justify-center rounded transition-colors border',
         disabled
           ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
-          : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
+          : cn(
+              colorClassName ?? 'text-sg-muted',
+              'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
+            ),
       )}
     >
       <Icon size={16} />
@@ -211,6 +216,7 @@ export default function App() {
             <ToolBtn
               icon={Dices}
               label="Random style"
+              colorClassName="text-amber-400/80"
               onClick={() => {
                 const filtered = selectFilteredStyles(
                   styles, search, activeCategory, activeSource, favorites, recentNames, presets,
@@ -229,6 +235,7 @@ export default function App() {
             <ToolBtn
               icon={Package}
               label="Save preset"
+              colorClassName="text-amber-400/80"
               onClick={() => {
                 if (selectedStyles.length === 0) {
                   showToast('Select at least one style first', 'info')
@@ -237,9 +244,11 @@ export default function App() {
                 setPresetSaveOpen(true)
               }}
             />
+            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
             <ToolBtn
               icon={Save}
               label="Backup (CSVs + presets)"
+              colorClassName="text-blue-400/80"
               onClick={async () => {
                 try {
                   const res = await fetch('/style_grid/backup', { method: 'POST' })
@@ -271,34 +280,42 @@ export default function App() {
             <ToolBtn
               icon={Import}
               label="Import/Export"
+              colorClassName="text-blue-400/80"
               onClick={(e) => {
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                 setIeMenuPos({ x: rect.left, y: rect.bottom + 4 })
               }}
             />
+            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
             <ToolBtn
               icon={Eraser}
               label="Clear all selected styles"
               title="Clear all selected styles"
+              colorClassName="text-red-400/80"
               onClick={() => {
                 sendToHost({ type: 'SG_CLEAR_ALL' })
               }}
             />
+            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
             <ToolBtn
               icon={Rows3}
               label="Compact mode"
+              colorClassName="text-violet-300/80"
               onClick={() => toggleCompact()}
             />
             <ToolBtn
               icon={ChevronsUpDown}
               label="Collapse all"
+              colorClassName="text-violet-300/80"
               onClick={() =>
                 collapsedCategories.size > 0 ? expandAll() : collapseAll()
               }
             />
+            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
             <ToolBtn
               icon={Plus}
               label="New style"
+              colorClassName="text-emerald-400/80"
               onClick={() => {
                 if (!activeSource) {
                   showToast('⚠️ Select a specific CSV source before creating a style', 'info')
