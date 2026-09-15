@@ -107,7 +107,7 @@ export function Sidebar() {
           {count(null)}
         </span>
       </button>
-      {specialCategories.map(({ id, label, count }) => count > 0 && (
+      {specialCategories.map(({ id, label, count }) => (
         <button
           key={id}
           type="button"
@@ -129,7 +129,8 @@ export function Sidebar() {
       ${activeCategory === id
         ? 'bg-sg-accent text-white'
         : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
-      ${id === FAVORITES_VIEW || id === RECENT_VIEW ? 'cursor-context-menu' : ''}`}
+      ${id === FAVORITES_VIEW || id === RECENT_VIEW ? 'cursor-context-menu' : ''}
+      ${count === 0 ? 'opacity-40' : ''}`}
         >
           {label}
           <span className="ml-auto float-right text-xs opacity-60">{count}</span>
