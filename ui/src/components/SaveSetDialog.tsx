@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  resolvePresetMembers,
   suggestPresetName,
   useStylesStore,
+  type ResolvedPresetMember,
 } from '../store/stylesStore'
 
 export interface SaveSetDialogProps {
@@ -12,7 +14,7 @@ export interface SaveSetDialogProps {
 export function SaveSetDialog({ open, onClose }: SaveSetDialogProps) {
   const selectedStyles = useStylesStore((s) => s.selectedStyles)
   const activeWildcards = useStylesStore((s) => s.activeWildcards)
-  const activePresetName = useStylesStore((s) => s.activePresetName)
+  const styles = useStylesStore((s) => s.styles)
   const presets = useStylesStore((s) => s.presets)
   const savePreset = useStylesStore((s) => s.savePreset)
   const showToast = useStylesStore((s) => s.showToast)
@@ -32,15 +34,30 @@ export function SaveSetDialog({ open, onClose }: SaveSetDialogProps) {
       setExistsWarning(false)
       return
     }
-    const activePreset = activePresetName ? presets[activePresetName] : undefined
-    setName(activePresetName || suggestPresetName(selectedStyles))
-    setNote(activePreset?.note ?? '')
+    const wcKey = (c: string, s: string) =>
+      `${String(c || '').toLowerCase()}\0${String(s || '').toLowerCase()}`
+    const activeWcKeys = new Set(activeWildcards.map((w) => wcKey(w.category, w.spec)))
+    const matches = Object.entries(presets).filter(([, preset]) => {
+      const members = resolvePresetMembers(preset.styles ?? [], styles)
+      const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
+        m.status === 'found')
+      if (found.length === 0) return false
+      if (!found.every((m) => selectedStyles.some((s) => s.name === m.style.name))) return false
+      const presetWcKeys = new Set(
+        (preset.wildcards ?? []).map((wc) => wcKey(String(wc.category || ''), String(wc.spec || '')))
+      )
+      return [...presetWcKeys].every((k) => activeWcKeys.has(k))
+    })
+    const active = matches.length === 1 ? matches[0] : undefined
+
+    setName(active ? active[0] : suggestPresetName(selectedStyles))
+    setNote(active ? (active[1].note ?? '') : '')
     setIncludeWildcards(hasWildcards)
     setExistsWarning(false)
     setIsSubmitting(false)
     const id = requestAnimationFrame(() => inputRef.current?.focus())
     return () => cancelAnimationFrame(id)
-  }, [open, selectedStyles, hasWildcards, activePresetName, presets])
+  }, [open, selectedStyles, activeWildcards, hasWildcards, presets, styles])
 
   useEffect(() => {
     if (!open) return
