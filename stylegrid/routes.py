@@ -31,6 +31,7 @@ from .data_files import (
     increment_usage,
     load_presets,
     load_usage,
+    preset_styles_payload_ok,
     save_presets,
     save_usage,
 )
@@ -251,24 +252,7 @@ def _register_style_routes(routes):
                         if not isinstance(incoming, dict):
                             return web.json_response({"error": "presets must be an object"})
                         p = load_presets()
-                        for name, entry in incoming.items():
-                            if not isinstance(name, str) or not name.strip():
-                                presets_skipped += 1
-                                continue
-                            if not isinstance(entry, dict):
-                                presets_skipped += 1
-                                continue
-                            styles = entry.get("styles")
-                            if not isinstance(styles, list) or not all(
-                                isinstance(n, str) for n in styles
-                            ):
-                                presets_skipped += 1
-                                continue
-                            created = entry.get("created")
-                            if not isinstance(created, str) or not created:
-                                created = time.strftime("%Y-%m-%dT%H:%M:%S")
-                            p[name.strip()] = {"styles": styles, "created": created}
-                            presets_imported += 1
+                        presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
                         if presets_imported:
                             save_presets(p)
 
@@ -313,24 +297,7 @@ def _register_style_routes(routes):
             if not isinstance(incoming, dict):
                 return web.json_response({"error": "presets must be an object"})
             p = load_presets()
-            for name, entry in incoming.items():
-                if not isinstance(name, str) or not name.strip():
-                    presets_skipped += 1
-                    continue
-                if not isinstance(entry, dict):
-                    presets_skipped += 1
-                    continue
-                styles = entry.get("styles")
-                if not isinstance(styles, list) or not all(
-                    isinstance(n, str) for n in styles
-                ):
-                    presets_skipped += 1
-                    continue
-                created = entry.get("created")
-                if not isinstance(created, str) or not created:
-                    created = time.strftime("%Y-%m-%dT%H:%M:%S")
-                p[name.strip()] = {"styles": styles, "created": created}
-                presets_imported += 1
+            presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
             if presets_imported:
                 save_presets(p)
         imported = 0
@@ -493,6 +460,44 @@ def _register_style_routes(routes):
         return web.json_response({"ok": True})
 
 
+def _merge_incoming_presets(target, incoming):
+    """Merge imported presets into target. Returns (imported_count, skipped_count)."""
+    imported = 0
+    skipped = 0
+    for name, entry in incoming.items():
+        if not isinstance(name, str) or not name.strip():
+            skipped += 1
+            continue
+        if not isinstance(entry, dict):
+            skipped += 1
+            continue
+        styles = entry.get("styles")
+        if not preset_styles_payload_ok(styles if styles is not None else []):
+            skipped += 1
+            continue
+        created = entry.get("created")
+        if not isinstance(created, str) or not created:
+            created = time.strftime("%Y-%m-%dT%H:%M:%S")
+        note = entry.get("note", "")
+        if not isinstance(note, str):
+            note = ""
+        wildcards = entry.get("wildcards", [])
+        if not isinstance(wildcards, list):
+            wildcards = []
+        row = {
+            "styles": styles if styles is not None else [],
+            "wildcards": wildcards,
+            "note": note,
+            "created": created,
+        }
+        last_used = entry.get("last_used")
+        if isinstance(last_used, str) and last_used:
+            row["last_used"] = last_used
+        target[name.strip()] = row
+        imported += 1
+    return imported, skipped
+
+
 def _register_preset_routes(routes):
     # Logical failures use HTTP 200 + {error}/{ok} (see register_api); not a presets-only quirk.
     @routes.post("/style_grid/presets/save")
@@ -503,19 +508,40 @@ def _register_preset_routes(routes):
         styles = data.get("styles")
         if styles is None:
             styles = []
+        wildcards = data.get("wildcards", [])
+        note = data.get("note", "")
+        overwrite = bool(data.get("overwrite"))
         if not name:
             return web.json_response({"error": "Name required"})
-        if not isinstance(styles, list) or not all(isinstance(n, str) for n in styles):
-            return web.json_response({"error": "styles must be a list of strings"})
-        prev = presets.get(name)
+        if not preset_styles_payload_ok(styles):
+            return web.json_response(
+                {"error": "styles must be a list of names or {name, source_file?, weight?}"}
+            )
+        if wildcards is None:
+            wildcards = []
+        if not isinstance(wildcards, list):
+            return web.json_response({"error": "wildcards must be a list"})
+        if not isinstance(note, str):
+            note = ""
+        if name in presets and not overwrite:
+            return web.json_response({"error": "exists", "name": name})
+        prev = presets.get(name) if isinstance(presets.get(name), dict) else None
         created = (
             prev["created"]
-            if isinstance(prev, dict) and prev.get("created")
+            if prev and isinstance(prev.get("created"), str) and prev.get("created")
             else time.strftime("%Y-%m-%dT%H:%M:%S")
         )
-        presets[name] = {"styles": styles, "created": created}
-        save_presets(presets)
-        return web.json_response({"ok": True, "presets": presets})
+        entry = {
+            "styles": styles,
+            "wildcards": wildcards,
+            "note": note,
+            "created": created,
+        }
+        if prev and isinstance(prev.get("last_used"), str) and prev.get("last_used"):
+            entry["last_used"] = prev["last_used"]
+        presets[name] = entry
+        saved = save_presets(presets)
+        return web.json_response({"ok": True, "presets": saved})
 
     @routes.post("/style_grid/presets/delete")
     async def api_delete_preset(request):
@@ -524,8 +550,40 @@ def _register_preset_routes(routes):
         name = data.get("name", "")
         if name in presets:
             del presets[name]
-            save_presets(presets)
+            saved = save_presets(presets)
+            return web.json_response({"ok": True, "presets": saved})
         return web.json_response({"ok": True, "presets": presets})
+
+    @routes.post("/style_grid/presets/rename")
+    async def api_rename_preset(request):
+        data = await _read_json(request)
+        old_name = (data.get("old_name") or "").strip()
+        new_name = (data.get("new_name") or "").strip()
+        overwrite = bool(data.get("overwrite"))
+        if not old_name or not new_name:
+            return web.json_response({"error": "Name required"})
+        presets = load_presets()
+        if old_name not in presets:
+            return web.json_response({"error": "not_found", "name": old_name})
+        if new_name != old_name and new_name in presets and not overwrite:
+            return web.json_response({"error": "exists", "name": new_name})
+        entry = presets.pop(old_name)
+        presets[new_name] = entry
+        saved = save_presets(presets)
+        return web.json_response({"ok": True, "presets": saved})
+
+    @routes.post("/style_grid/presets/touch")
+    async def api_touch_preset(request):
+        data = await _read_json(request)
+        name = (data.get("name") or "").strip()
+        if not name:
+            return web.json_response({"error": "Name required"})
+        presets = load_presets()
+        if name not in presets:
+            return web.json_response({"error": "not_found", "name": name})
+        presets[name]["last_used"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        saved = save_presets(presets)
+        return web.json_response({"ok": True, "presets": saved})
 
     @routes.get("/style_grid/presets/list")
     async def api_list_presets(request):

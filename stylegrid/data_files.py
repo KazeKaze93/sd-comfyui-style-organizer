@@ -14,6 +14,170 @@ from .config import (
     _csvs_in,
     logger,
 )
+from .csv_io import load_all_styles
+
+
+def _coerce_weight(raw):
+    if isinstance(raw, bool) or raw is None:
+        return 1.0
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return float(raw.strip())
+        except ValueError:
+            return 1.0
+    return 1.0
+
+
+def normalize_wildcard_entry(entry):
+    """Return {category, spec} or None."""
+    if not isinstance(entry, dict):
+        return None
+    raw_cat = entry.get("category", "")
+    if not isinstance(raw_cat, str):
+        return None
+    category = raw_cat.strip()
+    if not category:
+        return None
+    raw_spec = entry.get("spec", "")
+    spec = raw_spec if isinstance(raw_spec, str) else ""
+    return {"category": category, "spec": spec}
+
+
+def normalize_preset_entry(entry, styles_by_name_first):
+    """Return {name, source_file, weight} or None.
+
+    Accepts bare name str or dict. Unresolvable names are kept (empty source_file)
+    so the UI can show missing members.
+    """
+    weight = 1.0
+    if isinstance(entry, str):
+        name = entry.strip()
+        if not name:
+            return None
+        match = styles_by_name_first.get(name)
+        source_file = (match.get("source_file") or "") if match else ""
+        if match:
+            name = match["name"]
+        return {"name": name, "source_file": source_file, "weight": weight}
+
+    if isinstance(entry, dict):
+        raw_name = entry.get("name", "")
+        if not isinstance(raw_name, str):
+            return None
+        name = raw_name.strip()
+        if not name:
+            return None
+        weight = _coerce_weight(entry.get("weight", 1.0))
+        raw_source = entry.get("source_file", "")
+        source_file = raw_source.strip() if isinstance(raw_source, str) else ""
+        if source_file:
+            return {"name": name, "source_file": source_file, "weight": weight}
+        match = styles_by_name_first.get(name)
+        if match:
+            return {
+                "name": match["name"],
+                "source_file": match.get("source_file") or "",
+                "weight": weight,
+            }
+        return {"name": name, "source_file": "", "weight": weight}
+
+    return None
+
+
+def _presets_need_rewrite(raw):
+    """True when on-disk presets are still in a pre-extended shape."""
+    if not isinstance(raw, dict):
+        return False
+    for preset in raw.values():
+        if not isinstance(preset, dict):
+            return True
+        if "wildcards" not in preset or "note" not in preset:
+            return True
+        styles = preset.get("styles", [])
+        if not isinstance(styles, list):
+            return True
+        for entry in styles:
+            if isinstance(entry, str):
+                return True
+            if not isinstance(entry, dict):
+                return True
+            if "weight" not in entry:
+                return True
+            if "name" not in entry:
+                return True
+    return False
+
+
+def normalize_presets(presets):
+    """Upgrade presets: styles -> {name, source_file, weight}; wildcards/note defaults."""
+    if not isinstance(presets, dict):
+        return {}
+    styles_by_name_first = {}
+    for s in load_all_styles():
+        styles_by_name_first.setdefault(s["name"], s)
+    out = {}
+    for preset_name, preset in presets.items():
+        if not isinstance(preset_name, str) or not preset_name.strip():
+            continue
+        if not isinstance(preset, dict):
+            continue
+        styles_raw = preset.get("styles", [])
+        if not isinstance(styles_raw, list):
+            styles_raw = []
+        normalized_styles = []
+        for entry in styles_raw:
+            normalized = normalize_preset_entry(entry, styles_by_name_first)
+            if normalized is not None:
+                normalized_styles.append(normalized)
+
+        wildcards_raw = preset.get("wildcards", [])
+        if not isinstance(wildcards_raw, list):
+            wildcards_raw = []
+        wildcards = []
+        for entry in wildcards_raw:
+            wc = normalize_wildcard_entry(entry)
+            if wc is not None:
+                wildcards.append(wc)
+
+        note = preset.get("note", "")
+        if not isinstance(note, str):
+            note = ""
+
+        created = preset.get("created")
+        if not isinstance(created, str) or not created:
+            created = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+        new_preset = {
+            "styles": normalized_styles,
+            "wildcards": wildcards,
+            "note": note,
+            "created": created,
+        }
+        last_used = preset.get("last_used")
+        if isinstance(last_used, str) and last_used:
+            new_preset["last_used"] = last_used
+        out[preset_name.strip()] = new_preset
+    return out
+
+
+def preset_styles_payload_ok(styles):
+    """True if styles is a list of bare names and/or {name, ...} objects."""
+    if not isinstance(styles, list):
+        return False
+    for entry in styles:
+        if isinstance(entry, str):
+            if not entry.strip():
+                return False
+            continue
+        if isinstance(entry, dict):
+            raw_name = entry.get("name", "")
+            if not isinstance(raw_name, str) or not raw_name.strip():
+                return False
+            continue
+        return False
+    return True
 
 
 def _read_presets():
@@ -32,19 +196,30 @@ def _read_presets():
         return {}, True
 
 
-def load_presets():
-    presets, _ = _read_presets()
-    return presets
-
-
-def save_presets(presets):
+def _write_presets_file(normalized):
     directory = os.path.dirname(PRESETS_FILE)
     if directory:
         os.makedirs(directory, exist_ok=True)
     tmp = PRESETS_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(presets, f, indent=2, ensure_ascii=False)
+        json.dump(normalized, f, indent=2, ensure_ascii=False)
     os.replace(tmp, PRESETS_FILE)
+
+
+def load_presets():
+    presets, corrupt = _read_presets()
+    if corrupt:
+        return {}
+    normalized = normalize_presets(presets)
+    if presets and _presets_need_rewrite(presets):
+        _write_presets_file(normalized)
+    return normalized
+
+
+def save_presets(presets):
+    normalized = normalize_presets(presets)
+    _write_presets_file(normalized)
+    return normalized
 
 
 def _read_usage():

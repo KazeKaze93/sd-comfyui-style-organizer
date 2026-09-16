@@ -474,12 +474,14 @@ export default function App() {
         onCancel={() => setPresetSaveOpen(false)}
         onConfirm={async (name) => {
           // Save = create/overwrite by name only; rename/reorder/inspect-members intentionally out of scope.
-          if (presets[name] && !window.confirm(`Overwrite existing preset "${name}"?`)) {
+          const exists = Boolean(presets[name])
+          if (exists && !window.confirm(`Overwrite existing preset "${name}"?`)) {
             return  // keep dialog open, let them rename
           }
           const result = await savePreset(
             name,
             selectedStyles.map((s) => s.name),
+            { overwrite: exists },
           )
           if (!result.ok) {
             showToast(

@@ -4,6 +4,15 @@ import { sendToHost, type Style, type WildcardRef } from '../bridge'
 /** Avoid toast spam: categories() runs during render while coverage stays low. */
 let categoryOrderCoverageToastShown = false
 
+/** Preset style ref: legacy bare name, or backend-normalized {name, source_file, weight?}. */
+export type PresetStyleEntry = string | { name: string; source_file?: string; weight?: number }
+
+export function presetEntryName(entry: PresetStyleEntry): string | null {
+  if (typeof entry === 'string') return entry || null
+  if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') return null
+  return entry.name || null
+}
+
 interface Conflict {
   styleA: string
   styleB: string
@@ -149,7 +158,7 @@ interface StylesStore {
   /** User-defined category order for All Sources view. */
   categoryOrder: string[]
   /** Saved style presets from backend (`/style_grid/presets/list`). */
-  presets: Record<string, { styles: string[]; created: string }>
+  presets: Record<string, { styles: PresetStyleEntry[]; created: string; wildcards?: { category: string; spec: string }[]; note?: string; last_used?: string }>
   /** Last preset loaded via StyleCard click; drives toggle-unload for partial sets. */
   activePresetName: string | null
   
@@ -194,7 +203,8 @@ interface StylesStore {
   fetchPresets: () => Promise<void>
   savePreset: (
     name: string,
-    styles: string[],
+    styles: PresetStyleEntry[],
+    opts?: { overwrite?: boolean },
   ) => Promise<{ ok: true } | { ok: false; error?: string }>
   deletePreset: (
     name: string,
@@ -243,7 +253,7 @@ export function selectFilteredStyles(
   activeSource: string | null,
   favorites: Set<string>,
   recentNames: string[],
-  presets: Record<string, { styles: string[]; created: string }>,
+  presets: Record<string, { styles: PresetStyleEntry[]; created: string; wildcards?: { category: string; spec: string }[]; note?: string; last_used?: string }>,
 ): Style[] {
   const bySource = (s: Style) => !activeSource || s.source_file === activeSource
 
@@ -264,11 +274,11 @@ export function selectFilteredStyles(
     const order: string[] = []
     const seen = new Set<string>()
     for (const key of Object.keys(presets).sort()) {
-      for (const n of presets[key]?.styles ?? []) {
-        if (!seen.has(n)) {
-          seen.add(n)
-          order.push(n)
-        }
+      for (const entry of presets[key]?.styles ?? []) {
+        const n = presetEntryName(entry)
+        if (!n || seen.has(n)) continue
+        seen.add(n)
+        order.push(n)
       }
     }
     return order
@@ -670,9 +680,9 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }).catch(() => {})
   },
   fetchPresets: async () => {
-    const parse = (raw: unknown): Record<string, { styles: string[]; created: string }> =>
+    const parse = (raw: unknown): Record<string, { styles: PresetStyleEntry[]; created: string }> =>
       raw && typeof raw === 'object' && !Array.isArray(raw)
-        ? raw as Record<string, { styles: string[]; created: string }>
+        ? raw as Record<string, { styles: PresetStyleEntry[]; created: string }>
         : {}
     try {
       const r = await fetch('/style_grid/presets/list')
@@ -683,12 +693,16 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       // ignore
     }
   },
-  savePreset: async (name, styles) => {
+  savePreset: async (name, styles, opts) => {
     try {
       const res = await fetch('/style_grid/presets/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, styles }),
+        body: JSON.stringify({
+          name,
+          styles,
+          overwrite: Boolean(opts?.overwrite),
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.ok === false || data.error) {

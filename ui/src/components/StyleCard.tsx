@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
-import { getCategoryColor, useStylesStore } from '../store/stylesStore'
+import { getCategoryColor, presetEntryName, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
 import { ConfirmInputDialog } from './ConfirmInputDialog'
@@ -71,9 +71,10 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
   const displayStyle = selectedForName ?? style
   const presetMembers = presetName ? (presets[presetName]?.styles ?? []) : []
   const presetTotal = presetMembers.length
-  const presetFound = presetMembers.filter((n) =>
-    styles.some((st) => st.name === n),
-  ).length
+  const presetFound = presetMembers.filter((entry) => {
+    const n = presetEntryName(entry)
+    return n != null && styles.some((st) => st.name === n)
+  }).length
   const presetCountLabel =
     presetTotal === 0
       ? '0 styles'
@@ -161,7 +162,9 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
               let loaded = 0
               const total = preset.styles.length
               const toLoad: Style[] = []
-              preset.styles.forEach((n) => {
+              preset.styles.forEach((entry) => {
+                const n = presetEntryName(entry)
+                if (!n) return
                 // Name-only by design (same as Favorites/Recent): first-wins on cross-CSV duplicates.
                 const s = styles.find((st) => st.name === n)
                 if (s) toLoad.push(s)
