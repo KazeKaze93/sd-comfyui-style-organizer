@@ -228,7 +228,7 @@ interface StylesStore {
   categoryOrder: string[]
   /** Saved style presets from backend (`/style_grid/presets/list`). */
   presets: Record<string, PresetRecord>
-  /** Last preset loaded via Replace/Add; informational only (no click-to-unload). */
+  /** Last preset loaded via Apply; informational only (no click-to-unload). */
   activePresetName: string | null
   
   // Actions
@@ -289,10 +289,10 @@ interface StylesStore {
   ) => Promise<{ ok: true } | { ok: false; error?: string }>
   touchPreset: (name: string) => Promise<void>
   /**
-   * Apply a saved set. Replace clears selection+wildcards via SG_CLEAR_ALL then
-   * applies; Add merges. Host owns prompt injection through SG_APPLY / wildcards.
+   * Apply a saved set by merging into the current selection/wildcards.
+   * Host owns prompt injection through SG_APPLY / wildcards.
    */
-  loadPreset: (name: string, mode: 'replace' | 'add') => void
+  loadPreset: (name: string) => void
   /** POST /style_grid/style/save then refetch catalog into styles[]. */
   saveStyle: (payload: {
     name: string
@@ -886,27 +886,17 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       // ignore
     }
   },
-  loadPreset: (name, mode) => {
+  loadPreset: (name) => {
     const preset = get().presets[name]
     if (!preset) return
     const { styles, showToast, incrementUsage, addToRecent, detectConflicts } = get()
-
-    if (mode === 'replace') {
-      sendToHost({ type: 'SG_CLEAR_ALL' })
-      set({
-        selectedStyles: [],
-        conflicts: [],
-        activeWildcards: [],
-        activePresetName: null,
-      })
-    }
 
     const members = resolvePresetMembers(preset.styles ?? [], styles)
     const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
       m.status === 'found')
     const missing = members.filter((m) => m.status === 'missing')
 
-    const selected = mode === 'replace' ? [] : [...get().selectedStyles]
+    const selected = [...get().selectedStyles]
     const selectedNames = new Set(selected.map((s) => s.name))
     for (const m of found) {
       if (selectedNames.has(m.style.name)) continue
@@ -924,7 +914,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     set({ selectedStyles: selected, activePresetName: name })
     detectConflicts()
 
-    const activeWc = mode === 'replace' ? [] : [...get().activeWildcards]
+    const activeWc = [...get().activeWildcards]
     const wcKey = (c: string, s: string) =>
       `${String(c || '').toLowerCase()}\0${String(s || '').toLowerCase()}`
     const activeWcKeys = new Set(activeWc.map((w) => wcKey(w.category, w.spec)))
@@ -932,7 +922,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       const cat = String(wc.category || '')
       if (!cat) continue
       const spec = String(wc.spec || '')
-      if (mode === 'add' && activeWcKeys.has(wcKey(cat, spec))) continue
+      if (activeWcKeys.has(wcKey(cat, spec))) continue
       activeWcKeys.add(wcKey(cat, spec))
       if (spec) {
         sendToHost({ type: 'SG_WILDCARD_SLICE', category: cat, spec })
