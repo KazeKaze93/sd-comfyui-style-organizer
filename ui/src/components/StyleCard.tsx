@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
@@ -30,41 +30,45 @@ function nextDuplicateName(baseName: string, catalog: Style[]): string {
 }
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false, presetName }: Props) {
+  const isSelected = useStylesStore(
+    s => !presetName && s.selectedStyles.some(sel => sel.name === style.name)
+  )
+  const selectedForName = useStylesStore(
+    s => s.selectedStyles.find(sel => sel.name === style.name)
+  )
+  const isPresetActive = useStylesStore(
+    s => Boolean(presetName && s.activePresetName === presetName)
+  )
+  const activePresetName = useStylesStore(s => s.activePresetName)
+  const usageCount = useStylesStore(s => s.usageCounts[style.name] || 0)
+  const activeSource = useStylesStore(s => s.activeSource)
+  const styles = useStylesStore(s => s.styles)
+  const presets = useStylesStore(s => s.presets)
+  const fav = useStylesStore(s => s.favorites.has(style.name))
   const {
-    selectedStyles, toggleStyle, toggleFavorite, usageCounts, styles, activeSource, showToast, categories,
-    presets, clearAll, activePresetName, deletePreset, setActiveSource,
+    toggleStyle, toggleFavorite, showToast, categories,
+    clearAll, deletePreset, setActiveSource,
   } = useStylesStore(
     useShallow(s => ({
-      selectedStyles: s.selectedStyles,
       toggleStyle: s.toggleStyle,
       toggleFavorite: s.toggleFavorite,
-      usageCounts: s.usageCounts,
-      styles: s.styles,
-      activeSource: s.activeSource,
       showToast: s.showToast,
       categories: s.categories,
-      presets: s.presets,
       clearAll: s.clearAll,
-      activePresetName: s.activePresetName,
       deletePreset: s.deletePreset,
       setActiveSource: s.setActiveSource,
     }))
   )
-  const fav = useStylesStore(s => s.favorites.has(style.name))
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const isSelected = !presetName && selectedStyles.some(s => s.name === style.name)
-  const isPresetActive = Boolean(presetName && activePresetName === presetName)
   const cardActive = presetName ? isPresetActive : isSelected
   // When the picker applied a non-first-wins pack, render that row's meta
   // (thumb/prompt/read_only) instead of the deduped grid prop.
-  const selectedForName = selectedStyles.find(s => s.name === style.name)
   const displayStyle = selectedForName ?? style
-  const usageCount = usageCounts[style.name] || 0
   const presetMembers = presetName ? (presets[presetName]?.styles ?? []) : []
   const presetTotal = presetMembers.length
   const presetFound = presetMembers.filter((n) =>
@@ -76,7 +80,10 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false, pres
       : presetFound < presetTotal
         ? `${presetFound}/${presetTotal} styles`
         : `${presetTotal} styles`
-  const duplicates = styles.filter(s => s.name === style.name)
+  const duplicates = useMemo(
+    () => styles.filter(s => s.name === style.name),
+    [styles, style.name],
+  )
   const hasMultipleSources = duplicates.length > 1
   const sourceLabels = duplicates.map((dup) =>
     ((dup.source_file || 'Unknown').split(/[\\/]/).pop() || 'Unknown')
