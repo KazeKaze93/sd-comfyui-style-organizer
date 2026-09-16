@@ -126,6 +126,7 @@ export default function App() {
           conflicts: [],
           activeWildcards: [],
           activePresetName: null,
+          styleContributors: {},
         })
       }
       if (msg.type === 'SG_STYLE_APPLIED') {
