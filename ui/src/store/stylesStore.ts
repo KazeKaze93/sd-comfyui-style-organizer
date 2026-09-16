@@ -228,8 +228,13 @@ interface StylesStore {
   categoryOrder: string[]
   /** Saved style presets from backend (`/style_grid/presets/list`). */
   presets: Record<string, PresetRecord>
-  /** Last preset loaded via Apply; informational only (no click-to-unload). */
+  /** Last preset loaded via Apply; informational only (SaveSetDialog prefill). */
   activePresetName: string | null
+  /** Which sources (a preset name, or the literal 'manual') currently
+   * want each selected style present. A style with an empty/absent set
+   * has no reason to stay selected once a preset stops wanting it. */
+  styleContributors: Record<string, Set<string>>
+  unapplyPreset: (name: string) => void
   
   // Actions
   setStyles: (styles: Style[]) => void
@@ -448,6 +453,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   })(),
   presets: {},
   activePresetName: null,
+  styleContributors: {},
 
   setStyles: (styles) => {
     const normalized = styles.map((s) => ({
@@ -596,19 +602,32 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
 
   toggleStyle: (style) => {
-    const { selectedStyles } = get()
+    const { selectedStyles, styleContributors } = get()
     const isSelected = selectedStyles.some(s => s.name === style.name)
-    
+
     if (isSelected) {
-      set({ selectedStyles: selectedStyles.filter(s => s.name !== style.name) })
+      // Manual remove clears the WHOLE contributor set — explicit click wins.
+      const nextContributors = { ...styleContributors }
+      delete nextContributors[style.name]
+      set({
+        selectedStyles: selectedStyles.filter(s => s.name !== style.name),
+        styleContributors: nextContributors,
+      })
       sendToHost({ type: 'SG_UNAPPLY', styleId: style.name })
       get().detectConflicts()
     } else {
-      set({ selectedStyles: [...selectedStyles, style] })
+      const existing = styleContributors[style.name] ?? new Set<string>()
+      set({
+        selectedStyles: [...selectedStyles, style],
+        styleContributors: {
+          ...styleContributors,
+          [style.name]: new Set([...existing, 'manual']),
+        },
+      })
       get().addToRecent(style.name)
       get().incrementUsage(style.name)
-      sendToHost({ 
-        type: 'SG_APPLY', 
+      sendToHost({
+        type: 'SG_APPLY',
         styleId: style.name,
         prompt: style.prompt,
         neg: style.negative_prompt,
@@ -622,7 +641,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     selectedStyles.forEach(s =>
       sendToHost({ type: 'SG_UNAPPLY', styleId: s.name })
     )
-    set({ selectedStyles: [], conflicts: [], activePresetName: null })
+    set({ selectedStyles: [], conflicts: [], activePresetName: null, styleContributors: {} })
   },
   activeWildcards: [],
   setActiveWildcards: (refs) => set({ activeWildcards: refs }),
@@ -821,17 +840,36 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
           error: typeof data.error === 'string' ? data.error : undefined,
         }
       }
+      const nextContributors = { ...get().styleContributors }
+      const toRemove = new Set<string>()
+      for (const [styleName, contributors] of Object.entries(nextContributors)) {
+        if (!contributors.has(name)) continue
+        const next = new Set(contributors)
+        next.delete(name)
+        if (next.size === 0) {
+          toRemove.add(styleName)
+          delete nextContributors[styleName]
+        } else {
+          nextContributors[styleName] = next
+        }
+      }
+      toRemove.forEach((n) => sendToHost({ type: 'SG_UNAPPLY', styleId: n }))
+      const nextSelected = get().selectedStyles.filter((s) => !toRemove.has(s.name))
       if (data.presets) {
         set({
           presets: data.presets,
+          selectedStyles: nextSelected,
+          styleContributors: nextContributors,
           ...(get().activePresetName === name ? { activePresetName: null } : {}),
         })
       } else {
+        set({ selectedStyles: nextSelected, styleContributors: nextContributors })
         if (get().activePresetName === name) {
           set({ activePresetName: null })
         }
         await get().fetchPresets()
       }
+      if (toRemove.size > 0) get().detectConflicts()
       return { ok: true as const }
     } catch {
       return { ok: false as const }
@@ -866,6 +904,15 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         }
         await get().fetchPresets()
       }
+      const nextContributors = { ...get().styleContributors }
+      for (const [styleName, contributors] of Object.entries(nextContributors)) {
+        if (!contributors.has(oldName)) continue
+        const next = new Set(contributors)
+        next.delete(oldName)
+        next.add(newName)
+        nextContributors[styleName] = next
+      }
+      set({ styleContributors: nextContributors })
       return { ok: true as const }
     } catch {
       return { ok: false as const }
@@ -898,7 +945,11 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     const selected = [...get().selectedStyles]
     const selectedNames = new Set(selected.map((s) => s.name))
+    const nextContributors = { ...get().styleContributors }
     for (const m of found) {
+      const existing = nextContributors[m.style.name] ?? new Set<string>()
+      nextContributors[m.style.name] = new Set([...existing, name])
+
       if (selectedNames.has(m.style.name)) continue
       selectedNames.add(m.style.name)
       selected.push(m.style)
@@ -911,7 +962,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         neg: m.style.negative_prompt,
       })
     }
-    set({ selectedStyles: selected, activePresetName: name })
+    set({ selectedStyles: selected, activePresetName: name, styleContributors: nextContributors })
     detectConflicts()
 
     const activeWc = [...get().activeWildcards]
@@ -939,6 +990,52 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         'info',
       )
     }
+  },
+  unapplyPreset: (name) => {
+    const preset = get().presets[name]
+    if (!preset) return
+    const { styles, selectedStyles, activeWildcards, styleContributors, detectConflicts } = get()
+
+    const members = resolvePresetMembers(preset.styles ?? [], styles)
+    const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
+      m.status === 'found')
+
+    const nextContributors = { ...styleContributors }
+    const toRemove = new Set<string>()
+    for (const m of found) {
+      const set_ = nextContributors[m.style.name]
+      if (!set_) continue
+      const next = new Set(set_)
+      next.delete(name)
+      if (next.size === 0) {
+        toRemove.add(m.style.name)
+        delete nextContributors[m.style.name]
+      } else {
+        nextContributors[m.style.name] = next
+      }
+    }
+
+    toRemove.forEach((n) => sendToHost({ type: 'SG_UNAPPLY', styleId: n }))
+    const nextSelected = selectedStyles.filter((s) => !toRemove.has(s.name))
+
+    // Wildcards: remove this preset's own wildcards unconditionally (no cross-preset attribution).
+    const wcKey = (c: string, s: string) =>
+      `${String(c || '').toLowerCase()}\0${String(s || '').toLowerCase()}`
+    const presetWcKeys = new Set(
+      (preset.wildcards ?? []).map((wc) => wcKey(String(wc.category || ''), String(wc.spec || '')))
+    )
+    const wcToRemove = activeWildcards.filter((w) => presetWcKeys.has(wcKey(w.category, w.spec)))
+    const nextActiveWildcards = activeWildcards.filter((w) => !presetWcKeys.has(wcKey(w.category, w.spec)))
+    wcToRemove.forEach((w) => {
+      sendToHost({ type: 'SG_REMOVE_WILDCARD', category: w.category, spec: w.spec ?? '' })
+    })
+
+    set({
+      selectedStyles: nextSelected,
+      activeWildcards: nextActiveWildcards,
+      styleContributors: nextContributors,
+    })
+    detectConflicts()
   },
   saveStyle: async (payload) => {
     try {
