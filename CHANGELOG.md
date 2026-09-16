@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.0.6 — 2026-09-17
+
+### Fixed
+- Search: the autocomplete dropdown and the main grid now use the same matching logic — previously the dropdown matched style names only while the grid also matched descriptions, so a query could return cards in the grid but "no styles found" in the dropdown right above it
+- StyleCard re-render cost: every mounted card was subscribed to the whole selection state, so clicking one card re-rendered every card on screen; each card now tracks only its own selection, favorite, and usage-count state
+- Presets: a set applied via a preset never showed up in the sidebar's Recent list, unlike manually clicking a style
+- Presets: the Save set dialog could suggest the name of a preset that was no longer actually active, since the field tracking it was never reset by ordinary manual clicks; it now checks the current selection directly against every saved preset
+- Presets: a preset created straight from a manual selection didn't respond to Unapply — saving now formally claims ownership of those styles instead of leaving them tagged only as manually selected
+- Presets: saving could silently overwrite an existing preset under the same name with no warning; saving now requires explicit confirmation when the name already exists
+- A duplicate hex value in the category color palette meant two categories could render in the same color
+- The chip row at the bottom of the panel sat flush against the edge with no padding when no wildcards were active
+
+### Added
+- Presets: a full rewrite of save and load. Save set opens a dialog with the name pre-filled from the current selection, an optional note, and an inline warning (not a browser confirm) if the name already exists. The library renders as a list of rows showing full composition, missing members, and their source pack without loading the preset first
+- Presets: Apply and Unapply. Clicking Apply merges a preset into the current selection; clicking it again removes exactly that preset's own contribution, leaving alone anything a still-active preset or a manual click also wants there. Multiple presets can be active at once, each shown independently
+- Presets: the saved format now includes wildcards, an optional note, and creation/last-used timestamps, not just a bare list of style names
+- Toolbar: icons replaced the emoji set, grouped by action with dividers and color coding, and given accessible labels
+- Sidebar: Favorites and Recent now always show, muted when empty, instead of disappearing until first used
+- Fullscreen: window size and position are remembered across toggling fullscreen and across page reloads, instead of resetting to a fixed size every time
+
+### Removed
+- Random Style — the wildcard system already covers randomization at generation time, and the button picked from the entire library regardless of the active filter, which was more confusing than useful
+- The old preset toolbar button, its confirm-dialog save flow, and the alternate preset-mode rendering on style cards — replaced by the rewrite above
+
+### Changed
+- StyleInfoBar and SelectedBar merged into one panel with a single height animation, instead of two independent ones that could jostle the grid above out of sync with each other
+
 ## 0.0.5 — 2026-09-13
 
 ### Fixed
