@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
-  Package, Save, Import, Eraser, Rows3, ChevronsUpDown, Plus,
+  Save, Import, Eraser, Rows3, ChevronsUpDown, Plus,
   type LucideIcon,
 } from 'lucide-react'
 import { onHostMessage, sendToHost, type Style } from './bridge'
@@ -11,7 +11,6 @@ import { Sidebar } from './components/Sidebar'
 import { StyleGrid } from './components/StyleGrid'
 import { BottomPanel } from './components/BottomPanel'
 import { Toast } from './components/Toast'
-import { ConfirmInputDialog } from './components/ConfirmInputDialog'
 import { EditStyleDialog } from './components/EditStyleDialog'
 import {
   Tooltip,
@@ -79,7 +78,6 @@ const ToolBtn = ({
 
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [presetSaveOpen, setPresetSaveOpen] = useState(false)
   const [newStyleOpen, setNewStyleOpen] = useState(false)
   const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
@@ -94,9 +92,7 @@ export default function App() {
     collapseAll,
     expandAll,
     showToast,
-    presets,
     fetchPresets,
-    savePreset,
     activeSource,
     setActiveSource,
     categories,
@@ -228,19 +224,6 @@ export default function App() {
         </div>
         <TooltipProvider>
           <div className="flex items-center gap-1.5 shrink-0">
-            <ToolBtn
-              icon={Package}
-              label="Save preset"
-              colorClassName="text-amber-400/80"
-              onClick={() => {
-                if (selectedStyles.length === 0) {
-                  showToast('Select at least one style first', 'info')
-                  return
-                }
-                setPresetSaveOpen(true)
-              }}
-            />
-            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
             <ToolBtn
               icon={Save}
               label="Backup (CSVs + presets)"
@@ -464,36 +447,6 @@ export default function App() {
             }
           }
           setNewStyleOpen(false)
-        }}
-      />
-      <ConfirmInputDialog
-        open={presetSaveOpen}
-        title="Save preset"
-        placeholder="Preset name"
-        confirmLabel="Save"
-        onCancel={() => setPresetSaveOpen(false)}
-        onConfirm={async (name) => {
-          // Save = create/overwrite by name only; rename/reorder/inspect-members intentionally out of scope.
-          const exists = Boolean(presets[name])
-          if (exists && !window.confirm(`Overwrite existing preset "${name}"?`)) {
-            return  // keep dialog open, let them rename
-          }
-          const result = await savePreset(
-            name,
-            selectedStyles.map((s) => s.name),
-            { overwrite: exists },
-          )
-          if (!result.ok) {
-            showToast(
-              typeof result.error === 'string' && result.error
-                ? result.error
-                : 'Save preset failed',
-              'error',
-            )
-            return
-          }
-          showToast(`Saved preset "${name}"`, 'success')
-          setPresetSaveOpen(false)
         }}
       />
       {ieMenuPos && (

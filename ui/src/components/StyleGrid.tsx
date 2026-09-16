@@ -11,6 +11,7 @@ import {
 } from '../store/stylesStore'
 import { StyleCard } from './StyleCard'
 import { WildcardCategoryMenu } from './WildcardCategoryMenu'
+import { PresetList } from './PresetList'
 
 export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   const {
@@ -216,65 +217,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   }
 
   if (activeCategory === 'presets') {
-    const q = search.toLowerCase()
-    const presetNames = Object.keys(presets)
-      .filter((name) => name.toLowerCase().includes(q))
-      .sort((a, b) => a.localeCompare(b))
-    if (Object.keys(presets).length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
-          <p className="text-sg-muted text-sm">No presets saved yet</p>
-          <p className="max-w-sm text-sg-muted/70 text-xs leading-relaxed">
-            Select styles, then use the toolbar{' '}
-            <span className="text-sg-text/90">Save preset</span> button.
-            Click a card to load; use ✕ on a card to delete.
-          </p>
-        </div>
-      )
-    }
-    if (presetNames.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-32 
-                        text-sg-muted text-sm">
-          No styles found
-        </div>
-      )
-    }
-    return (
-      <div
-        className={`grid content-start ${
-          compactMode
-            ? windowed
-              ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
-              : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
-            : windowed
-              ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
-              : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2'
-        }`}
-      >
-        {presetNames.map((name) => {
-          // Deliberate StyleCard reuse (layout/styling); not a type-hack — dedicated PresetCard deferred.
-          const style: Style = {
-            name,
-            prompt: '',
-            negative_prompt: '',
-            description: '',
-            category: 'OTHER',
-            source_file: '',
-            has_thumbnail: false,
-            read_only: false,
-          }
-          return (
-            <StyleCard
-              key={`preset:${name}`}
-              style={style}
-              windowed={windowed}
-              presetName={name}
-            />
-          )
-        })}
-      </div>
-    )
+    return <PresetList />
   }
 
   if (filtered.length === 0) {

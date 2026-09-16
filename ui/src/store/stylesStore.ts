@@ -13,6 +13,34 @@ export function presetEntryName(entry: PresetStyleEntry): string | null {
   return entry.name || null
 }
 
+/** Chip/card label: strip leading `Category_` prefix when present. */
+export function styleDisplayName(name: string): string {
+  return name.includes('_') ? name.split('_').slice(1).join(' ') : name
+}
+
+/** Default Save-set name: first two display names, then `+K` for the rest. */
+export function suggestPresetName(styles: Pick<Style, 'name'>[]): string {
+  if (styles.length === 0) return ''
+  const names = styles.map((s) => styleDisplayName(s.name))
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} + ${names[1]}`
+  return `${names[0]} + ${names[1]} +${names.length - 2}`
+}
+
+export function packBasename(sourceFile: string | undefined | null): string | null {
+  if (!sourceFile) return null
+  const base = sourceFile.replace(/\\/g, '/').split('/').pop() || sourceFile
+  return base.replace(/\.csv$/i, '') || null
+}
+
+export type PresetRecord = {
+  styles: PresetStyleEntry[]
+  created: string
+  wildcards?: { category: string; spec: string }[]
+  note?: string
+  last_used?: string
+}
+
 interface Conflict {
   styleA: string
   styleB: string
@@ -70,6 +98,47 @@ export function getCategoryColor(category: string): string {
 /** Stable React key when the same name can appear from different CSV rows. */
 export function styleRowKey(s: Pick<Style, 'name' | 'source_file'>): string {
   return `${s.source_file}\0${s.name}`
+}
+
+/** Resolve a preset styles[] entry to a library row (name+source, else name-only). */
+export function resolvePresetStyleEntry(
+  entry: PresetStyleEntry,
+  styles: Style[],
+): Style | undefined {
+  if (typeof entry === 'string') {
+    return styles.find((s) => s.name === entry)
+  }
+  if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string' || !entry.name) {
+    return undefined
+  }
+  const name = entry.name
+  const source = typeof entry.source_file === 'string' ? entry.source_file : ''
+  if (source) {
+    const want = styleRowKey({ name, source_file: source })
+    const hit = styles.find((s) => styleRowKey(s) === want)
+    if (hit) return hit
+  }
+  return styles.find((s) => s.name === name)
+}
+
+export type ResolvedPresetMember =
+  | { status: 'found'; entry: PresetStyleEntry; style: Style }
+  | { status: 'missing'; entry: PresetStyleEntry; name: string; pack: string | null }
+
+export function resolvePresetMembers(
+  entries: PresetStyleEntry[],
+  styles: Style[],
+): ResolvedPresetMember[] {
+  return entries.map((entry) => {
+    const style = resolvePresetStyleEntry(entry, styles)
+    if (style) return { status: 'found' as const, entry, style }
+    const name = presetEntryName(entry) || '?'
+    const source =
+      typeof entry === 'object' && entry && typeof entry.source_file === 'string'
+        ? entry.source_file
+        : ''
+    return { status: 'missing' as const, entry, name, pack: packBasename(source) }
+  })
 }
 
 const COMBOS_CONFLICTS_RE = /\b(?:Combos|Conflicts):\s*[^.]*\.?/gi
@@ -158,8 +227,8 @@ interface StylesStore {
   /** User-defined category order for All Sources view. */
   categoryOrder: string[]
   /** Saved style presets from backend (`/style_grid/presets/list`). */
-  presets: Record<string, { styles: PresetStyleEntry[]; created: string; wildcards?: { category: string; spec: string }[]; note?: string; last_used?: string }>
-  /** Last preset loaded via StyleCard click; drives toggle-unload for partial sets. */
+  presets: Record<string, PresetRecord>
+  /** Last preset loaded via Replace/Add; informational only (no click-to-unload). */
   activePresetName: string | null
   
   // Actions
@@ -204,11 +273,26 @@ interface StylesStore {
   savePreset: (
     name: string,
     styles: PresetStyleEntry[],
-    opts?: { overwrite?: boolean },
+    opts?: {
+      overwrite?: boolean
+      wildcards?: WildcardRef[]
+      note?: string
+    },
   ) => Promise<{ ok: true } | { ok: false; error?: string }>
   deletePreset: (
     name: string,
   ) => Promise<{ ok: true } | { ok: false; error?: string }>
+  renamePreset: (
+    oldName: string,
+    newName: string,
+    opts?: { overwrite?: boolean },
+  ) => Promise<{ ok: true } | { ok: false; error?: string }>
+  touchPreset: (name: string) => Promise<void>
+  /**
+   * Apply a saved set. Replace clears selection+wildcards via SG_CLEAR_ALL then
+   * applies; Add merges. Host owns prompt injection through SG_APPLY / wildcards.
+   */
+  loadPreset: (name: string, mode: 'replace' | 'add') => void
   /** POST /style_grid/style/save then refetch catalog into styles[]. */
   saveStyle: (payload: {
     name: string
@@ -253,7 +337,7 @@ export function selectFilteredStyles(
   activeSource: string | null,
   favorites: Set<string>,
   recentNames: string[],
-  presets: Record<string, { styles: PresetStyleEntry[]; created: string; wildcards?: { category: string; spec: string }[]; note?: string; last_used?: string }>,
+  presets: Record<string, PresetRecord>,
 ): Style[] {
   const bySource = (s: Style) => !activeSource || s.source_file === activeSource
 
@@ -680,9 +764,9 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }).catch(() => {})
   },
   fetchPresets: async () => {
-    const parse = (raw: unknown): Record<string, { styles: PresetStyleEntry[]; created: string }> =>
+    const parse = (raw: unknown): Record<string, PresetRecord> =>
       raw && typeof raw === 'object' && !Array.isArray(raw)
-        ? raw as Record<string, { styles: PresetStyleEntry[]; created: string }>
+        ? raw as Record<string, PresetRecord>
         : {}
     try {
       const r = await fetch('/style_grid/presets/list')
@@ -701,6 +785,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         body: JSON.stringify({
           name,
           styles,
+          wildcards: opts?.wildcards ?? [],
+          note: opts?.note ?? '',
           overwrite: Boolean(opts?.overwrite),
         }),
       })
@@ -749,6 +835,118 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       return { ok: true as const }
     } catch {
       return { ok: false as const }
+    }
+  },
+  renamePreset: async (oldName, newName, opts) => {
+    try {
+      const res = await fetch('/style_grid/presets/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          old_name: oldName,
+          new_name: newName,
+          overwrite: Boolean(opts?.overwrite),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false || data.error) {
+        return {
+          ok: false as const,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        }
+      }
+      if (data.presets) {
+        set({
+          presets: data.presets,
+          ...(get().activePresetName === oldName ? { activePresetName: newName } : {}),
+        })
+      } else {
+        if (get().activePresetName === oldName) {
+          set({ activePresetName: newName })
+        }
+        await get().fetchPresets()
+      }
+      return { ok: true as const }
+    } catch {
+      return { ok: false as const }
+    }
+  },
+  touchPreset: async (name) => {
+    try {
+      const res = await fetch('/style_grid/presets/touch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.presets) {
+        set({ presets: data.presets })
+      }
+    } catch {
+      // ignore
+    }
+  },
+  loadPreset: (name, mode) => {
+    const preset = get().presets[name]
+    if (!preset) return
+    const { styles, showToast, incrementUsage, detectConflicts } = get()
+
+    if (mode === 'replace') {
+      sendToHost({ type: 'SG_CLEAR_ALL' })
+      set({
+        selectedStyles: [],
+        conflicts: [],
+        activeWildcards: [],
+        activePresetName: null,
+      })
+    }
+
+    const members = resolvePresetMembers(preset.styles ?? [], styles)
+    const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
+      m.status === 'found')
+    const missing = members.filter((m) => m.status === 'missing')
+
+    const selected = mode === 'replace' ? [] : [...get().selectedStyles]
+    const selectedNames = new Set(selected.map((s) => s.name))
+    for (const m of found) {
+      if (selectedNames.has(m.style.name)) continue
+      selectedNames.add(m.style.name)
+      selected.push(m.style)
+      incrementUsage(m.style.name)
+      sendToHost({
+        type: 'SG_APPLY',
+        styleId: m.style.name,
+        prompt: m.style.prompt,
+        neg: m.style.negative_prompt,
+      })
+    }
+    set({ selectedStyles: selected, activePresetName: name })
+    detectConflicts()
+
+    const activeWc = mode === 'replace' ? [] : [...get().activeWildcards]
+    const wcKey = (c: string, s: string) =>
+      `${String(c || '').toLowerCase()}\0${String(s || '').toLowerCase()}`
+    const activeWcKeys = new Set(activeWc.map((w) => wcKey(w.category, w.spec)))
+    for (const wc of preset.wildcards ?? []) {
+      const cat = String(wc.category || '')
+      if (!cat) continue
+      const spec = String(wc.spec || '')
+      if (mode === 'add' && activeWcKeys.has(wcKey(cat, spec))) continue
+      activeWcKeys.add(wcKey(cat, spec))
+      if (spec) {
+        sendToHost({ type: 'SG_WILDCARD_SLICE', category: cat, spec })
+      } else {
+        sendToHost({ type: 'SG_WILDCARD_CATEGORY', category: cat })
+      }
+    }
+
+    void get().touchPreset(name)
+
+    if (missing.length > 0) {
+      showToast(
+        `Loaded ${found.length} of ${members.length} styles (${missing.length} missing)`,
+        'info',
+      )
     }
   },
   saveStyle: async (payload) => {
