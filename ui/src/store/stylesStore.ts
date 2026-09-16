@@ -889,7 +889,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   loadPreset: (name, mode) => {
     const preset = get().presets[name]
     if (!preset) return
-    const { styles, showToast, incrementUsage, detectConflicts } = get()
+    const { styles, showToast, incrementUsage, addToRecent, detectConflicts } = get()
 
     if (mode === 'replace') {
       sendToHost({ type: 'SG_CLEAR_ALL' })
@@ -913,6 +913,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       selectedNames.add(m.style.name)
       selected.push(m.style)
       incrementUsage(m.style.name)
+      addToRecent(m.style.name)
       sendToHost({
         type: 'SG_APPLY',
         styleId: m.style.name,
