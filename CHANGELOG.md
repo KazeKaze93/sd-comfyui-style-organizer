@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Thumbnail identity:** previews and `has_thumbnail` / `SG_THUMB_DONE` matching use **`(source file, name)`**. Legacy name-only files migrate when unique across packs; ambiguous duplicates need regeneration. Thumbnail GET/upload/delete require `source`.
+
 ## 0.0.6 — 2026-09-17
 
 ### Fixed

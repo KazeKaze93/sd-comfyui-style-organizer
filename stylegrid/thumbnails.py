@@ -34,6 +34,18 @@ def _thumbnail_stem(style_name, csv_path=""):
     return hashlib.md5(_thumbnail_hash_input(style_name, csv_path).encode("utf-8")).hexdigest()
 
 
+def thumbnail_hash_key(name: str, source: str) -> str:
+    """Canonical thumbnail identity hash for (name, source)."""
+    if not source:
+        raise ValueError("thumbnail_hash_key requires a non-empty source")
+    return _thumbnail_stem(name, source)
+
+
+def legacy_thumbnail_stem(style_name: str) -> str:
+    """Pre-source-aware stem: md5(style name only)."""
+    return _thumbnail_stem(style_name, "")
+
+
 def detect_image_ext(raw):
     """Return file extension for image magic bytes, or None if not allowed."""
     if raw.startswith(b"\xff\xd8\xff"):
@@ -76,19 +88,89 @@ def clear_thumbnail_files(style_name, csv_path=""):
                 pass
 
 
-def list_thumbnails():
+def _find_legacy_thumbnail_path(style_name: str):
+    """Return path of a name-only legacy thumbnail if present."""
+    stem = legacy_thumbnail_stem(style_name)
+    for ext in _THUMB_EXTS:
+        path = os.path.join(THUMBNAILS_DIR, stem + ext)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def migrate_legacy_thumbnails(styles=None):
+    """Move name-only thumbnail files to (name, source) keys when unambiguous.
+
+    If a style name maps to exactly one known source_file, rename the legacy
+    file to the source-aware path (keeping extension). If the same name appears
+    in multiple packs, leave the legacy file unmapped (needs regeneration).
+
+    Returns counts: migrated / ambiguous / skipped_existing.
+    """
     if not os.path.isdir(THUMBNAILS_DIR):
-        return set()
+        return {"migrated": 0, "ambiguous": 0, "skipped_existing": 0}
+
+    if styles is None:
+        styles = get_cached_styles()
+
+    by_name = {}
+    for s in styles:
+        name = s.get("name") or ""
+        source = s.get("source_file") or ""
+        if not name or not source:
+            continue
+        by_name.setdefault(name, []).append(source)
+
+    migrated = 0
+    ambiguous = 0
+    skipped_existing = 0
+    for name, sources in by_name.items():
+        uniq_sources = list(dict.fromkeys(sources))
+        legacy_path = _find_legacy_thumbnail_path(name)
+        if not legacy_path:
+            continue
+        if len(uniq_sources) != 1:
+            ambiguous += 1
+            continue
+        ext = os.path.splitext(legacy_path)[1].lower() or ".webp"
+        new_path = get_thumbnail_path(name, uniq_sources[0], ext=ext)
+        if os.path.isfile(new_path):
+            skipped_existing += 1
+            try:
+                os.remove(legacy_path)
+            except OSError:
+                pass
+            continue
+        try:
+            os.rename(legacy_path, new_path)
+            migrated += 1
+        except OSError:
+            pass
+    return {
+        "migrated": migrated,
+        "ambiguous": ambiguous,
+        "skipped_existing": skipped_existing,
+    }
+
+
+def list_thumbnails():
+    """Return [{name, source_file}, ...] for styles with a source-aware thumbnail."""
+    migrate_legacy_thumbnails()
+    if not os.path.isdir(THUMBNAILS_DIR):
+        return []
     on_disk = {
         os.path.splitext(f)[0]
         for f in os.listdir(THUMBNAILS_DIR)
         if os.path.splitext(f)[1].lower() in _THUMB_EXTS
     }
-    return {
-        s["name"]
-        for s in get_cached_styles()
-        if _thumbnail_stem(s["name"], s.get("source_file") or "") in on_disk
-    }
+    result = []
+    for s in get_cached_styles():
+        source = s.get("source_file") or ""
+        if not source:
+            continue
+        if _thumbnail_stem(s["name"], source) in on_disk:
+            result.append({"name": s["name"], "source_file": source})
+    return result
 
 
 def valid_thumbnail_hashes():
@@ -96,13 +178,18 @@ def valid_thumbnail_hashes():
     return {
         _thumbnail_stem(s["name"], s.get("source_file") or "")
         for s in get_cached_styles()
+        if s.get("source_file")
     }
 
 
 def cleanup_orphan_thumbnails():
-    """Remove on-disk thumbs whose stem is not in valid_thumbnail_hashes(). Returns count removed."""
+    """Migrate unique legacy thumbs, then remove orphans.
+
+    Returns ``{"removed": int, "migrated": int, "ambiguous": int, "skipped_existing": int}``.
+    """
+    migration = migrate_legacy_thumbnails()
     if not os.path.isdir(THUMBNAILS_DIR):
-        return 0
+        return {"removed": 0, **migration}
     valid = valid_thumbnail_hashes()
     removed = 0
     for fname in os.listdir(THUMBNAILS_DIR):
@@ -117,4 +204,4 @@ def cleanup_orphan_thumbnails():
             removed += 1
         except OSError:
             pass
-    return removed
+    return {"removed": removed, **migration}

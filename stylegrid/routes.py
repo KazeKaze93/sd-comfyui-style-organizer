@@ -652,41 +652,23 @@ def _register_crud_routes(routes):
 def _register_thumbnail_routes(routes):
     @routes.get("/style_grid/thumbnails/list")
     async def api_list_thumbnails(request):
-        return web.json_response({"has_thumbnail": list(list_thumbnails())})
+        return web.json_response({"has_thumbnail": list_thumbnails()})
 
     @routes.get("/style_grid/thumbnail")
     async def api_get_thumbnail(request):
         name = request.rel_url.query.get("name", "")
         source = (request.rel_url.query.get("source") or "").strip()
-        # Prefer the source-aware path when the client names a pack.
-        if source:
-            path = find_thumbnail_path(name, source)
-            if path:
-                return web.FileResponse(
-                    path,
-                    headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
-                )
-        # Legacy name-only hash (compat net for older uploads).
-        path = find_thumbnail_path(name)
+        if not source:
+            return web.json_response(
+                {"ok": False, "error": "source is required for CSV thumbnails"},
+                status=400,
+            )
+        path = find_thumbnail_path(name, source)
         if path:
             return web.FileResponse(
                 path,
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
             )
-
-        all_styles = get_cached_styles()
-        matches = [s for s in all_styles if s.get("name") == name]
-        seen = set()
-        for style in reversed(matches):
-            sf = style.get("source_file") or ""
-            candidate = find_thumbnail_path(name, sf)
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                return web.FileResponse(
-                    candidate,
-                    headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
-                )
-
         return web.Response(status=404)
 
     @routes.post("/style_grid/thumbnail/upload")
@@ -694,8 +676,14 @@ def _register_thumbnail_routes(routes):
         data = await _read_json(request)
         style_name = data.get("name", "").strip()
         image_data = data.get("image", "")
+        csv_path = (data.get("source") or data.get("csv_path") or "").strip()
         if not style_name or not image_data:
             return web.json_response({"error": "name and image required"})
+        if not csv_path:
+            return web.json_response(
+                {"ok": False, "error": "source is required for CSV thumbnails"},
+                status=400,
+            )
         try:
             if "," in image_data:
                 image_data = image_data.split(",", 1)[1]
@@ -711,8 +699,6 @@ def _register_thumbnail_routes(routes):
             ext = detect_image_ext(raw)
             if not ext:
                 return web.json_response({"error": "Invalid image format. Allowed: JPEG, PNG, WEBP, GIF"})
-            # Prefer source-aware hash when client sends source; legacy name-only otherwise.
-            csv_path = (data.get("source") or data.get("csv_path") or "").strip()
             clear_thumbnail_files(style_name, csv_path)
             path = get_thumbnail_path(style_name, csv_path, ext=ext)
             with open(path, "wb") as f:
@@ -725,14 +711,18 @@ def _register_thumbnail_routes(routes):
     async def api_delete_thumbnail(request):
         name = request.rel_url.query.get("name", "")
         csv_path = (request.rel_url.query.get("source") or "").strip()
-        # source present → source-aware stem; absent → legacy name-only (same as upload).
+        if not csv_path:
+            return web.json_response(
+                {"ok": False, "error": "source is required for CSV thumbnails"},
+                status=400,
+            )
         clear_thumbnail_files(name, csv_path)
         return web.json_response({"ok": True})
 
     @routes.post("/style_grid/thumbnails/cleanup")
     async def api_cleanup_thumbnails(request):
-        """Remove thumbnails for styles that no longer exist in any CSV."""
-        return web.json_response({"removed": cleanup_orphan_thumbnails()})
+        """Migrate unique legacy thumbs, then remove orphans (incl. ambiguous leftovers)."""
+        return web.json_response(cleanup_orphan_thumbnails())
 
 
 def register_api(routes):

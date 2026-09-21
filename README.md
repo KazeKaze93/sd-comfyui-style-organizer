@@ -113,7 +113,7 @@ and it is separate from Export.
 
 ![Search autocomplete](docs/screenshots/search-autocomplete.png)
 
-**Thumbnails** show on hover once uploaded via the card menu:
+**Thumbnails** show on hover once uploaded via the card menu. Preview files are keyed by **style name + source CSV**, so the same UNIVERSAL name in two packs keeps independent previews. Older name-only files migrate when the name is unique; if the name exists in multiple packs, regenerate each preview.
 
 ![Thumbnail hover preview](docs/screenshots/thumbnail-hover-preview.png)
 

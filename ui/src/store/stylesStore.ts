@@ -740,15 +740,31 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       if (!r.ok) return
       const data = await r.json().catch(() => null)
       const raw = data && typeof data === 'object' ? (data as { has_thumbnail?: unknown }).has_thumbnail : null
-      const withThumb = new Set(
-        Array.isArray(raw)
-          ? raw.filter((n): n is string => typeof n === 'string')
-          : [],
-      )
+      const withThumb = new Set<string>()
+      if (Array.isArray(raw)) {
+        for (const entry of raw) {
+          if (typeof entry === 'string') {
+            // Legacy list payloads were bare names; ignore — cannot disambiguate packs.
+            continue
+          }
+          if (
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as { name?: unknown }).name === 'string'
+          ) {
+            const name = (entry as { name: string }).name
+            const source_file =
+              typeof (entry as { source_file?: unknown }).source_file === 'string'
+                ? (entry as { source_file: string }).source_file
+                : ''
+            withThumb.add(styleRowKey({ name, source_file }))
+          }
+        }
+      }
       set((s) => ({
         styles: s.styles.map((st) => ({
           ...st,
-          has_thumbnail: withThumb.has(st.name),
+          has_thumbnail: withThumb.has(styleRowKey(st)),
         })),
       }))
     } catch {

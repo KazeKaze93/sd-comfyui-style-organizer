@@ -289,9 +289,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                const missing = catStyles.filter(s =>
-                  !localStorage.getItem(`sg_thumb_v_${s.name}`)
-                ).length
+                const missing = catStyles.filter(s => !s.has_thumbnail).length
                 setCatMenu({ x: e.clientX, y: e.clientY, cat, missingCount: missing })
               }}
             >
