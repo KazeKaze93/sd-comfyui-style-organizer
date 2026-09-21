@@ -517,11 +517,20 @@ function ensureOverlay() {
             rehydrate();
         }
         if (msg.type === "SG_APPLY" && currentNode) {
-            applyStyleToNode(currentNode, { name: msg.styleId, prompt: msg.prompt, negative_prompt: msg.neg });
+            applyStyleToNode(currentNode, {
+                name: msg.styleId,
+                prompt: msg.prompt,
+                negative_prompt: msg.neg,
+                source_file: msg.source_file || "",
+            });
         }
         if (msg.type === "SG_UNAPPLY" && currentNode) {
             const recorded = appliedByNode.get(currentNode)?.get(msg.styleId);
-            const cached = allStylesCache.find((s) => s.name === msg.styleId);
+            const cached = allStylesCache.find((s) => {
+                if (s.name !== msg.styleId) return false;
+                if (!msg.source_file) return true;
+                return String(s.source_file || "") === String(msg.source_file);
+            });
             if (recorded || cached) {
                 unapplyStyleFromNode(currentNode, {
                     name: msg.styleId,

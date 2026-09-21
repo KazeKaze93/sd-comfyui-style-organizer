@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
-import { getCategoryColor, useStylesStore } from '../store/stylesStore'
+import { getCategoryColor, styleRowKey, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
 import { ConfirmInputDialog } from './ConfirmInputDialog'
@@ -29,10 +29,10 @@ function nextDuplicateName(baseName: string, catalog: Style[]): string {
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false }: Props) {
   const isSelected = useStylesStore(
-    s => s.selectedStyles.some(sel => sel.name === style.name)
+    s => s.selectedStyles.some(sel => styleRowKey(sel) === styleRowKey(style))
   )
   const selectedForName = useStylesStore(
-    s => s.selectedStyles.find(sel => sel.name === style.name)
+    s => s.selectedStyles.find(sel => styleRowKey(sel) === styleRowKey(style))
   )
   const usageCount = useStylesStore(s => s.usageCounts[style.name] || 0)
   const activeSource = useStylesStore(s => s.activeSource)

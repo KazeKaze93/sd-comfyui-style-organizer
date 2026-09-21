@@ -532,23 +532,23 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     if (catStyles.length === 0) return
 
     const allSelected = catStyles.every(s =>
-      selectedStyles.some(sel => sel.name === s.name)
+      selectedStyles.some(sel => styleRowKey(sel) === styleRowKey(s))
     )
 
     if (allSelected) {
-      const removeNames = new Set(catStyles.map(s => s.name))
+      const removeKeys = new Set(catStyles.map(s => styleRowKey(s)))
       set({
-        selectedStyles: selectedStyles.filter(s => !removeNames.has(s.name)),
+        selectedStyles: selectedStyles.filter(s => !removeKeys.has(styleRowKey(s))),
       })
       catStyles.forEach((style) => {
-        sendToHost({ type: 'SG_UNAPPLY', styleId: style.name })
+        sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
       })
       get().detectConflicts()
       return
     }
 
-    const selectedNames = new Set(selectedStyles.map(s => s.name))
-    const toAdd = catStyles.filter(s => !selectedNames.has(s.name))
+    const selectedKeys = new Set(selectedStyles.map(s => styleRowKey(s)))
+    const toAdd = catStyles.filter(s => !selectedKeys.has(styleRowKey(s)))
     if (toAdd.length === 0) return
 
     set({ selectedStyles: [...selectedStyles, ...toAdd] })
@@ -560,6 +560,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         styleId: style.name,
         prompt: style.prompt,
         neg: style.negative_prompt,
+        source_file: style.source_file,
       })
     })
     get().detectConflicts()
@@ -603,17 +604,18 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
   toggleStyle: (style) => {
     const { selectedStyles, styleContributors } = get()
-    const isSelected = selectedStyles.some(s => s.name === style.name)
+    const key = styleRowKey(style)
+    const isSelected = selectedStyles.some(s => styleRowKey(s) === key)
 
     if (isSelected) {
       // Manual remove clears the WHOLE contributor set — explicit click wins.
       const nextContributors = { ...styleContributors }
       delete nextContributors[style.name]
       set({
-        selectedStyles: selectedStyles.filter(s => s.name !== style.name),
+        selectedStyles: selectedStyles.filter(s => styleRowKey(s) !== key),
         styleContributors: nextContributors,
       })
-      sendToHost({ type: 'SG_UNAPPLY', styleId: style.name })
+      sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
       get().detectConflicts()
     } else {
       const existing = styleContributors[style.name] ?? new Set<string>()
@@ -631,6 +633,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         styleId: style.name,
         prompt: style.prompt,
         neg: style.negative_prompt,
+        source_file: style.source_file,
       })
       get().detectConflicts()
     }
