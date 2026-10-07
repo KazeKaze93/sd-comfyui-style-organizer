@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- **CSV cells no longer get a leading `'` on save:** names/prompts like `-_-` and `+_+` round-trip unchanged. Older files that still have `'=` / `'+` / `'-` / `'@` prefixes are stripped in memory on load only (no rewrite on read).
+
 ### Security
 - **Persistence hardening:** wrong-shape presets/usage maps raise `CorruptDataError`; `load_presets` never rewrites disk; per-file locks around presets/usage/CSV RMW; `increment_usage` uses the usage file lock.
 

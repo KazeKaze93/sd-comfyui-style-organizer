@@ -20,10 +20,23 @@ def _write_csv_atomic(target_path, header, rows):
     write_atomic(target_path, buf.getvalue().encode("utf-8-sig"))
 
 
+_LEGACY_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
 def _sanitize_csv_cell(value):
-    """Prevent CSV injection when opening in spreadsheet apps."""
-    if isinstance(value, str) and value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
-        return "'" + value
+    """Identity on write — do not prepend apostrophes (breaks names like -_- / +_+)."""
+    return value
+
+
+def _unsanitize_legacy_csv_cell(value):
+    """In-memory migration: strip a leading ' that older builds prepended before =+-@."""
+    if (
+        isinstance(value, str)
+        and len(value) >= 2
+        and value[0] == "'"
+        and value[1] in _LEGACY_FORMULA_CHARS
+    ):
+        return value[1:]
     return value
 
 
@@ -34,6 +47,9 @@ def parse_styles_csv(filepath):
     Keys: name, prompt, negative_prompt, description, category_explicit,
     source (basename), source_file (absolute path). Malformed rows are skipped
     and logged; they never abort the rest of the file.
+
+    Legacy apostrophe-escaped formula prefixes are stripped in memory only;
+    this function never writes the file.
     """
     styles = []
     if not os.path.isfile(filepath):
@@ -56,15 +72,25 @@ def parse_styles_csv(filepath):
                     continue
                 if header is None:
                     header = ["name", "prompt", "negative_prompt"]
-                name = row[0].strip() if len(row) > 0 else ""
+                name = _unsanitize_legacy_csv_cell(
+                    row[0].strip() if len(row) > 0 else ""
+                )
                 if not name:
                     continue
                 styles.append({
                     "name": name,
-                    "prompt": row[1].strip() if len(row) > 1 else "",
-                    "negative_prompt": row[2].strip() if len(row) > 2 else "",
-                    "description": row[3].strip() if len(row) > 3 else "",
-                    "category_explicit": row[4].strip() if len(row) > 4 else "",
+                    "prompt": _unsanitize_legacy_csv_cell(
+                        row[1].strip() if len(row) > 1 else ""
+                    ),
+                    "negative_prompt": _unsanitize_legacy_csv_cell(
+                        row[2].strip() if len(row) > 2 else ""
+                    ),
+                    "description": _unsanitize_legacy_csv_cell(
+                        row[3].strip() if len(row) > 3 else ""
+                    ),
+                    "category_explicit": _unsanitize_legacy_csv_cell(
+                        row[4].strip() if len(row) > 4 else ""
+                    ),
                     "source": base,
                     "source_file": os.path.abspath(filepath),
                     "read_only": os.path.dirname(filepath) == SAMPLES_DIR,
@@ -177,26 +203,20 @@ def save_style_to_csv(name, prompt, negative_prompt, description="", source_file
             else:
                 cat_cell = str(category).strip()
                 cat_cell = _sanitize_csv_cell(cat_cell) if cat_cell else ""
-            # All five cells: spreadsheet apps treat leading =+-@\t\r as formulas.
-            # SD/ComfyUI weight syntax uses (tag:1.2) / [tag] / trailing +/- — not a
-            # leading =+-@ on the whole cell — so prompt/neg are safe to escape.
-            base = [
-                _sanitize_csv_cell(name),
-                _sanitize_csv_cell(prompt),
-                _sanitize_csv_cell(negative_prompt),
-                _sanitize_csv_cell(description),
-                cat_cell,
-            ]
+            base = [name, prompt, negative_prompt, description, cat_cell]
             extra = list(existing_row[5:]) if existing_row and len(existing_row) > 5 else []
             while len(base) + len(extra) < len(header):
                 extra.append("")
             return base + extra
 
-        # Match the on-disk name cell (already-sanitized rows from a prior save).
-        name_cell = _sanitize_csv_cell(name)
+        # Match plain name, or legacy apostrophe-escaped name from older builds.
+        legacy_name = "'" + name if name and name[0] in _LEGACY_FORMULA_CHARS else name
         found = False
         for i, row in enumerate(rows):
-            if row and row[0].strip() == name_cell:
+            if not row:
+                continue
+            cell = row[0].strip()
+            if cell == name or cell == legacy_name:
                 rows[i] = make_row(rows[i])
                 found = True
                 break
