@@ -139,7 +139,7 @@ folder:
 | `data/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
 | `data/imports/*.csv` | Style packs created by the Import feature (including restore from a Backup zip) | Yes, anytime |
 | `data/backups/` | Manual Backup `.zip` archives (`data/` + `imports/` CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
-| `data/presets.json` | Saved presets | Only if you don't need them |
+| `data/presets.json` | Saved presets. Corrupt/unreadable JSON returns HTTP **409** and is not overwritten — restore from sibling `.bak` (atomic writes keep `.bak` / `.bak.2` / `.bak.3`). | Only if you don't need them |
 | `data/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
 | `data/category_order.json` | Persisted sidebar category order | Yes — order falls back to defaults |
 | `data/thumbnails/` | Uploaded preview images | Yes, previews just won't show until re-uploaded |
