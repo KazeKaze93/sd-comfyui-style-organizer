@@ -1,0 +1,25 @@
+---
+description: Comfy Registry publish — changelog must be passed explicitly
+alwaysApply: true
+---
+
+# Comfy Registry publish
+
+GitHub Release / tag / `CHANGELOG.md` alone do **not** fill the registry **Updates** section.
+
+`comfy node publish` does **not** auto-read `CHANGELOG.md` or former `RELEASE_NOTES_*.md` files. Updates appear only when changelog text is passed explicitly:
+
+```powershell
+comfy node publish --changelog-file notes-<version>.md
+# or: --changelog "..."  /  env COMFY_NODE_CHANGELOG
+```
+
+Release checklist:
+
+1. Bump `pyproject.toml` `[project].version`
+2. Move `CHANGELOG.md` `## Unreleased` into `## x.y.z — YYYY-MM-DD`
+3. Commit, tag `x.y.z`, push, `gh release create` (GitHub notes optional)
+4. Publish to registry **with** `--changelog` / `--changelog-file` (excerpt for that version only)
+5. Confirm Updates on https://registry.comfy.org/publishers/kaze/nodes/sd-comfyui-style-organizer
+
+If a version was published without changelog: delete that version on the registry UI, then republish with the flag.
