@@ -45,8 +45,8 @@ jobs:
       - name: Run eslint
         run: npm run lint
 
-  # Committed web/ui must match a clean Vite build from ui/ (no stale panel assets).
-  # Build on ubuntu with the pinned Node from .nvmrc; Windows-local hashes can differ.
+  # Committed web/ui must match an ubuntu Vite build (Node from .nvmrc).
+  # Windows-local hashes can differ — rebuild on Linux or download the artifact.
   ui-assets:
     runs-on: ubuntu-latest
     steps:
@@ -62,12 +62,7 @@ jobs:
       - name: Build UI into web/ui
         working-directory: ui
         run: npm run build
-      - name: Normalize EOL before diff
-        run: |
-          git add --renormalize web/ui
-          git status --short -- web/ui
       - name: Fail if committed web/ui differs from build output
-        id: check
         run: |
           if ! git diff --exit-code -- web/ui; then
             echo "::error::web/ui is out of date vs ubuntu/Node from .nvmrc. Download the web-ui-built artifact, replace web/ui, and commit."
