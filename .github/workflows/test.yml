@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Install dependencies
@@ -46,13 +46,14 @@ jobs:
         run: npm run lint
 
   # Committed web/ui must match a clean Vite build from ui/ (no stale panel assets).
+  # Build on ubuntu with the pinned Node from .nvmrc; Windows-local hashes can differ.
   ui-assets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Install UI dependencies
@@ -61,11 +62,22 @@ jobs:
       - name: Build UI into web/ui
         working-directory: ui
         run: npm run build
+      - name: Normalize EOL before diff
+        run: |
+          git add --renormalize web/ui
+          git status --short -- web/ui
       - name: Fail if committed web/ui differs from build output
+        id: check
         run: |
           if ! git diff --exit-code -- web/ui; then
-            echo "::error::web/ui is out of date. Run: cd ui && npm ci && npm run build, then commit web/ui."
+            echo "::error::web/ui is out of date vs ubuntu/Node from .nvmrc. Download the web-ui-built artifact, replace web/ui, and commit."
             git status --short -- web/ui
             exit 1
           fi
           echo "web/ui matches vite build."
+      - name: Upload Linux build for commit
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-ui-built
+          path: web/ui
