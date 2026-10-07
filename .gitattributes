@@ -1,2 +1,35 @@
-# Keep panel assets LF so Linux CI and Windows checkouts compare cleanly.
+# Keep sources and committed panel assets LF so Linux CI and Windows
+# checkouts/builds compare cleanly (Vite content hashes must match).
 web/ui/** text eol=lf
+ui/src/** text eol=lf
+
+# Binary assets under ui/src (must not be normalized as text)
+ui/src/**/*.png binary
+ui/src/**/*.jpg binary
+ui/src/**/*.jpeg binary
+ui/src/**/*.gif binary
+ui/src/**/*.webp binary
+ui/src/**/*.ico binary
+web/ui/**/*.woff2 binary
+web/ui/**/*.png binary
+web/ui/**/*.jpg binary
+web/ui/**/*.jpeg binary
+web/ui/**/*.gif binary
+web/ui/**/*.webp binary
+
+# UI package / toolchain config (inputs to the Vite build)
+ui/package.json text eol=lf
+ui/package-lock.json text eol=lf
+ui/tsconfig.json text eol=lf
+ui/tsconfig.*.json text eol=lf
+ui/vite.config.ts text eol=lf
+ui/eslint.config.js text eol=lf
+ui/postcss.config.js text eol=lf
+ui/tailwind.config.js text eol=lf
+ui/components.json text eol=lf
+ui/index.html text eol=lf
+ui/.gitignore text eol=lf
+
+# Repo pin / workflow inputs that affect CI builds
+.nvmrc text eol=lf
+.gitattributes text eol=lf
