@@ -18,7 +18,7 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import DATA_DIR, IMPORTS_DIR
+from .config import DATA_DIR, IMPORTS_DIR, PRESETS_FILE
 from .csv_io import (
     FIELDNAMES,
     categorize_styles,
@@ -37,7 +37,7 @@ from .data_files import (
     save_presets,
     save_usage,
 )
-from .safe_persistence import write_atomic
+from .safe_persistence import locked_path, write_atomic
 from .thumbnails import (
     cleanup_orphan_thumbnails,
     clear_thumbnail_files,
@@ -279,10 +279,11 @@ def _register_style_routes(routes):
                         if not isinstance(incoming, dict):
                             return web.json_response({"error": "presets must be an object"})
                         try:
-                            p = load_presets()
-                            presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
-                            if presets_imported:
-                                save_presets(p)
+                            with locked_path(PRESETS_FILE):
+                                p = load_presets()
+                                presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
+                                if presets_imported:
+                                    save_presets(p)
                         except CorruptDataError as exc:
                             return _corrupt_response(exc)
 
@@ -329,10 +330,11 @@ def _register_style_routes(routes):
             if not isinstance(incoming, dict):
                 return web.json_response({"error": "presets must be an object"})
             try:
-                p = load_presets()
-                presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
-                if presets_imported:
-                    save_presets(p)
+                with locked_path(PRESETS_FILE):
+                    p = load_presets()
+                    presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
+                    if presets_imported:
+                        save_presets(p)
             except CorruptDataError as exc:
                 return _corrupt_response(exc)
         imported = 0
@@ -525,10 +527,6 @@ def _register_preset_routes(routes):
     @routes.post("/style_grid/presets/save")
     async def api_save_preset(request):
         data = await _read_json(request)
-        try:
-            presets = load_presets()
-        except CorruptDataError as exc:
-            return _corrupt_response(exc)
         name = data.get("name", "").strip()
         styles = data.get("styles")
         if styles is None:
@@ -548,25 +546,27 @@ def _register_preset_routes(routes):
             return web.json_response({"error": "wildcards must be a list"})
         if not isinstance(note, str):
             note = ""
-        if name in presets and not overwrite:
-            return web.json_response({"error": "exists", "name": name})
-        prev = presets.get(name) if isinstance(presets.get(name), dict) else None
-        created = (
-            prev["created"]
-            if prev and isinstance(prev.get("created"), str) and prev.get("created")
-            else time.strftime("%Y-%m-%dT%H:%M:%S")
-        )
-        entry = {
-            "styles": styles,
-            "wildcards": wildcards,
-            "note": note,
-            "created": created,
-        }
-        if prev and isinstance(prev.get("last_used"), str) and prev.get("last_used"):
-            entry["last_used"] = prev["last_used"]
-        presets[name] = entry
         try:
-            saved = save_presets(presets)
+            with locked_path(PRESETS_FILE):
+                presets = load_presets()
+                if name in presets and not overwrite:
+                    return web.json_response({"error": "exists", "name": name})
+                prev = presets.get(name) if isinstance(presets.get(name), dict) else None
+                created = (
+                    prev["created"]
+                    if prev and isinstance(prev.get("created"), str) and prev.get("created")
+                    else time.strftime("%Y-%m-%dT%H:%M:%S")
+                )
+                entry = {
+                    "styles": styles,
+                    "wildcards": wildcards,
+                    "note": note,
+                    "created": created,
+                }
+                if prev and isinstance(prev.get("last_used"), str) and prev.get("last_used"):
+                    entry["last_used"] = prev["last_used"]
+                presets[name] = entry
+                saved = save_presets(presets)
         except CorruptDataError as exc:
             return _corrupt_response(exc)
         return web.json_response({"ok": True, "presets": saved})
@@ -574,19 +574,17 @@ def _register_preset_routes(routes):
     @routes.post("/style_grid/presets/delete")
     async def api_delete_preset(request):
         data = await _read_json(request)
+        name = data.get("name", "")
         try:
-            presets = load_presets()
+            with locked_path(PRESETS_FILE):
+                presets = load_presets()
+                if name in presets:
+                    del presets[name]
+                    saved = save_presets(presets)
+                    return web.json_response({"ok": True, "presets": saved})
+                return web.json_response({"ok": True, "presets": presets})
         except CorruptDataError as exc:
             return _corrupt_response(exc)
-        name = data.get("name", "")
-        if name in presets:
-            del presets[name]
-            try:
-                saved = save_presets(presets)
-            except CorruptDataError as exc:
-                return _corrupt_response(exc)
-            return web.json_response({"ok": True, "presets": saved})
-        return web.json_response({"ok": True, "presets": presets})
 
     @routes.post("/style_grid/presets/rename")
     async def api_rename_preset(request):
@@ -597,17 +595,15 @@ def _register_preset_routes(routes):
         if not old_name or not new_name:
             return web.json_response({"error": "Name required"})
         try:
-            presets = load_presets()
-        except CorruptDataError as exc:
-            return _corrupt_response(exc)
-        if old_name not in presets:
-            return web.json_response({"error": "not_found", "name": old_name})
-        if new_name != old_name and new_name in presets and not overwrite:
-            return web.json_response({"error": "exists", "name": new_name})
-        entry = presets.pop(old_name)
-        presets[new_name] = entry
-        try:
-            saved = save_presets(presets)
+            with locked_path(PRESETS_FILE):
+                presets = load_presets()
+                if old_name not in presets:
+                    return web.json_response({"error": "not_found", "name": old_name})
+                if new_name != old_name and new_name in presets and not overwrite:
+                    return web.json_response({"error": "exists", "name": new_name})
+                entry = presets.pop(old_name)
+                presets[new_name] = entry
+                saved = save_presets(presets)
         except CorruptDataError as exc:
             return _corrupt_response(exc)
         return web.json_response({"ok": True, "presets": saved})
@@ -619,14 +615,12 @@ def _register_preset_routes(routes):
         if not name:
             return web.json_response({"error": "Name required"})
         try:
-            presets = load_presets()
-        except CorruptDataError as exc:
-            return _corrupt_response(exc)
-        if name not in presets:
-            return web.json_response({"error": "not_found", "name": name})
-        presets[name]["last_used"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        try:
-            saved = save_presets(presets)
+            with locked_path(PRESETS_FILE):
+                presets = load_presets()
+                if name not in presets:
+                    return web.json_response({"error": "not_found", "name": name})
+                presets[name]["last_used"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                saved = save_presets(presets)
         except CorruptDataError as exc:
             return _corrupt_response(exc)
         return web.json_response({"ok": True, "presets": saved})

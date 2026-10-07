@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Persistence hardening:** wrong-shape presets/usage maps raise `CorruptDataError`; `load_presets` never rewrites disk; per-file locks around presets/usage/CSV RMW; `increment_usage` uses the usage file lock.
+
 ### Fixed
 - **Corrupt `presets.json` no longer wiped on save:** unreadable presets return HTTP **409** `corrupt_data` (with `path` / `bak_path`) instead of treating the file as empty and overwriting it. The panel shows a blocking banner and disables preset mutations until the file is restored from `.bak`. Atomic writes keep the last 3 backups (`.bak`, `.bak.2`, `.bak.3`).
 - **Import no longer freezes the event loop on large packs:** styles are collected and written with a single `write_atomic`, offloaded via `asyncio.to_thread`.

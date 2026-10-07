@@ -44,13 +44,16 @@ def test_normalize_bare_names_and_keep_missing(data_files):
         ),
         encoding="utf-8",
     )
+    before = presets_path.read_bytes()
     loaded = sg_data.load_presets()
     assert [e["name"] for e in loaded["P"]["styles"]] == ["Test Style A", "Gone"]
     assert loaded["P"]["styles"][1]["source_file"] == ""
     assert loaded["P"]["wildcards"] == []
     assert loaded["P"]["note"] == ""
+    # load_presets must not rewrite disk; legacy bare names stay until an explicit save.
+    assert presets_path.read_bytes() == before
     disk = json.loads(presets_path.read_text(encoding="utf-8"))
-    assert disk["P"]["styles"][0]["weight"] == 1.0
+    assert disk["P"]["styles"] == ["Test Style A", "Gone"]
 
 
 def test_preset_styles_payload_ok_accepts_objects(data_files):

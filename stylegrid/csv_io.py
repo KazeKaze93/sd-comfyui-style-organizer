@@ -6,7 +6,7 @@ import os
 
 from .cache import invalidate_styles_cache
 from .config import DATA_DIR, IMPORTS_DIR, SAMPLES_DIR, get_all_styles_file_paths, logger
-from .safe_persistence import write_atomic
+from .safe_persistence import locked_path, write_atomic
 
 FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
 
@@ -156,53 +156,54 @@ def _resolve_write_target(source_file):
 def save_style_to_csv(name, prompt, negative_prompt, description="", source_file=None, category=None):
     """Upsert a style row in a data/ CSV: replace the first matching name row, or append."""
     target_path = _resolve_write_target(source_file)
-    rows = []
-    header = None
-    if os.path.isfile(target_path):
-        with open(target_path, "r", encoding="utf-8-sig") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if header is None and row and row[0].strip().lower() == "name":
-                    header = row
-                    continue
-                rows.append(row)
-    if not header:
-        header = FIELDNAMES
+    with locked_path(target_path):
+        rows = []
+        header = None
+        if os.path.isfile(target_path):
+            with open(target_path, "r", encoding="utf-8-sig") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if header is None and row and row[0].strip().lower() == "name":
+                        header = row
+                        continue
+                    rows.append(row)
+        if not header:
+            header = FIELDNAMES
 
-    def make_row(existing_row=None):
-        existing_cat = existing_row[4].strip() if (existing_row and len(existing_row) > 4) else ""
-        if category is None:
-            cat_cell = existing_cat
-        else:
-            cat_cell = str(category).strip()
-            cat_cell = _sanitize_csv_cell(cat_cell) if cat_cell else ""
-        # All five cells: spreadsheet apps treat leading =+-@\t\r as formulas.
-        # SD/ComfyUI weight syntax uses (tag:1.2) / [tag] / trailing +/- — not a
-        # leading =+-@ on the whole cell — so prompt/neg are safe to escape.
-        base = [
-            _sanitize_csv_cell(name),
-            _sanitize_csv_cell(prompt),
-            _sanitize_csv_cell(negative_prompt),
-            _sanitize_csv_cell(description),
-            cat_cell,
-        ]
-        extra = list(existing_row[5:]) if existing_row and len(existing_row) > 5 else []
-        while len(base) + len(extra) < len(header):
-            extra.append("")
-        return base + extra
+        def make_row(existing_row=None):
+            existing_cat = existing_row[4].strip() if (existing_row and len(existing_row) > 4) else ""
+            if category is None:
+                cat_cell = existing_cat
+            else:
+                cat_cell = str(category).strip()
+                cat_cell = _sanitize_csv_cell(cat_cell) if cat_cell else ""
+            # All five cells: spreadsheet apps treat leading =+-@\t\r as formulas.
+            # SD/ComfyUI weight syntax uses (tag:1.2) / [tag] / trailing +/- — not a
+            # leading =+-@ on the whole cell — so prompt/neg are safe to escape.
+            base = [
+                _sanitize_csv_cell(name),
+                _sanitize_csv_cell(prompt),
+                _sanitize_csv_cell(negative_prompt),
+                _sanitize_csv_cell(description),
+                cat_cell,
+            ]
+            extra = list(existing_row[5:]) if existing_row and len(existing_row) > 5 else []
+            while len(base) + len(extra) < len(header):
+                extra.append("")
+            return base + extra
 
-    # Match the on-disk name cell (already-sanitized rows from a prior save).
-    name_cell = _sanitize_csv_cell(name)
-    found = False
-    for i, row in enumerate(rows):
-        if row and row[0].strip() == name_cell:
-            rows[i] = make_row(rows[i])
-            found = True
-            break
-    if not found:
-        rows.append(make_row())
+        # Match the on-disk name cell (already-sanitized rows from a prior save).
+        name_cell = _sanitize_csv_cell(name)
+        found = False
+        for i, row in enumerate(rows):
+            if row and row[0].strip() == name_cell:
+                rows[i] = make_row(rows[i])
+                found = True
+                break
+        if not found:
+            rows.append(make_row())
 
-    _write_csv_atomic(target_path, header, rows)
+        _write_csv_atomic(target_path, header, rows)
     invalidate_styles_cache()
     return True
 
@@ -229,22 +230,23 @@ def delete_style_from_csv(name, source_file=None):
             break
     if not target_path:
         return False
-    rows = []
-    header = None
-    removed = False
-    with open(target_path, "r", encoding="utf-8-sig") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if header is None and row and row[0].strip().lower() == "name":
-                header = row
-                continue
-            if row and row[0].strip() == name:
-                removed = True
-                continue
-            if row:
-                rows.append(row)
-    if not removed:
-        return False
-    _write_csv_atomic(target_path, header or FIELDNAMES, rows)
+    with locked_path(target_path):
+        rows = []
+        header = None
+        removed = False
+        with open(target_path, "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if header is None and row and row[0].strip().lower() == "name":
+                    header = row
+                    continue
+                if row and row[0].strip() == name:
+                    removed = True
+                    continue
+                if row:
+                    rows.append(row)
+        if not removed:
+            return False
+        _write_csv_atomic(target_path, header or FIELDNAMES, rows)
     invalidate_styles_cache()
     return True
