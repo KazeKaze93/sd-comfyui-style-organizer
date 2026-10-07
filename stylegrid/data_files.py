@@ -1,6 +1,5 @@
 """Presets, usage stats, CSV backups (JSON / filesystem under data/)."""
 
-import json
 import os
 import time
 import zipfile
@@ -12,9 +11,14 @@ from .config import (
     PRESETS_FILE,
     USAGE_FILE,
     _csvs_in,
-    logger,
 )
 from .csv_io import load_all_styles
+from .safe_persistence import (
+    CorruptDataError,
+    cleanup_stale_tmp,
+    load_json_object,
+    write_json_atomic,
+)
 
 
 def _coerce_weight(raw):
@@ -180,87 +184,41 @@ def preset_styles_payload_ok(styles):
     return True
 
 
-def _read_presets():
-    """Load presets.json. Returns (data, corrupt) — corrupt when the file exists but is unusable."""
-    if not os.path.isfile(PRESETS_FILE):
-        return {}, False
-    try:
-        with open(PRESETS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            logger.warning("[Style Grid] presets.json is not a JSON object; treating as empty")
-            return {}, True
-        return data, False
-    except (OSError, json.JSONDecodeError) as e:
-        logger.warning("[Style Grid] presets.json unreadable (%s); treating as empty", e)
-        return {}, True
-
-
 def _write_presets_file(normalized):
-    directory = os.path.dirname(PRESETS_FILE)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    tmp = PRESETS_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, PRESETS_FILE)
+    write_json_atomic(PRESETS_FILE, normalized)
 
 
 def load_presets():
-    presets, corrupt = _read_presets()
-    if corrupt:
-        return {}
-    normalized = normalize_presets(presets)
-    if presets and _presets_need_rewrite(presets):
+    """Load presets.json. Missing → {}; corrupt/IO → CorruptDataError."""
+    cleanup_stale_tmp(PRESETS_FILE)
+    raw = load_json_object(PRESETS_FILE)
+    normalized = normalize_presets(raw)
+    if raw and _presets_need_rewrite(raw):
         _write_presets_file(normalized)
     return normalized
 
 
 def save_presets(presets):
+    """Normalize and atomically write presets. Refuses if existing file is corrupt."""
     normalized = normalize_presets(presets)
     _write_presets_file(normalized)
     return normalized
 
 
-def _read_usage():
-    """Load usage.json. Returns (data, corrupt) — corrupt when the file exists but is unusable."""
-    if not os.path.isfile(USAGE_FILE):
-        return {}, False
-    try:
-        with open(USAGE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            logger.warning("[Style Grid] usage.json is not a JSON object; treating as empty")
-            return {}, True
-        return data, False
-    except (OSError, json.JSONDecodeError) as e:
-        logger.warning("[Style Grid] usage.json unreadable (%s); treating as empty", e)
-        return {}, True
-
-
 def load_usage():
-    usage, _ = _read_usage()
-    return usage
+    """Load usage.json. Missing → {}; corrupt/IO → CorruptDataError."""
+    return load_json_object(USAGE_FILE)
 
 
 def save_usage(usage):
-    directory = os.path.dirname(USAGE_FILE)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    tmp = USAGE_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(usage, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, USAGE_FILE)
+    """Atomically write usage. Refuses if existing file is corrupt."""
+    if not isinstance(usage, dict):
+        raise TypeError("usage must be a dict")
+    write_json_atomic(USAGE_FILE, usage)
 
 
 def increment_usage(style_names):
-    usage, corrupt = _read_usage()
-    if corrupt:
-        # Counts are non-critical UX polish — reset loudly rather than block the click
-        # or silently clobber history forever without a log line.
-        logger.warning(
-            "[Style Grid] usage.json corrupt — resetting usage history and writing a fresh file"
-        )
+    usage = load_usage()
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     for name in style_names:
         if name not in usage:

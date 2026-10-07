@@ -1,5 +1,6 @@
 """aiohttp routes for Style Grid, registered on PromptServer.instance.routes."""
 
+import asyncio
 import base64
 import csv
 import hashlib
@@ -27,6 +28,7 @@ from .csv_io import (
     save_style_to_csv,
 )
 from .data_files import (
+    CorruptDataError,
     backup_csv_files,
     increment_usage,
     load_presets,
@@ -35,6 +37,7 @@ from .data_files import (
     save_presets,
     save_usage,
 )
+from .safe_persistence import write_atomic
 from .thumbnails import (
     cleanup_orphan_thumbnails,
     clear_thumbnail_files,
@@ -97,7 +100,7 @@ def _styles_from_csv_text(text):
 
 
 def _write_styles_to_new_import_csv(styles, name_hint):
-    """Seed a new IMPORTS_DIR CSV and upsert styles (same path as JSON import)."""
+    """Write all imported styles to a new IMPORTS_DIR CSV in one atomic write."""
     os.makedirs(IMPORTS_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     safe = name_hint.replace("\\", "/").replace("/", "_")
@@ -108,18 +111,21 @@ def _write_styles_to_new_import_csv(styles, name_hint):
     while os.path.isfile(target):
         target = os.path.join(IMPORTS_DIR, f"imported_{ts}_{n}_{safe}")
         n += 1
-    with open(target, "w", encoding="utf-8-sig", newline="") as f:
-        csv.writer(f).writerow(FIELDNAMES)
+
+    buf = StringIO(newline="")
+    writer = csv.writer(buf)
+    writer.writerow(FIELDNAMES)
     for s in styles:
         cat = s.get("category", "") or s.get("category_explicit", "")
-        save_style_to_csv(
+        writer.writerow([
             s.get("name", ""),
             s.get("prompt", ""),
             s.get("negative_prompt", ""),
             s.get("description", ""),
-            source_file=target,
-            category=cat if cat else None,
-        )
+            cat,
+        ])
+    write_atomic(target, buf.getvalue().encode("utf-8-sig"))
+    invalidate_styles_cache()
     return len(styles)
 
 
@@ -174,12 +180,29 @@ async def _read_json(request):
         return {}
 
 
+def _corrupt_payload(exc: CorruptDataError) -> dict:
+    return {
+        "error": "corrupt_data",
+        "path": exc.path,
+        "bak_path": exc.path + ".bak",
+        "message": str(exc),
+    }
+
+
+def _corrupt_response(exc: CorruptDataError):
+    return web.json_response(_corrupt_payload(exc), status=409)
+
+
 def _register_style_routes(routes):
     @routes.get("/style_grid/styles")
     async def get_styles(request):
         styles = get_cached_styles()
         categories = categorize_styles(styles)
-        presets = load_presets()
+        try:
+            presets = load_presets()
+            usage = load_usage()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         # Presets are embedded in the body; include them so save/delete busts ETag.
         etag = hashlib.md5(
             (
@@ -191,7 +214,7 @@ def _register_style_routes(routes):
         if_none_match = request.headers.get("If-None-Match", "").strip().strip('"')
         if if_none_match and if_none_match == etag:
             return web.Response(status=304)
-        response = web.json_response({"categories": categories, "usage": load_usage(), "presets": presets})
+        response = web.json_response({"categories": categories, "usage": usage, "presets": presets})
         response.headers["ETag"] = etag
         return response
 
@@ -201,7 +224,11 @@ def _register_style_routes(routes):
         invalidate_styles_cache()
         styles = get_cached_styles()
         categories = categorize_styles(styles)
-        return web.json_response({"categories": categories, "usage": load_usage()})
+        try:
+            usage = load_usage()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        return web.json_response({"categories": categories, "usage": usage})
 
     @routes.get("/style_grid/check_update")
     async def api_check_update(request):
@@ -251,10 +278,13 @@ def _register_style_routes(routes):
                         incoming = json.loads(zf.read("presets.json").decode("utf-8"))
                         if not isinstance(incoming, dict):
                             return web.json_response({"error": "presets must be an object"})
-                        p = load_presets()
-                        presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
-                        if presets_imported:
-                            save_presets(p)
+                        try:
+                            p = load_presets()
+                            presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
+                            if presets_imported:
+                                save_presets(p)
+                        except CorruptDataError as exc:
+                            return _corrupt_response(exc)
 
                     imported = 0
                     skipped = 0
@@ -267,7 +297,9 @@ def _register_style_routes(routes):
                         rows, row_skipped = _styles_from_csv_text(text)
                         skipped += row_skipped
                         if rows:
-                            imported += _write_styles_to_new_import_csv(rows, member)
+                            imported += await asyncio.to_thread(
+                                _write_styles_to_new_import_csv, rows, member
+                            )
 
                     if imported == 0 and presets_imported == 0:
                         return web.json_response(
@@ -296,10 +328,13 @@ def _register_style_routes(routes):
             incoming = data["presets"]
             if not isinstance(incoming, dict):
                 return web.json_response({"error": "presets must be an object"})
-            p = load_presets()
-            presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
-            if presets_imported:
-                save_presets(p)
+            try:
+                p = load_presets()
+                presets_imported, presets_skipped = _merge_incoming_presets(p, incoming)
+                if presets_imported:
+                    save_presets(p)
+            except CorruptDataError as exc:
+                return _corrupt_response(exc)
         imported = 0
         skipped = 0
         duplicate_import = False
@@ -332,24 +367,9 @@ def _register_style_routes(routes):
                             duplicate_import = True
                             break
                 if not duplicate_import:
-                    os.makedirs(IMPORTS_DIR, exist_ok=True)
-                    target = os.path.join(
-                        IMPORTS_DIR, f"imported_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+                    imported = await asyncio.to_thread(
+                        _write_styles_to_new_import_csv, valid, "import.json"
                     )
-                    # Seed so _resolve_write_target matches IMPORTS_DIR, not DATA_DIR.
-                    with open(target, "w", encoding="utf-8-sig", newline="") as f:
-                        csv.writer(f).writerow(FIELDNAMES)
-                    for s in valid:
-                        cat = s.get("category", "") or s.get("category_explicit", "")
-                        save_style_to_csv(
-                            s.get("name", ""),
-                            s.get("prompt", ""),
-                            s.get("negative_prompt", ""),
-                            s.get("description", ""),
-                            source_file=target,
-                            category=cat if cat else None,
-                        )
-                    imported = len(valid)
         usage_imported = 0
         usage_skipped = 0
         if "usage" in data:
@@ -455,8 +475,10 @@ def _register_style_routes(routes):
         if not isinstance(order, list):
             return web.json_response({"error": "order must be a list"})
         order_file = os.path.join(DATA_DIR, "category_order.json")
-        with open(order_file, "w", encoding="utf-8") as f:
-            json.dump(order, f, indent=2, ensure_ascii=False)
+        write_atomic(
+            order_file,
+            json.dumps(order, indent=2, ensure_ascii=False) + "\n",
+        )
         return web.json_response({"ok": True})
 
 
@@ -503,7 +525,10 @@ def _register_preset_routes(routes):
     @routes.post("/style_grid/presets/save")
     async def api_save_preset(request):
         data = await _read_json(request)
-        presets = load_presets()
+        try:
+            presets = load_presets()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         name = data.get("name", "").strip()
         styles = data.get("styles")
         if styles is None:
@@ -540,17 +565,26 @@ def _register_preset_routes(routes):
         if prev and isinstance(prev.get("last_used"), str) and prev.get("last_used"):
             entry["last_used"] = prev["last_used"]
         presets[name] = entry
-        saved = save_presets(presets)
+        try:
+            saved = save_presets(presets)
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         return web.json_response({"ok": True, "presets": saved})
 
     @routes.post("/style_grid/presets/delete")
     async def api_delete_preset(request):
         data = await _read_json(request)
-        presets = load_presets()
+        try:
+            presets = load_presets()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         name = data.get("name", "")
         if name in presets:
             del presets[name]
-            saved = save_presets(presets)
+            try:
+                saved = save_presets(presets)
+            except CorruptDataError as exc:
+                return _corrupt_response(exc)
             return web.json_response({"ok": True, "presets": saved})
         return web.json_response({"ok": True, "presets": presets})
 
@@ -562,14 +596,20 @@ def _register_preset_routes(routes):
         overwrite = bool(data.get("overwrite"))
         if not old_name or not new_name:
             return web.json_response({"error": "Name required"})
-        presets = load_presets()
+        try:
+            presets = load_presets()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         if old_name not in presets:
             return web.json_response({"error": "not_found", "name": old_name})
         if new_name != old_name and new_name in presets and not overwrite:
             return web.json_response({"error": "exists", "name": new_name})
         entry = presets.pop(old_name)
         presets[new_name] = entry
-        saved = save_presets(presets)
+        try:
+            saved = save_presets(presets)
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         return web.json_response({"ok": True, "presets": saved})
 
     @routes.post("/style_grid/presets/touch")
@@ -578,16 +618,25 @@ def _register_preset_routes(routes):
         name = (data.get("name") or "").strip()
         if not name:
             return web.json_response({"error": "Name required"})
-        presets = load_presets()
+        try:
+            presets = load_presets()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         if name not in presets:
             return web.json_response({"error": "not_found", "name": name})
         presets[name]["last_used"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        saved = save_presets(presets)
+        try:
+            saved = save_presets(presets)
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
         return web.json_response({"ok": True, "presets": saved})
 
     @routes.get("/style_grid/presets/list")
     async def api_list_presets(request):
-        return web.json_response(load_presets())
+        try:
+            return web.json_response(load_presets())
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
 
 
 def _register_usage_routes(routes):

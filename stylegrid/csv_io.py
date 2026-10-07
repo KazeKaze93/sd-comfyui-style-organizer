@@ -1,12 +1,23 @@
 """CSV parsing, categorization, and style CRUD (read + write path)."""
 
 import csv
+import io
 import os
 
 from .cache import invalidate_styles_cache
 from .config import DATA_DIR, IMPORTS_DIR, SAMPLES_DIR, get_all_styles_file_paths, logger
+from .safe_persistence import write_atomic
 
 FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
+
+
+def _write_csv_atomic(target_path, header, rows):
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow(row)
+    write_atomic(target_path, buf.getvalue().encode("utf-8-sig"))
 
 
 def _sanitize_csv_cell(value):
@@ -191,16 +202,7 @@ def save_style_to_csv(name, prompt, negative_prompt, description="", source_file
     if not found:
         rows.append(make_row())
 
-    directory = os.path.dirname(target_path)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    tmp = target_path + ".tmp"
-    with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        for row in rows:
-            writer.writerow(row)
-    os.replace(tmp, target_path)
+    _write_csv_atomic(target_path, header, rows)
     invalidate_styles_cache()
     return True
 
@@ -243,10 +245,6 @@ def delete_style_from_csv(name, source_file=None):
                 rows.append(row)
     if not removed:
         return False
-    with open(target_path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(header or FIELDNAMES)
-        for row in rows:
-            writer.writerow(row)
+    _write_csv_atomic(target_path, header or FIELDNAMES, rows)
     invalidate_styles_cache()
     return True
