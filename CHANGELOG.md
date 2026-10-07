@@ -3,7 +3,12 @@
 ## Unreleased
 
 ### Fixed
+- **Corrupt `presets.json` no longer wiped on save:** unreadable presets return HTTP **409** `corrupt_data` (with `path` / `bak_path`) instead of treating the file as empty and overwriting it. The panel shows a blocking banner and disables preset mutations until the file is restored from `.bak`. Atomic writes keep the last 3 backups (`.bak`, `.bak.2`, `.bak.3`).
+- **Import no longer freezes the event loop on large packs:** styles are collected and written with a single `write_atomic`, offloaded via `asyncio.to_thread`.
 - **Thumbnail identity:** previews and `has_thumbnail` / `SG_THUMB_DONE` matching use **`(source file, name)`**. Legacy name-only files migrate when unique across packs; ambiguous duplicates need regeneration. Thumbnail GET/upload/delete require `source`.
+
+### Added
+- **`stylegrid/safe_persistence.py`:** shared atomic writer and corrupt-data guards (byte-identical with the Forge extension and csv-script copies).
 
 ## 0.0.6 — 2026-09-17
 
