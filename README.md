@@ -60,6 +60,16 @@ Updates: Manager installs update through Manager's own Update /
 Check for updates flow. Manual git installs update via `git pull`
 inside the extension folder.
 
+## Publishing to Comfy Registry
+
+`comfy node publish` does **not** pick up `CHANGELOG.md` automatically. The registry **Updates** section is filled only if you pass changelog text:
+
+```powershell
+comfy node publish --changelog-file notes-<version>.md
+```
+
+(or `--changelog "..."` / `COMFY_NODE_CHANGELOG`). GitHub Release notes alone do not appear there. After bumping `pyproject.toml` and cutting `CHANGELOG.md`, publish with that flag; if a version was uploaded without it, delete the version on the registry and republish.
+
 ## Usage
 
 Add the **Style Grid** node to your workflow. It outputs two STRING values, positive and negative, meant to feed directly into your text encode nodes. Click **Browse Styles** to open the grid, search or browse by category, and apply styles to the node's text fields directly.
