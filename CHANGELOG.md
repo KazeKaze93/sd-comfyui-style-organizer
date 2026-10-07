@@ -2,16 +2,19 @@
 
 ## Unreleased
 
-### Fixed
-- **CSV cells no longer get a leading `'` on save:** names/prompts like `-_-` and `+_+` round-trip unchanged. Older files that still have `'=` / `'+` / `'-` / `'@` prefixes are stripped in memory on load only (no rewrite on read).
+## 0.0.7 — 2026-10-08
 
 ### Security
 - **Persistence hardening:** wrong-shape presets/usage maps raise `CorruptDataError`; `load_presets` never rewrites disk; per-file locks around presets/usage/CSV RMW; `increment_usage` uses the usage file lock.
 
 ### Fixed
+- **CSV cells no longer get a leading `'` on save:** names/prompts like `-_-` and `+_+` round-trip unchanged. Older files that still have `'=` / `'+` / `'-` / `'@` prefixes are stripped in memory on load only (no rewrite on read).
 - **Corrupt `presets.json` no longer wiped on save:** unreadable presets return HTTP **409** `corrupt_data` (with `path` / `bak_path`) instead of treating the file as empty and overwriting it. The panel shows a blocking banner and disables preset mutations until the file is restored from `.bak`. Atomic writes keep the last 3 backups (`.bak`, `.bak.2`, `.bak.3`).
 - **Import no longer freezes the event loop on large packs:** styles are collected and written with a single `write_atomic`, offloaded via `asyncio.to_thread`.
 - **Thumbnail identity:** previews and `has_thumbnail` / `SG_THUMB_DONE` matching use **`(source file, name)`**. Legacy name-only files migrate when unique across packs; ambiguous duplicates need regeneration. Thumbnail GET/upload/delete require `source`.
+- **Weight-aware tag dedup:** prompt apply/unapply treats `(tag:1.2)` and bare `tag` as the same tag for dedup, matching the WebUI Style Grid fix.
+- **Combos chips:** parenthetical comments and `+` separators parse into separate chips instead of one glued label.
+- **Category context menu:** no longer clipped at the viewport bottom (ported/clamped like the WebUI menu).
 
 ### Added
 - **`stylegrid/safe_persistence.py`:** shared atomic writer and corrupt-data guards (byte-identical with the Forge extension and csv-script copies).
