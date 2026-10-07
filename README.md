@@ -150,11 +150,19 @@ Use Duplicate to create an editable copy in `data/` first.
 
 ## Development
 
-Python tests (resolver / slice grammar) and UI tests (compactor + parity) run in CI on push and pull request to `master`.
+Quality checks run locally via a Git `pre-push` hook (no GitHub Actions CI).
+
+After clone, enable repo hooks once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`pre-push` runs pytest (pinned minimum pass count), UI typecheck/lint/vitest (pinned minimum), then `npm run build` in `ui/` and fails if `web/ui` differs (`git diff --exit-code -- web/ui`).
 
 ```bash
 # Python (from repo root; needs pytest)
-python -m pytest tests/ -v
+python scripts/run_pytest_min.py
 
 # UI (from ui/)
 npm ci
@@ -166,6 +174,7 @@ npm run lint
 
 # Rebuild the committed panel bundle into web/ui/
 npm run build
+git diff --exit-code -- web/ui
 ```
 
 ## License
