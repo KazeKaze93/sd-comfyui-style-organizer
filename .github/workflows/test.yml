@@ -44,3 +44,28 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.test.json
       - name: Run eslint
         run: npm run lint
+
+  # Committed web/ui must match a clean Vite build from ui/ (no stale panel assets).
+  ui-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+      - name: Build UI into web/ui
+        working-directory: ui
+        run: npm run build
+      - name: Fail if committed web/ui differs from build output
+        run: |
+          if ! git diff --exit-code -- web/ui; then
+            echo "::error::web/ui is out of date. Run: cd ui && npm ci && npm run build, then commit web/ui."
+            git status --short -- web/ui
+            exit 1
+          fi
+          echo "web/ui matches vite build."
