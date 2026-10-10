@@ -44,7 +44,7 @@ export function StyleInfoPanel() {
     <div className="px-4 py-2">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-white">
+          <div className="text-sm font-semibold text-sg-text">
             {displayName}
           </div>
           {resolvedStyle.description && !resolvedStyle.description.includes('Combos:') && (

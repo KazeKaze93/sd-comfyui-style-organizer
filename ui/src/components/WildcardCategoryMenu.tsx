@@ -21,7 +21,7 @@ export function WildcardCategoryMenu({
     <ViewportFixedMenu x={x} y={y} onDismiss={onClose}>
       <button
         type="button"
-        className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+        className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
         onClick={() => {
           sendToHost({ type: 'SG_WILDCARD_CATEGORY', category })
           onClose()
@@ -34,7 +34,7 @@ export function WildcardCategoryMenu({
       </button>
       <button
         type="button"
-        className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+        className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
         onClick={() => {
           useStylesStore.getState().startSliceMode(category)
           onClose()

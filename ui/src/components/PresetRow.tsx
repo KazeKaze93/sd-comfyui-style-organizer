@@ -168,7 +168,7 @@ export function PresetRow({ name, preset }: Props) {
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
-            className="px-2 py-1 text-xs rounded border border-red-500/40 text-red-400 hover:bg-red-500/20 transition-colors"
+            className="px-2 py-1 text-xs rounded border border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20 transition-colors"
             title="Delete this set"
           >
             Delete
@@ -203,7 +203,7 @@ export function PresetRow({ name, preset }: Props) {
                 return (
                   <li
                     key={`m:${m.name}:${i}`}
-                    className="text-xs text-amber-300/90 truncate"
+                    className="text-xs text-sg-warning-text/90 truncate"
                     title={m.pack ? `Missing from ${m.pack}` : 'Missing from library'}
                   >
                     Missing: {styleDisplayName(m.name)}
@@ -212,7 +212,7 @@ export function PresetRow({ name, preset }: Props) {
                 )
               })}
               {(preset.wildcards ?? []).map((wc, i) => (
-                <li key={`w:${wc.category}:${wc.spec}:${i}`} className="text-xs text-purple-300/80 truncate">
+                <li key={`w:${wc.category}:${wc.spec}:${i}`} className="text-xs text-sg-wildcard-text/80 truncate">
                   🎲 {wc.category}{wc.spec ? `:${wc.spec}` : ''}
                 </li>
               ))}
@@ -254,7 +254,7 @@ export function PresetRow({ name, preset }: Props) {
                 className="w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm focus:border-sg-accent focus:outline-none disabled:opacity-45"
               />
               {renameExists && (
-                <div className="mt-2 text-xs text-amber-300/90">
+                <div className="mt-2 text-xs text-sg-warning-text/90">
                   A set named &ldquo;{renameValue.trim()}&rdquo; already exists.
                 </div>
               )}
@@ -263,7 +263,7 @@ export function PresetRow({ name, preset }: Props) {
                   type="button"
                   disabled={busy}
                   onClick={() => setRenameOpen(false)}
-                  className="px-3 py-1.5 text-sm border border-sg-border rounded hover:bg-sg-accent/20"
+                  className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20"
                 >
                   Cancel
                 </button>
@@ -272,7 +272,7 @@ export function PresetRow({ name, preset }: Props) {
                     type="button"
                     disabled={busy || !renameValue.trim()}
                     onClick={() => void doRename(true)}
-                    className="px-3 py-1.5 text-sm rounded bg-amber-500/90 text-white"
+                    className="px-3 py-1.5 text-sm rounded bg-sg-warning-text/90 text-sg-text"
                   >
                     Overwrite
                   </button>
@@ -312,7 +312,7 @@ export function PresetRow({ name, preset }: Props) {
                   type="button"
                   disabled={busy}
                   onClick={() => setDeleteOpen(false)}
-                  className="px-3 py-1.5 text-sm border border-sg-border rounded hover:bg-sg-accent/20"
+                  className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20"
                 >
                   Cancel
                 </button>
@@ -320,7 +320,7 @@ export function PresetRow({ name, preset }: Props) {
                   type="button"
                   disabled={busy}
                   onClick={() => void doDelete()}
-                  className="px-3 py-1.5 text-sm rounded bg-red-500/90 text-white hover:bg-red-500"
+                  className="px-3 py-1.5 text-sm rounded bg-sg-danger/90 text-white hover:bg-sg-danger"
                 >
                   Delete
                 </button>

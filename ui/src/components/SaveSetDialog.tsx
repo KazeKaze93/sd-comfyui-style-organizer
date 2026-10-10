@@ -182,7 +182,7 @@ export function SaveSetDialog({ open, onClose }: SaveSetDialogProps) {
           )}
 
           {existsWarning && (
-            <div className="mt-3 text-xs text-amber-300/90 leading-relaxed">
+            <div className="mt-3 text-xs text-sg-warning-text/90 leading-relaxed">
               A set named &ldquo;{trimmed}&rdquo; already exists. Overwrite it?
             </div>
           )}
@@ -201,7 +201,7 @@ export function SaveSetDialog({ open, onClose }: SaveSetDialogProps) {
                 type="button"
                 disabled={isSubmitting || !trimmed}
                 onClick={() => void doSave(true)}
-                className="px-3 py-1.5 text-sm rounded bg-amber-500/90 text-white hover:bg-amber-500 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 text-sm rounded bg-sg-warning-text/90 text-sg-text hover:bg-sg-warning-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
               >
                 Overwrite
               </button>

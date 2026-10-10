@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
-import { getCategoryColor, styleRowKey, useStylesStore } from '../store/stylesStore'
+import { styleRowKey, useCategoryColor, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -91,7 +91,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
     ? displayStyle.name.split('_').slice(1).join(' ')
     : displayStyle.name
 
-  const borderColor = getCategoryColor(displayStyle.category || 'OTHER')
+  const borderColor = useCategoryColor(displayStyle.category || 'OTHER')
 
   useEffect(() => {
     if (!menuPos) return
@@ -177,7 +177,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
             </span>
           )}
           {fav && (
-            <span className="absolute top-1.5 right-2 text-amber-300">
+            <span className="absolute top-1.5 right-2 text-sg-warning-text">
               <Star size={12} fill="currentColor" aria-hidden="true" />
               <span className="sr-only">Favorite</span>
             </span>
@@ -329,7 +329,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
               className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
                 displayStyle.read_only
                   ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                  : 'text-sg-danger hover:bg-sg-danger/20'
+                  : 'text-sg-danger-text hover:bg-sg-danger/20'
               }`}
               onClick={() => {
                 setMenuPos(null)

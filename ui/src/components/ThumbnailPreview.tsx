@@ -111,17 +111,17 @@ export function ThumbnailPreview({ style, children }: Props) {
               onError={() => setImgOk(false)}
             />
             <div className="px-2.5 py-2">
-              <div className="text-sm font-semibold text-white truncate">
+              <div className="text-sm font-semibold text-sg-text truncate">
                 {displayName}
               </div>
               {style.prompt && (
-                <div className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">
+                <div className="text-xs text-sg-muted mt-1 line-clamp-3 leading-relaxed">
                   {style.prompt.slice(0, 120)}
                   {style.prompt.length > 120 ? '...' : ''}
                 </div>
               )}
               {style.negative_prompt && (
-                <div className="text-xs text-red-400/70 mt-1 truncate">
+                <div className="text-xs text-sg-danger-text/70 mt-1 truncate">
                   − {style.negative_prompt.slice(0, 60)}
                 </div>
               )}
