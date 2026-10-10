@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 /**
- * Compare two bench result JSON files and evaluate PHASE B GATE at N=5000.
+ * Compare baseline / phase-a / phase-b bench JSON; print table + PERFORMANCE GATE at N=5000.
  *
- * SHARED SPEC — absolute gate on candidate medians at N=5000 after phase A:
- *   initMs > 1000 OR toggleP50Ms > 100 OR searchKeyP50Ms > 100 OR scrollTbtMs > 300
- *   → verdict "VIRTUALIZATION NEEDED"
- *   else → "NOT NEEDED"
- *
- * Relative Δ% vs baseline is printed for information only; it does not decide the gate.
+ * PERFORMANCE GATE (candidate = phase-b if present else phase-a) at N=5000, 4x CPU:
+ *   initMs <= 1000, toggleP50Ms <= 100, searchKeyP50Ms <= 100, scrollTbtMs <= 300
  *
  * Usage:
- *   node bench/compare.mjs results/baseline.json results/phase-a.json
+ *   node bench/compare.mjs
+ *   node bench/compare.mjs --baseline results/baseline.json --phase-a results/phase-a.json --phase-b results/phase-b.json
  */
 
 import { access, readFile } from 'node:fs/promises'
@@ -19,24 +16,39 @@ import { fileURLToPath } from 'node:url'
 
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url))
 const RESULTS_DIR = path.join(BENCH_DIR, 'results')
+
 const GATE_N = 5000
+const GATE = Object.freeze({
+  initMs: 1000,
+  toggleP50Ms: 100,
+  searchKeyP50Ms: 100,
+  scrollTbtMs: 300,
+})
 
-/** Absolute Phase B gate thresholds (candidate median at GATE_N). */
-const GATE_INIT_MS = 1000
-const GATE_TOGGLE_P50_MS = 100
-const GATE_SEARCH_KEY_P50_MS = 100
-const GATE_SCROLL_TBT_MS = 300
+const METRICS = Object.freeze([
+  'initMs',
+  'toggleP50Ms',
+  'searchKeyP50Ms',
+  'scrollTbtMs',
+  'longTasks',
+])
 
-const VERDICT_NEEDED = 'VIRTUALIZATION NEEDED'
-const VERDICT_NOT_NEEDED = 'NOT NEEDED'
-
-/** @type {ReadonlyArray<{ metric: string, limit: number, label: string }>} */
-const ABSOLUTE_GATE_RULES = [
-  { metric: 'initMs', limit: GATE_INIT_MS, label: `initMs > ${GATE_INIT_MS}` },
-  { metric: 'toggleP50Ms', limit: GATE_TOGGLE_P50_MS, label: `toggleP50Ms > ${GATE_TOGGLE_P50_MS}` },
-  { metric: 'searchKeyP50Ms', limit: GATE_SEARCH_KEY_P50_MS, label: `searchKeyP50Ms > ${GATE_SEARCH_KEY_P50_MS}` },
-  { metric: 'scrollTbtMs', limit: GATE_SCROLL_TBT_MS, label: `scrollTbtMs > ${GATE_SCROLL_TBT_MS}` },
-]
+/** @param {string[]} argv */
+function parseArgs(argv) {
+  /** @type {{ baseline: string, phaseA: string, phaseB: string }} */
+  const out = {
+    baseline: path.join(RESULTS_DIR, 'baseline.json'),
+    phaseA: path.join(RESULTS_DIR, 'phase-a.json'),
+    phaseB: path.join(RESULTS_DIR, 'phase-b.json'),
+  }
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i]
+    if (a === '--baseline') out.baseline = path.resolve(argv[++i])
+    else if (a === '--phase-a' || a === '--phase') out.phaseA = path.resolve(argv[++i])
+    else if (a === '--phase-b') out.phaseB = path.resolve(argv[++i])
+  }
+  return out
+}
 
 /** Resolve CLI paths from cwd, bench/, or bench/results/. */
 async function resolveResultPath(filePath) {
@@ -60,86 +72,147 @@ async function resolveResultPath(filePath) {
 async function loadResult(filePath) {
   const resolved = await resolveResultPath(filePath)
   const raw = await readFile(resolved, 'utf8')
-  return JSON.parse(raw)
+  return { path: resolved, doc: JSON.parse(raw) }
+}
+
+/** @param {string} filePath */
+async function tryLoadResult(filePath) {
+  try {
+    return await loadResult(filePath)
+  } catch {
+    return null
+  }
+}
+
+/** @param {number[]} values */
+function medianOf(values) {
+  const sorted = [...values].filter((v) => typeof v === 'number' && !Number.isNaN(v)).sort((a, b) => a - b)
+  if (sorted.length === 0) return null
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid]
 }
 
 /**
- * @param {number} baseline
- * @param {number} candidate
+ * Prefer sizes[n].median[key], then top-level sizes[n][key], then median of runs.
+ * @param {Record<string, unknown> | null} doc
+ * @param {number} n
+ * @param {string} key
  */
-function deltaPct(baseline, candidate) {
-  if (baseline === 0) return candidate === 0 ? 0 : Infinity
-  return ((candidate - baseline) / baseline) * 100
+function metricAt(doc, n, key) {
+  const block = /** @type {Record<string, unknown> | undefined} */ (doc?.sizes?.[String(n)])
+  if (!block) return null
+  const median = /** @type {Record<string, unknown> | undefined} */ (block.median)
+  if (median && typeof median[key] === 'number') return /** @type {number} */ (median[key])
+  if (typeof block[key] === 'number') return /** @type {number} */ (block[key])
+  if (Array.isArray(block.runs)) {
+    return medianOf(
+      /** @type {Array<Record<string, number>>} */ (block.runs).map((r) => r[key]),
+    )
+  }
+  return null
+}
+
+/** @param {number | null} v */
+function fmt(v) {
+  if (v == null || Number.isNaN(v)) return '—'
+  return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(1) : String(v)
+}
+
+/** @param {Record<string, unknown>} doc */
+function evaluateGate(doc) {
+  /** @type {Array<{ key: string, value: number | null, limit: number, pass: boolean | null }>} */
+  const results = []
+  for (const [key, limit] of Object.entries(GATE)) {
+    const v = metricAt(doc, GATE_N, key)
+    const pass = v != null && v <= limit
+    results.push({
+      key,
+      value: v,
+      limit,
+      pass: v == null ? null : pass,
+    })
+  }
+  const known = results.filter((r) => r.pass != null)
+  const allPass = known.length > 0 && known.every((r) => r.pass)
+  return { n: GATE_N, results, allPass }
 }
 
 async function main() {
-  const [, , basePath, candPath] = process.argv
-  if (!basePath || !candPath) {
-    console.error('Usage: node bench/compare.mjs <baseline.json> <candidate.json>')
-    process.exit(2)
-  }
+  const args = parseArgs(process.argv.slice(2))
+  const baselineLoaded = await loadResult(args.baseline)
+  const phaseALoaded = await tryLoadResult(args.phaseA)
+  const phaseBLoaded = await tryLoadResult(args.phaseB)
 
-  const baseline = await loadResult(path.resolve(basePath))
-  const candidate = await loadResult(path.resolve(candPath))
+  const baseline = baselineLoaded.doc
+  const phaseA = phaseALoaded?.doc ?? null
+  const phaseB = phaseBLoaded?.doc ?? null
 
-  const sizes = Object.keys(baseline.sizes || {}).sort((a, b) => Number(a) - Number(b))
-  console.log(`Baseline:  ${baseline.label}  commit=${baseline.commit ?? '?'}`)
-  console.log(`Candidate: ${candidate.label}  commit=${candidate.commit ?? '?'}`)
-  console.log('')
-
-  const metrics = ['initMs', 'toggleP50Ms', 'searchKeyP50Ms', 'scrollTbtMs', 'longTasks']
+  const sizes = [500, 2000, 5000]
+  /** @type {Array<{ n: number, key: string, baseline: number | null, phaseA: number | null, phaseB: number | null }>} */
+  const rows = []
 
   for (const n of sizes) {
-    const b = baseline.sizes?.[n]?.median
-    const c = candidate.sizes?.[n]?.median
-    if (!b || !c) {
-      console.log(`N=${n}: missing median on one side — skip`)
-      continue
+    for (const key of METRICS) {
+      rows.push({
+        n,
+        key,
+        baseline: metricAt(baseline, n, key),
+        phaseA: phaseA ? metricAt(phaseA, n, key) : null,
+        phaseB: phaseB ? metricAt(phaseB, n, key) : null,
+      })
     }
-    console.log(`=== N=${n} (median, informational Δ%) ===`)
-    console.log(
+  }
+
+  console.log('')
+  console.log('Style Grid bench compare (3-way)')
+  console.log(`baseline: ${baselineLoaded.path}`)
+  console.log(`phase-a:  ${phaseALoaded ? phaseALoaded.path : '(missing)'}`)
+  console.log(`phase-b:  ${phaseBLoaded ? phaseBLoaded.path : '(missing)'}`)
+  console.log('')
+  console.log(
+    [
+      'N'.padStart(6),
       'metric'.padEnd(16),
       'baseline'.padStart(10),
-      'candidate'.padStart(10),
-      'Δ%'.padStart(10),
-    )
-    for (const m of metrics) {
-      const bv = Number(b[m])
-      const cv = Number(c[m])
-      const d = deltaPct(bv, cv)
-      const sign = d > 0 ? '+' : ''
-      console.log(
-        m.padEnd(16),
-        bv.toFixed(1).padStart(10),
-        cv.toFixed(1).padStart(10),
-        `${sign}${d.toFixed(1)}%`.padStart(10),
-      )
-    }
-    console.log('')
-  }
-
-  const c5 = candidate.sizes?.[String(GATE_N)]?.median
-  console.log(`=== PHASE B GATE (N=${GATE_N}, absolute) ===`)
-  if (!c5) {
-    console.log('FAIL — missing N=5000 candidate medians')
-    process.exit(1)
-  }
-
-  let needsVirtualization = false
-  for (const rule of ABSOLUTE_GATE_RULES) {
-    const cv = Number(c5[rule.metric])
-    const exceeds = cv > rule.limit
-    if (exceeds) needsVirtualization = true
+      'phase-a'.padStart(10),
+      'phase-b'.padStart(10),
+      'Δa-base'.padStart(10),
+      'Δb-a'.padStart(10),
+    ].join('  '),
+  )
+  console.log('-'.repeat(88))
+  for (const row of rows) {
+    const dAB = row.baseline != null && row.phaseA != null ? row.phaseA - row.baseline : null
+    const dBA = row.phaseA != null && row.phaseB != null ? row.phaseB - row.phaseA : null
     console.log(
-      `${exceeds ? 'EXCEEDS' : 'OK'}  ${rule.metric.padEnd(16)}  ` +
-        `cand=${cv.toFixed(1)}  threshold>${rule.limit}  — ${rule.label}`,
+      [
+        String(row.n).padStart(6),
+        row.key.padEnd(16),
+        fmt(row.baseline).padStart(10),
+        fmt(row.phaseA).padStart(10),
+        fmt(row.phaseB).padStart(10),
+        fmt(dAB).padStart(10),
+        fmt(dBA).padStart(10),
+      ].join('  '),
     )
   }
 
-  const verdict = needsVirtualization ? VERDICT_NEEDED : VERDICT_NOT_NEEDED
+  const gateTarget = phaseB ?? phaseA ?? baseline
+  const gateLabel = phaseB ? 'phase-b' : phaseA ? 'phase-a' : 'baseline'
+  const gate = evaluateGate(gateTarget)
   console.log('')
-  console.log(`PHASE B GATE: ${verdict}`)
-  process.exit(needsVirtualization ? 1 : 0)
+  console.log(`PERFORMANCE GATE (N=${GATE_N}, 4x CPU, ${gateLabel}): ${gate.allPass ? 'PASS' : 'FAIL'}`)
+  for (const r of gate.results) {
+    const status = r.pass == null ? 'MISSING' : r.pass ? 'PASS' : 'FAIL'
+    console.log(`  ${r.key}: ${fmt(r.value)} (limit <=${r.limit}) → ${status}`)
+  }
+  console.log('')
+
+  if (!gate.allPass) {
+    process.exitCode = 1
+  }
 }
 
 main().catch((err) => {

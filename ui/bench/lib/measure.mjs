@@ -115,6 +115,25 @@ async function readLongTasksSince(page, since) {
 }
 
 /**
+ * Virtualized grid mounts only viewport cards; readiness is catalog count + ≥1 card.
+ * @param {import('playwright').Page} page
+ * @param {number} count
+ * @param {number} [timeoutMs]
+ */
+async function waitCatalogReady(page, count, timeoutMs = 300_000) {
+  await page.waitForFunction(
+    ({ sel, want }) => {
+      const grid = document.querySelector('[data-sg-item-count]')
+      if (!grid) return false
+      const items = Number(grid.getAttribute('data-sg-item-count') || '0')
+      return items >= want && document.querySelectorAll(sel).length >= 1
+    },
+    { sel: CARD_SELECTOR, want: count },
+    { timeout: timeoutMs },
+  )
+}
+
+/**
  * @param {import('playwright').Page} page
  * @param {number} n
  */
@@ -128,12 +147,7 @@ async function injectInitAndMeasure(page, n) {
     return t0
   }, styles)
 
-  // Unvirtualized PHASE A: wait until all N cards mount.
-  await page.waitForFunction(
-    ({ sel, count }) => document.querySelectorAll(sel).length >= count,
-    { sel: CARD_SELECTOR, count: n },
-    { timeout: 300_000 },
-  )
+  await waitCatalogReady(page, n)
 
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
@@ -200,12 +214,8 @@ async function measureSearchKeyP50(page, query, restoreCount) {
 
   await input.fill('')
   await page.keyboard.press('Escape')
-  // Restore full grid for scroll phase
-  await page.waitForFunction(
-    ({ sel, count }) => document.querySelectorAll(sel).length >= count,
-    { sel: CARD_SELECTOR, count: restoreCount },
-    { timeout: 180_000 },
-  )
+  // Restore full catalog for scroll phase (DOM cards ≠ N when virtualized).
+  await waitCatalogReady(page, restoreCount, 180_000)
   return percentile(times, 50)
 }
 

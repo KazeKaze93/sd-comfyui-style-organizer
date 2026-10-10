@@ -1,6 +1,4 @@
-import { useMemo, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { sendToHost, type Style } from '../bridge'
 import { buildSliceSpec } from '../lib/wildcardSlice'
@@ -9,12 +7,12 @@ import {
   RECENT_VIEW,
   selectFilteredStyles,
   styleRowKey,
-  useCategoryColor,
   useStylesStore,
 } from '../store/stylesStore'
 import { StyleCard } from './StyleCard'
 import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 import { PresetList } from './PresetList'
+import { autoFillGridClass, VirtualStyleGrid } from './grid'
 
 function emptyCategoryLabel(cat: string): string {
   if (cat === FAVORITES_VIEW) return 'Favorites'
@@ -81,26 +79,15 @@ function EmptyStylesNotice({
   )
 }
 
-/** Own component so the per-category color hook runs outside the groups map. */
-function CategoryTitle({ cat }: { cat: string }) {
-  const color = useCategoryColor(cat)
-  return (
-    <span
-      className="text-xs font-bold tracking-wider uppercase"
-      style={{ color }}
-    >
-      {cat}
-    </span>
-  )
-}
-
-export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
+/** Memo: App subscribes to selectedStyles and would otherwise re-run grouping. */
+export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   const {
     styles, search, activeCategory, activeSource,
     favorites, recentNames, presets,
     compactMode, collapsedCategories, toggleCollapse,
-    selectedStyles, selectAllInCategory,
+    selectAllInCategory,
     categories,
+    categoryOrder,
     sliceMode, sliceSelection,
     exitSliceMode, toggleSliceSelection,
     selectAllSlice, clearSliceSelection,
@@ -117,7 +104,6 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       compactMode: s.compactMode,
       collapsedCategories: s.collapsedCategories,
       toggleCollapse: s.toggleCollapse,
-      selectedStyles: s.selectedStyles,
       selectAllInCategory: s.selectAllInCategory,
       categories: s.categories,
       // subscribe so sidebar reorder re-renders group order
@@ -137,7 +123,6 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     x: number
     y: number
     cat: string
-    missingCount: number
   } | null>(null)
 
   const filtered = useMemo(
@@ -176,15 +161,32 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       .map((s) => s.name)
   }, [styles, sliceCategory, activeSource])
 
-  const gridClass = `grid content-start ${
-    compactMode
-      ? (windowed
-          ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
-          : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1')
-      : (windowed
-          ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
-          : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
-  }`
+  const gridClass = autoFillGridClass(compactMode, windowed)
+  const scrollResetKey = `${search}\0${activeCategory ?? ''}\0${activeSource ?? ''}`
+
+  // All-categories grouping (hooks before early returns). categoryOrder is a
+  // categories() dep not covered by filtered (profile: avoid O(N) on toggle).
+  const sortedGroups = useMemo(() => {
+    const groups = filtered.reduce((acc, style) => {
+      const cat = style.category || 'OTHER'
+      if (!acc[cat]) acc[cat] = []
+      acc[cat].push(style)
+      return acc
+    }, {} as Record<string, Style[]>)
+
+    const catOrder = categories()
+    return [
+      ...catOrder
+        .filter(cat => groups[cat])
+        .map(cat => [cat, groups[cat]] as [string, Style[]]),
+      ...Object.keys(groups)
+        .filter(cat => !catOrder.includes(cat))
+        .sort()
+        .map(cat => [cat, groups[cat]] as [string, Style[]]),
+    ]
+    // categoryOrder is read inside categories(); filtered does not cover reorder.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional categories() dep
+  }, [filtered, categories, categoryOrder])
 
   const renderSliceCard = (style: Style) => {
     const checked = sliceSelection.includes(style.name)
@@ -283,7 +285,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     )
   }
 
-  // Slice-selection mode: hide other categories; search still drives `filtered` → visibleSliceStyles.
+  // Slice-selection mode: NOT virtualized (contract).
   if (sliceMode) {
     return (
       <div className="space-y-2">
@@ -299,7 +301,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
             setCategory={setCategory}
           />
         ) : (
-          <div className={gridClass} style={{ contentVisibility: 'auto' }}>
+          <div className={gridClass}>
             {visibleSliceStyles.map(renderSliceCard)}
           </div>
         )}
@@ -324,121 +326,35 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     )
   }
 
-  // Specific category / Favorites / Recent — flat grid, no section headers.
-  // (presets already returned above; All/null falls through to grouped view)
+  // Specific category / Favorites / Recent — flat virtualized grid, no section headers.
   if (activeCategory) {
+    const groups: Array<[string, Style[]]> = [[activeCategory, filtered]]
     return (
-      <div className={`grid content-start ${
-        compactMode
-          ? (windowed
-              ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
-              : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1')
-          : (windowed
-              ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
-              : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
-      }`} style={{ contentVisibility: 'auto' }}>
-        {filtered.map(style => (
-          <StyleCard key={styleRowKey(style)} style={style} windowed={windowed} />
-        ))}
-      </div>
+      <VirtualStyleGrid
+        groups={groups}
+        collapsedCategories={collapsedCategories}
+        compactMode={compactMode}
+        windowed={windowed}
+        includeHeaders={false}
+        scrollResetKey={scrollResetKey}
+        onToggleCollapse={toggleCollapse}
+        onSelectAll={selectAllInCategory}
+      />
     )
   }
 
-  // Group by category for All view
-  const groups = filtered.reduce((acc, style) => {
-    const cat = style.category || 'OTHER'
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(style)
-    return acc
-  }, {} as Record<string, typeof filtered>)
-
-  // Same order as Sidebar via store.categories(); leftover keys (e.g. OTHER) append sorted.
-  const catOrder = categories()
-  const sortedGroups: [string, typeof filtered][] = [
-    ...catOrder
-      .filter(cat => groups[cat])
-      .map(cat => [cat, groups[cat]] as [string, typeof filtered]),
-    ...Object.keys(groups)
-      .filter(cat => !catOrder.includes(cat))
-      .sort()
-      .map(cat => [cat, groups[cat]] as [string, typeof filtered]),
-  ]
-
   return (
-    <div className="space-y-4">
-      {sortedGroups.map(([cat, catStyles]) => {
-        const isCollapsed = collapsedCategories.has(cat)
-        const allSelected = catStyles.every(s =>
-          selectedStyles.some(sel => styleRowKey(sel) === styleRowKey(s))
-        )
-
-        return (
-          <div key={cat}>
-            {/* Category header */}
-            <div
-              className="flex items-center gap-2 mb-2 sticky top-0 
-                            bg-sg-bg/95 backdrop-blur-sm py-1 z-10 cursor-pointer hover:bg-sg-surface/30 rounded-md transition-colors -mx-1 px-1"
-              title="Right-click for options"
-              onClick={() => toggleCollapse(cat)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                const missing = catStyles.filter(s => !s.has_thumbnail).length
-                setCatMenu({ x: e.clientX, y: e.clientY, cat, missingCount: missing })
-              }}
-            >
-              <span className="text-sg-muted">
-                {isCollapsed
-                  ? <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                  : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
-              </span>
-              <CategoryTitle cat={cat} />
-              <span className="text-xs text-sg-muted">
-                ({catStyles.length})
-              </span>
-              <div className="flex-1" />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  selectAllInCategory(cat)
-                }}
-                className="text-xs text-sg-muted hover:text-sg-accent-text 
-                           transition-colors px-2 py-0.5 rounded
-                           hover:bg-sg-accent/10"
-              >
-                {allSelected ? 'Deselect All' : 'Select All'}
-              </button>
-            </div>
-
-            {/* Cards */}
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="overflow-hidden"
-                >
-                  <div className={`grid ${
-                    compactMode
-                      ? (windowed
-                          ? 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1'
-                          : 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1')
-                      : (windowed
-                          ? 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1'
-                          : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
-                  }`} style={{ contentVisibility: 'auto' }}>
-                    {catStyles.map(style => (
-                      <StyleCard key={styleRowKey(style)} style={style} windowed={windowed} />
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )
-      })}
+    <VirtualStyleGrid
+      groups={sortedGroups}
+      collapsedCategories={collapsedCategories}
+      compactMode={compactMode}
+      windowed={windowed}
+      includeHeaders
+      scrollResetKey={scrollResetKey}
+      onToggleCollapse={toggleCollapse}
+      onSelectAll={selectAllInCategory}
+      onHeaderContextMenu={(cat, x, y) => setCatMenu({ x, y, cat })}
+    >
       {catMenu && (
         <WildcardCategoryMenu
           category={catMenu.cat}
@@ -447,6 +363,6 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
           onClose={() => setCatMenu(null)}
         />
       )}
-    </div>
+    </VirtualStyleGrid>
   )
-}
+})

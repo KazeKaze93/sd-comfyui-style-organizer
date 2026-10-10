@@ -238,7 +238,7 @@ async function main() {
   const payload = {
     label: args.label,
     host: 'comfy',
-    phase: 'A',
+    phase: args.label.startsWith('phase-b') ? 'B' : 'A',
     commit,
     timestamp: new Date().toISOString(),
     cpuThrottle: CPU_THROTTLE,
