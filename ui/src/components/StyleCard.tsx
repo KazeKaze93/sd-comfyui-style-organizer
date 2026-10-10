@@ -1,13 +1,28 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
+import {
+  Check,
+  Clipboard,
+  Copy,
+  FolderInput,
+  ImagePlus,
+  Lock,
+  Pencil,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
 import { getCategoryColor, styleRowKey, useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ConfirmInputDialog } from './ConfirmInputDialog'
 import { EditStyleDialog } from './EditStyleDialog'
+
+const MENU_ICON_SIZE = 14
 
 interface Props {
   style: Style
@@ -55,6 +70,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // When the picker applied a non-first-wins pack, render that row's meta
   // (thumb/prompt/read_only) instead of the deduped grid prop.
@@ -108,7 +124,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
       <ThumbnailPreview style={displayStyle}>
         <motion.div
           data-sg-card="true"
-          title={displayStyle.name}
+          title={`${displayStyle.name}\nRight-click for options`}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
@@ -148,21 +164,22 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
 
           {/* Selected indicator */}
           {isSelected && (
-            <div className="absolute bottom-2 right-2 w-2 h-2
-                            rounded-full bg-sg-accent" />
+            <span
+              aria-hidden="true"
+              className="absolute bottom-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-sg-accent text-white"
+            >
+              <Check size={12} strokeWidth={3} />
+            </span>
           )}
           {usageCount > 0 && (
-            <span className="absolute bottom-1.5 left-2 text-[10px] 
-                     text-sg-muted/60 font-mono">
+            <span className="absolute bottom-1.5 left-2 text-[10px] text-sg-muted font-mono">
               {usageCount > 99 ? '99+' : usageCount}
             </span>
           )}
           {fav && (
-            <span
-              className="absolute top-1.5 right-2 text-[10px] text-sg-muted/60"
-              aria-hidden
-            >
-              ★
+            <span className="absolute top-1.5 right-2 text-amber-300">
+              <Star size={12} fill="currentColor" aria-hidden="true" />
+              <span className="sr-only">Favorite</span>
             </span>
           )}
         </motion.div>
@@ -173,30 +190,40 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
           <div
             className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48"
             style={{ left: menuPos.x, top: menuPos.y }}
-            onMouseLeave={() => setMenuPos(null)}
             onContextMenu={(e) => e.preventDefault()}
           >
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => { toggleStyle(style); setMenuPos(null) }}
             >
-              {isSelected ? '✕ Deselect' : '✓ Select'}
+              {isSelected
+                ? <><X size={MENU_ICON_SIZE} /> Deselect</>
+                : <><Check size={MENU_ICON_SIZE} /> Select</>}
             </button>
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => { toggleFavorite(style.name); setMenuPos(null) }}
             >
-              {fav ? '★ Remove from Favorites' : '☆ Add to Favorites'}
+              <Star size={MENU_ICON_SIZE} fill={fav ? 'currentColor' : 'none'} />
+              {fav ? 'Remove from Favorites' : 'Add to Favorites'}
             </button>
             <div className="h-px my-1 bg-sg-border" />
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { navigator.clipboard.writeText(displayStyle.prompt); setMenuPos(null) }}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              onClick={async () => {
+                setMenuPos(null)
+                try {
+                  await navigator.clipboard.writeText(displayStyle.prompt)
+                  showToast('Prompt copied', 'success')
+                } catch {
+                  showToast('Copy failed', 'error')
+                }
+              }}
             >
-              📋 Copy prompt
+              <Clipboard size={MENU_ICON_SIZE} /> Copy prompt
             </button>
             <button
-              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
                 displayStyle.read_only
                   ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
                   : 'text-sg-text hover:bg-sg-accent/20'
@@ -210,16 +237,18 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                 setMenuPos(null); setEditOpen(true)
               }}
             >
-              {displayStyle.read_only ? '🔒 Edit' : '✏️ Edit'}
+              {displayStyle.read_only
+                ? <><Lock size={MENU_ICON_SIZE} /> Edit</>
+                : <><Pencil size={MENU_ICON_SIZE} /> Edit</>}
             </button>
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => { setMenuPos(null); setDuplicateOpen(true) }}
             >
-              📄 Duplicate
+              <Copy size={MENU_ICON_SIZE} /> Duplicate
             </button>
             <button
-              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
                 displayStyle.read_only
                   ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
                   : 'text-sg-text hover:bg-sg-accent/20'
@@ -233,18 +262,20 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                 setMenuPos(null); setMoveOpen(true)
               }}
             >
-              {displayStyle.read_only ? '🔒 Move to category...' : '📂 Move to category...'}
+              {displayStyle.read_only
+                ? <><Lock size={MENU_ICON_SIZE} /> Move to category...</>
+                : <><FolderInput size={MENU_ICON_SIZE} /> Move to category...</>}
             </button>
             <div className="h-px my-1 bg-sg-border" />
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => { setMenuPos(null); fileInputRef.current?.click() }}
             >
-              🖼️ Upload preview image
+              <ImagePlus size={MENU_ICON_SIZE} /> Upload preview image
             </button>
             {displayStyle.has_thumbnail && (
               <button
-                className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
                   displayStyle.read_only
                     ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
                     : 'text-sg-text hover:bg-sg-accent/20'
@@ -288,52 +319,30 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                   }
                 }}
               >
-                {displayStyle.read_only ? '🔒 Delete preview' : '🗑️ Delete preview'}
+                {displayStyle.read_only
+                  ? <><Lock size={MENU_ICON_SIZE} /> Delete preview</>
+                  : <><Trash2 size={MENU_ICON_SIZE} /> Delete preview</>}
               </button>
             )}
             <div className="h-px my-1 bg-sg-border" />
             <button
-              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
                 displayStyle.read_only
                   ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                  : 'text-red-400 hover:bg-red-500/20'
+                  : 'text-sg-danger hover:bg-sg-danger/20'
               }`}
-              onClick={async () => {
+              onClick={() => {
                 setMenuPos(null)
                 if (displayStyle.read_only) {
                   showToast('This style is from the protected samples pack (read-only) and cannot be deleted.', 'info')
                   return
                 }
-                if (!window.confirm(`Delete "${displayStyle.name}"? This cannot be undone.`)) return
-                try {
-                  const res = await fetch('/style_grid/style/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: displayStyle.name, source: displayStyle.source_file }),
-                  })
-                  const data = await res.json().catch(() => ({}))
-                  if (!res.ok || data.ok === false) {
-                    showToast(
-                      typeof data.error === 'string' && data.error
-                        ? data.error
-                        : `Failed to delete ${displayStyle.name}`,
-                      'error',
-                    )
-                    return
-                  }
-                  fetch(
-                    `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
-                    { method: 'DELETE' },
-                  ).catch(() => { /* best-effort, style delete already succeeded */ })
-                  sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
-                  useStylesStore.getState().removeStyleRow(displayStyle)
-                  showToast(`Deleted "${displayStyle.name}"`, 'success')
-                } catch {
-                  showToast(`Failed to delete ${displayStyle.name}`, 'error')
-                }
+                setPendingDelete(true)
               }}
             >
-              {displayStyle.read_only ? '🔒 Delete' : '🗑️ Delete'}
+              {displayStyle.read_only
+                ? <><Lock size={MENU_ICON_SIZE} /> Delete</>
+                : <><Trash2 size={MENU_ICON_SIZE} /> Delete</>}
             </button>
           </div>
           <div
@@ -382,6 +391,46 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
           />
         </Portal>
       )}
+
+      <Portal>
+        <ConfirmDialog
+          open={pendingDelete}
+          title="Delete style?"
+          message={`"${displayStyle.name}" will be permanently removed from the CSV.`}
+          confirmLabel="Delete"
+          destructive
+          onCancel={() => setPendingDelete(false)}
+          onConfirm={async () => {
+            try {
+              const res = await fetch('/style_grid/style/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: displayStyle.name, source: displayStyle.source_file }),
+              })
+              const data = await res.json().catch(() => ({}))
+              if (!res.ok || data.ok === false) {
+                showToast(
+                  typeof data.error === 'string' && data.error
+                    ? data.error
+                    : `Failed to delete ${displayStyle.name}`,
+                  'error',
+                )
+                return
+              }
+              fetch(
+                `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
+                { method: 'DELETE' },
+              ).catch(() => { /* best-effort, style delete already succeeded */ })
+              sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+              useStylesStore.getState().removeStyleRow(displayStyle)
+              showToast(`Deleted "${displayStyle.name}"`, 'success')
+              setPendingDelete(false)
+            } catch {
+              showToast(`Failed to delete ${displayStyle.name}`, 'error')
+            }
+          }}
+        />
+      </Portal>
 
       <Portal>
         <ConfirmInputDialog
