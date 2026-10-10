@@ -5,6 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { onHostMessage, sendToHost, type Style } from './bridge'
+import { appliedThemeMode, applyThemeMode, parseThemeMode } from './lib/themeMode'
 import { styleRowKey, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
@@ -119,6 +120,7 @@ export default function App() {
   useEffect(() => {
     useStylesStore.getState().loadUsage()
     void useStylesStore.getState().loadCategoryOrder()
+    useStylesStore.getState().setThemeMode(appliedThemeMode())
     const unsub = onHostMessage((msg) => {
       if (msg.type === 'SG_INIT') {
         const raw: unknown = (msg as { styles?: unknown }).styles
@@ -131,6 +133,11 @@ export default function App() {
               : []
         setStyles(arr)
         void useStylesStore.getState().fetchPresets()
+      }
+      if (msg.type === 'SG_THEME') {
+        const mode = parseThemeMode(msg.mode)
+        applyThemeMode(mode)
+        useStylesStore.getState().setThemeMode(mode)
       }
       if (msg.type === 'SG_CLOSE') {
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
@@ -246,7 +253,6 @@ export default function App() {
             <ToolBtn
               icon={Save}
               label="Backup (CSVs + presets)"
-              colorClassName="text-blue-400/80"
               onClick={async () => {
                 try {
                   const res = await fetch('/style_grid/backup', { method: 'POST' })
@@ -278,7 +284,6 @@ export default function App() {
             <ToolBtn
               icon={Import}
               label="Import/Export"
-              colorClassName="text-blue-400/80"
               onClick={(e) => {
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                 setIeMenuPos({ x: rect.left, y: rect.bottom + 4 })
@@ -288,7 +293,7 @@ export default function App() {
             <ToolBtn
               icon={Eraser}
               label="Clear all selected styles"
-              colorClassName="text-red-400/80"
+              colorClassName="text-sg-danger-text"
               onClick={() => {
                 sendToHost({ type: 'SG_CLEAR_ALL' })
               }}
@@ -297,14 +302,12 @@ export default function App() {
             <ToolBtn
               icon={Rows3}
               label="Compact mode"
-              colorClassName="text-violet-300/80"
               active={compactMode}
               onClick={() => toggleCompact()}
             />
             <ToolBtn
               icon={collapsedCategories.size > 0 ? ChevronsUpDown : ChevronsDownUp}
               label={collapsedCategories.size > 0 ? 'Expand all' : 'Collapse all'}
-              colorClassName="text-violet-300/80"
               onClick={() =>
                 collapsedCategories.size > 0 ? expandAll() : collapseAll()
               }
@@ -319,7 +322,7 @@ export default function App() {
                     ? 'This source is read-only (bundled samples). Pick or import another CSV to add styles.'
                     : 'New style'
               }
-              colorClassName="text-emerald-400/80"
+              colorClassName="text-sg-accent-text"
               disabled={!activeSource || activeSourceIsReadOnly}
               onClick={() => {
                 // samples/ is write-protected — style/save rematerializes to
@@ -337,8 +340,8 @@ export default function App() {
                     type="button"
                     aria-label={`${conflicts.length} style conflicts`}
                     className="flex items-center gap-1 px-2 py-1 rounded
-                       bg-red-500/20 border border-red-500/40
-                       text-red-400 text-xs
+                       bg-sg-danger/20 border border-sg-danger/40
+                       text-sg-danger-text text-xs
                        motion-safe:animate-pulse"
                   >
                     <AlertTriangle size={14} aria-hidden />
@@ -349,7 +352,7 @@ export default function App() {
                   align="end"
                   className="w-auto min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))] p-3 bg-sg-popover border border-sg-border rounded-lg shadow-xl"
                 >
-                  <div className="text-xs font-semibold text-white mb-2">
+                  <div className="text-xs font-semibold text-sg-text mb-2">
                     Style Conflicts
                   </div>
                   {conflicts.map((c, i) => {
@@ -357,7 +360,7 @@ export default function App() {
                       ?? styles.find(s => styleRowKey(s) === c.styleBKey)
                     return (
                       <div key={i} className="flex items-start justify-between gap-2 py-0.5">
-                        <span className="text-xs text-red-400 min-w-0 flex-1 break-words">
+                        <span className="text-xs text-sg-danger-text min-w-0 flex-1 break-words">
                           {c.reason}
                         </span>
                         {conflictingStyle && (
@@ -368,7 +371,7 @@ export default function App() {
                               setConflictsOpen(false)
                             }}
                             className="text-xs px-1.5 py-0.5 rounded border
-                              border-red-500/40 text-red-400 hover:bg-red-500/20
+                              border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20
                               transition-colors shrink-0"
                             title={`Remove "${c.styleB}"`}
                           >
@@ -400,7 +403,7 @@ export default function App() {
       {presetsCorrupt && (
         <div
           role="alert"
-          className="shrink-0 px-4 py-3 border-b border-red-500/50 bg-red-950/90 text-red-100 text-sm"
+          className="shrink-0 px-4 py-3 border-b border-sg-danger/50 bg-sg-danger/90 text-white text-sm"
         >
           <div className="font-semibold">presets.json is corrupt — preset saves are disabled</div>
           <div className="mt-1 font-mono text-xs break-all opacity-90">
@@ -490,7 +493,7 @@ export default function App() {
         >
           <button
             type="button"
-            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
             onClick={async () => {
               setIeMenuPos(null)
               try {
@@ -523,7 +526,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
             onClick={() => {
               setIeMenuPos(null)
               importFileInputRef.current?.click()

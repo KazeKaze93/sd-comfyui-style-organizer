@@ -1,3 +1,5 @@
+import type { ThemeMode } from './lib/themeMode'
+
 /** Messages sent from ComfyUI host extension (web/js/style_grid.js) to the React iframe. */
 export type HostMessage =
   | { type: 'SG_CLEAR_SELECTION' }
@@ -8,6 +10,7 @@ export type HostMessage =
   | { type: 'SG_THUMB_DONE';     styleId: string; version: number; source_file: string }
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
+  | { type: 'SG_THEME'; mode: ThemeMode }
 
 /** Messages sent from the React iframe back to ComfyUI host extension (web/js/style_grid.js). */
 export type FrameMessage =
