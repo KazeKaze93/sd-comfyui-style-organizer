@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Bench harness scratch (results/*.json are kept)
+bench/.tmp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
