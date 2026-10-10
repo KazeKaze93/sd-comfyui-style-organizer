@@ -48,6 +48,8 @@ export type PresetRecord = {
 interface Conflict {
   styleA: string
   styleB: string
+  styleAKey: string
+  styleBKey: string
   reason: string
 }
 
@@ -692,11 +694,14 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   selectAllSlice: (names) => set({ sliceSelection: [...names] }),
   clearSliceSelection: () => set({ sliceSelection: [] }),
   showToast: (message, variant = 'info') => {
+    const TOAST_TTL_MS = 3000
+    const TOAST_ERROR_TTL_MS = 6000
     const id = Date.now()
     set((s) => ({ toasts: [...s.toasts, { id, message, variant }] }))
+    const ttl = variant === 'error' ? TOAST_ERROR_TTL_MS : TOAST_TTL_MS
     setTimeout(() => set((s) => ({
       toasts: s.toasts.filter(t => t.id !== id)
-    })), 3000)
+    })), ttl)
   },
   detectConflicts: () => {
     // Mirror server detect_conflicts: exact token-set intersection, not substring.
@@ -717,12 +722,14 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         if (tokenSetsIntersect(bPos, aNeg)) {
           conflicts.push({
             styleA: a.name, styleB: b.name,
+            styleAKey: styleRowKey(a), styleBKey: styleRowKey(b),
             reason: `${a.name} negates tags from ${b.name}`
           })
         }
         if (tokenSetsIntersect(aPos, bNeg)) {
           conflicts.push({
             styleA: b.name, styleB: a.name,
+            styleAKey: styleRowKey(b), styleBKey: styleRowKey(a),
             reason: `${b.name} negates tags from ${a.name}`
           })
         }
