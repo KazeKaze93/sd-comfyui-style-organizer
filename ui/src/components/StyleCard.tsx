@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
 import {
   Check,
   Clipboard,
@@ -15,7 +14,13 @@ import {
 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
-import { styleRowKey, useCategoryColor, useStylesStore } from '../store/stylesStore'
+import {
+  styleRowKey,
+  useCategoryColor,
+  useIsSelected,
+  useStyleDuplicates,
+  useStylesStore,
+} from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -43,15 +48,11 @@ function nextDuplicateName(baseName: string, catalog: Style[]): string {
 }
 
 export const StyleCard = memo(function StyleCard({ style, windowed = false }: Props) {
-  const isSelected = useStylesStore(
-    s => s.selectedStyles.some(sel => styleRowKey(sel) === styleRowKey(style))
-  )
-  const selectedForName = useStylesStore(
-    s => s.selectedStyles.find(sel => styleRowKey(sel) === styleRowKey(style))
-  )
+  const key = useMemo(() => styleRowKey(style), [style])
+  const isSelected = useIsSelected(key)
+  const duplicates = useStyleDuplicates(style.name)
   const usageCount = useStylesStore(s => s.usageCounts[style.name] || 0)
   const activeSource = useStylesStore(s => s.activeSource)
-  const styles = useStylesStore(s => s.styles)
   const fav = useStylesStore(s => s.favorites.has(style.name))
   const {
     toggleStyle, toggleFavorite, showToast, categories,
@@ -72,20 +73,22 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
   const [editOpen, setEditOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // When the picker applied a non-first-wins pack, render that row's meta
-  // (thumb/prompt/read_only) instead of the deduped grid prop.
-  const displayStyle = selectedForName ?? style
-  const duplicates = useMemo(
-    () => styles.filter(s => s.name === style.name),
-    [styles, style.name],
-  )
+  // Grid prop is the catalog row; saveStyle refetches styles[] so post-edit
+  // fields stay fresh without a selectedStyles subscription.
+  const displayStyle = style
   const hasMultipleSources = duplicates.length > 1
-  const sourceLabels = duplicates.map((dup) =>
-    ((dup.source_file || 'Unknown').split(/[\\/]/).pop() || 'Unknown')
-      .replace(/\.csv$/i, '')
+  const sourceLabels = useMemo(
+    () =>
+      duplicates.map((dup) =>
+        ((dup.source_file || 'Unknown').split(/[\\/]/).pop() || 'Unknown')
+          .replace(/\.csv$/i, '')
+      ),
+    [duplicates],
   )
-  const maxSourceLabelLen = sourceLabels.reduce((max, label) => Math.max(max, label.length), 0)
-  const pickerWidthCh = Math.min(48, Math.max(18, maxSourceLabelLen + 4))
+  const pickerWidthCh = useMemo(() => {
+    const maxSourceLabelLen = sourceLabels.reduce((max, label) => Math.max(max, label.length), 0)
+    return Math.min(48, Math.max(18, maxSourceLabelLen + 4))
+  }, [sourceLabels])
 
   const displayName = displayStyle.name.includes('_')
     ? displayStyle.name.split('_').slice(1).join(' ')
@@ -122,15 +125,9 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
   return (
     <>
       <ThumbnailPreview style={displayStyle}>
-        <motion.div
+        <div
           data-sg-card="true"
           title={`${displayStyle.name}\nRight-click for options`}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.1 }}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
           onContextMenu={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -148,7 +145,9 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
           }}
           className={`
             relative cursor-pointer rounded-lg border ${windowed ? 'p-2' : 'p-3'}
-            transition-colors duration-150 select-none
+            select-none transition-colors
+            transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]
+            motion-reduce:transition-none motion-reduce:transform-none
             ${isSelected
               ? 'border-sg-accent bg-sg-accent/10'
               : 'border-sg-border bg-sg-surface hover:border-sg-accent/50'}
@@ -182,7 +181,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
               <span className="sr-only">Favorite</span>
             </span>
           )}
-        </motion.div>
+        </div>
       </ThumbnailPreview>
 
       {menuPos && (
@@ -308,8 +307,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                       )
                       return
                     }
+                    const version = String(Date.now())
+                    useStylesStore.getState().bumpThumbVersion(key, version)
+                    // App's single onHostMessage also bumps via SG_THUMB_DONE.
                     window.postMessage(
-                      { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now(), source_file: displayStyle.source_file || '' },
+                      { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
                       '*',
                     )
                     void useStylesStore.getState().loadThumbnails()
@@ -436,7 +438,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
         <ConfirmInputDialog
           open={duplicateOpen}
           title={`Duplicate "${displayStyle.name}"`}
-          initialValue={nextDuplicateName(displayStyle.name, styles)}
+          initialValue={nextDuplicateName(displayStyle.name, useStylesStore.getState().styles)}
           placeholder="New style name"
           confirmLabel="Duplicate"
           onCancel={() => setDuplicateOpen(false)}
@@ -444,7 +446,8 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
             // Name collision check against the current catalog — style/save
             // is an upsert, so an existing name would silently overwrite that
             // style instead of creating a new one.
-            const exists = styles.some((s) => s.name === newName)
+            const catalog = useStylesStore.getState().styles
+            const exists = catalog.some((s) => s.name === newName)
             if (exists) {
               showToast(`A style named "${newName}" already exists`, 'error')
               return  // keep dialog open so the user can retype
@@ -562,17 +565,13 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                 description: fields.description,
                 category: fields.category,
               }
-            const wasSelected = useStylesStore.getState().selectedStyles.some(
-              (s) =>
-                s.name === displayStyle.name &&
-                s.source_file === displayStyle.source_file,
-            )
-            useStylesStore.setState((state) => ({
-              selectedStyles: state.selectedStyles.map((s) =>
-                s.name === displayStyle.name &&
-                s.source_file === displayStyle.source_file
+            const wasSelected = useStylesStore.getState().selectedKeySet.has(key)
+            useStylesStore.setState((s) => ({
+              selectedStyles: s.selectedStyles.map((row) =>
+                row.name === displayStyle.name &&
+                row.source_file === displayStyle.source_file
                   ? updated
-                  : s,
+                  : row,
               ),
             }))
             // Host keeps apply-time prompt/neg in a ledger and in the
@@ -630,11 +629,11 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                 )
                 return
               }
-              // ThumbnailPreview listens on window 'message' via onHostMessage
-              // (bridge.ts) — a same-window postMessage reaches it directly,
-              // no host round-trip needed.
+              const version = String(Date.now())
+              useStylesStore.getState().bumpThumbVersion(key, version)
+              // App's single onHostMessage also bumps via SG_THUMB_DONE.
               window.postMessage(
-                { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version: Date.now(), source_file: displayStyle.source_file || '' },
+                { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
                 '*',
               )
               void useStylesStore.getState().loadThumbnails()
