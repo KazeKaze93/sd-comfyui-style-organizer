@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+echo "pre-push: EOL guard"
+if git ls-files --eol | grep -E 'i/crlf|w/crlf' ; then
+  echo "pre-push: CRLF found in index or text working files (see above). Fix with git add --renormalize + rewrite from index." >&2
+  exit 1
+fi
+if git grep -I -l $'\r' -- web/ui ; then
+  echo "pre-push: CR bytes in committed web/ui (see above). Rebuild from LF sources." >&2
+  exit 1
+fi
+
 echo "pre-push: pytest (min count enforced)"
 python scripts/run_pytest_min.py
 

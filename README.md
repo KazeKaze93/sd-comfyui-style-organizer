@@ -180,7 +180,7 @@ After clone, enable repo hooks once:
 git config core.hooksPath .githooks
 ```
 
-`pre-push` runs pytest (pinned minimum pass count), UI typecheck/lint/vitest (pinned minimum), then `npm run build` in `ui/` and fails if `web/ui` differs (`git diff --exit-code -- web/ui`).
+`pre-push` runs an EOL guard (no CRLF in the index/working tree text files, no CR bytes in committed `web/ui`), then pytest (pinned minimum pass count), UI typecheck/lint/vitest (pinned minimum), then `npm run build` in `ui/` and fails if `web/ui` differs (`git diff --exit-code -- web/ui`).
 
 ```bash
 # Python (from repo root; needs pytest)
