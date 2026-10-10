@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Reorder } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
 import { useStylesStore } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { describeSpec } from '../lib/wildcardSlice'
@@ -10,7 +11,18 @@ export function SelectedBar() {
     selectedStyles, toggleStyle, setSelectedStyles,
     activeWildcards, setActiveWildcards, removeWildcard,
     styles, activeSource,
-  } = useStylesStore()
+  } = useStylesStore(
+    useShallow((s) => ({
+      selectedStyles: s.selectedStyles,
+      toggleStyle: s.toggleStyle,
+      setSelectedStyles: s.setSelectedStyles,
+      activeWildcards: s.activeWildcards,
+      setActiveWildcards: s.setActiveWildcards,
+      removeWildcard: s.removeWildcard,
+      styles: s.styles,
+      activeSource: s.activeSource,
+    })),
+  )
   const [saveOpen, setSaveOpen] = useState(false)
 
   if (selectedStyles.length === 0 && activeWildcards.length === 0) return null

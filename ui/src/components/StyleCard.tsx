@@ -55,14 +55,13 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
   const activeSource = useStylesStore(s => s.activeSource)
   const fav = useStylesStore(s => s.favorites.has(style.name))
   const {
-    toggleStyle, toggleFavorite, showToast, categories,
+    toggleStyle, toggleFavorite, showToast,
     setActiveSource,
   } = useStylesStore(
     useShallow(s => ({
       toggleStyle: s.toggleStyle,
       toggleFavorite: s.toggleFavorite,
       showToast: s.showToast,
-      categories: s.categories,
       setActiveSource: s.setActiveSource,
     }))
   )
@@ -394,205 +393,221 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
         </Portal>
       )}
 
-      <Portal>
-        <ConfirmDialog
-          open={pendingDelete}
-          title="Delete style?"
-          message={`"${displayStyle.name}" will be permanently removed from the CSV.`}
-          confirmLabel="Delete"
-          destructive
-          onCancel={() => setPendingDelete(false)}
-          onConfirm={async () => {
-            try {
-              const res = await fetch('/style_grid/style/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: displayStyle.name, source: displayStyle.source_file }),
+      {pendingDelete && (
+        <Portal>
+          <ConfirmDialog
+            open
+            title="Delete style?"
+            message={`"${displayStyle.name}" will be permanently removed from the CSV.`}
+            confirmLabel="Delete"
+            destructive
+            onCancel={() => setPendingDelete(false)}
+            onConfirm={async () => {
+              try {
+                const res = await fetch('/style_grid/style/delete', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: displayStyle.name, source: displayStyle.source_file }),
+                })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok || data.ok === false) {
+                  showToast(
+                    typeof data.error === 'string' && data.error
+                      ? data.error
+                      : `Failed to delete ${displayStyle.name}`,
+                    'error',
+                  )
+                  return
+                }
+                fetch(
+                  `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
+                  { method: 'DELETE' },
+                ).catch(() => { /* best-effort, style delete already succeeded */ })
+                sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+                useStylesStore.getState().removeStyleRow(displayStyle)
+                showToast(`Deleted "${displayStyle.name}"`, 'success')
+                setPendingDelete(false)
+              } catch {
+                showToast(`Failed to delete ${displayStyle.name}`, 'error')
+              }
+            }}
+          />
+        </Portal>
+      )}
+
+      {/* Lazy-mount Move/Edit/Duplicate dialogs: closed cards must not pay
+          nextDuplicateName(styles) / categories() — O(N) per card (profile P). */}
+      {duplicateOpen && (
+        <Portal>
+          <ConfirmInputDialog
+            open
+            title={`Duplicate "${displayStyle.name}"`}
+            initialValue={nextDuplicateName(displayStyle.name, useStylesStore.getState().styles)}
+            placeholder="New style name"
+            confirmLabel="Duplicate"
+            onCancel={() => setDuplicateOpen(false)}
+            onConfirm={async (newName) => {
+              // Name collision check against the current catalog — style/save
+              // is an upsert, so an existing name would silently overwrite that
+              // style instead of creating a new one.
+              const catalog = useStylesStore.getState().styles
+              const exists = catalog.some((s) => s.name === newName)
+              if (exists) {
+                showToast(`A style named "${newName}" already exists`, 'error')
+                return  // keep dialog open so the user can retype
+              }
+              const result = await useStylesStore.getState().saveStyle({
+                name: newName,
+                prompt: displayStyle.prompt,
+                negative_prompt: displayStyle.negative_prompt,
+                description: displayStyle.description,
+                category: displayStyle.category,
+                source: displayStyle.source_file,
               })
-              const data = await res.json().catch(() => ({}))
-              if (!res.ok || data.ok === false) {
+              if (!result.ok) {
                 showToast(
-                  typeof data.error === 'string' && data.error
-                    ? data.error
-                    : `Failed to delete ${displayStyle.name}`,
+                  typeof result.error === 'string' && result.error
+                    ? result.error
+                    : 'Duplicate failed',
+                  'error',
+                )
+                return  // keep dialog open
+              }
+              // style/save only returns {ok}; write path comes from the new
+              // row's source_file after refetch (samples basename → data/).
+              showToast(`Duplicated as "${newName}"`, 'success')
+              if (displayStyle.read_only) {
+                const created =
+                  result.styles.find((s) => s.name === newName && !s.read_only) ??
+                  result.styles.find((s) => s.name === newName)
+                if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
+                  setActiveSource(created.source_file)
+                  const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
+                    .replace(/\.csv$/i, '')
+                  showToast(`Created in ${base} (data/) — switched source`, 'info')
+                }
+              }
+              setDuplicateOpen(false)
+            }}
+          />
+        </Portal>
+      )}
+
+      {moveOpen && (
+        <Portal>
+          <ConfirmInputDialog
+            open
+            title={`Move "${displayStyle.name}" to category`}
+            initialValue={displayStyle.category}
+            placeholder="Category name"
+            confirmLabel="Move"
+            suggestions={useStylesStore
+              .getState()
+              .categories()
+              .filter((c) => c !== displayStyle.category)}
+            onCancel={() => setMoveOpen(false)}
+            onConfirm={async (newCategory) => {
+              if (newCategory === displayStyle.category) {
+                setMoveOpen(false)
+                return
+              }
+              const result = await useStylesStore.getState().saveStyle({
+                name: displayStyle.name,
+                prompt: displayStyle.prompt,
+                negative_prompt: displayStyle.negative_prompt,
+                description: displayStyle.description,
+                category: newCategory,
+                source: displayStyle.source_file,
+              })
+              if (!result.ok) {
+                showToast(
+                  typeof result.error === 'string' && result.error
+                    ? result.error
+                    : 'Move failed',
                   'error',
                 )
                 return
               }
-              fetch(
-                `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
-                { method: 'DELETE' },
-              ).catch(() => { /* best-effort, style delete already succeeded */ })
-              sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
-              useStylesStore.getState().removeStyleRow(displayStyle)
-              showToast(`Deleted "${displayStyle.name}"`, 'success')
-              setPendingDelete(false)
-            } catch {
-              showToast(`Failed to delete ${displayStyle.name}`, 'error')
-            }
-          }}
-        />
-      </Portal>
-
-      <Portal>
-        <ConfirmInputDialog
-          open={duplicateOpen}
-          title={`Duplicate "${displayStyle.name}"`}
-          initialValue={nextDuplicateName(displayStyle.name, useStylesStore.getState().styles)}
-          placeholder="New style name"
-          confirmLabel="Duplicate"
-          onCancel={() => setDuplicateOpen(false)}
-          onConfirm={async (newName) => {
-            // Name collision check against the current catalog — style/save
-            // is an upsert, so an existing name would silently overwrite that
-            // style instead of creating a new one.
-            const catalog = useStylesStore.getState().styles
-            const exists = catalog.some((s) => s.name === newName)
-            if (exists) {
-              showToast(`A style named "${newName}" already exists`, 'error')
-              return  // keep dialog open so the user can retype
-            }
-            const result = await useStylesStore.getState().saveStyle({
-              name: newName,
-              prompt: displayStyle.prompt,
-              negative_prompt: displayStyle.negative_prompt,
-              description: displayStyle.description,
-              category: displayStyle.category,
-              source: displayStyle.source_file,
-            })
-            if (!result.ok) {
-              showToast(
-                typeof result.error === 'string' && result.error
-                  ? result.error
-                  : 'Duplicate failed',
-                'error',
-              )
-              return  // keep dialog open
-            }
-            // style/save only returns {ok}; write path comes from the new
-            // row's source_file after refetch (samples basename → data/).
-            showToast(`Duplicated as "${newName}"`, 'success')
-            if (displayStyle.read_only) {
-              const created =
-                result.styles.find((s) => s.name === newName && !s.read_only) ??
-                result.styles.find((s) => s.name === newName)
-              if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
-                setActiveSource(created.source_file)
-                const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
-                  .replace(/\.csv$/i, '')
-                showToast(`Created in ${base} (data/) — switched source`, 'info')
-              }
-            }
-            setDuplicateOpen(false)
-          }}
-        />
-      </Portal>
-
-      <Portal>
-        <ConfirmInputDialog
-          open={moveOpen}
-          title={`Move "${displayStyle.name}" to category`}
-          initialValue={displayStyle.category}
-          placeholder="Category name"
-          confirmLabel="Move"
-          suggestions={categories().filter((c) => c !== displayStyle.category)}
-          onCancel={() => setMoveOpen(false)}
-          onConfirm={async (newCategory) => {
-            if (newCategory === displayStyle.category) {
+              showToast(`Moved "${displayStyle.name}" to "${newCategory}"`, 'success')
               setMoveOpen(false)
-              return
-            }
-            const result = await useStylesStore.getState().saveStyle({
-              name: displayStyle.name,
-              prompt: displayStyle.prompt,
-              negative_prompt: displayStyle.negative_prompt,
-              description: displayStyle.description,
-              category: newCategory,
-              source: displayStyle.source_file,
-            })
-            if (!result.ok) {
-              showToast(
-                typeof result.error === 'string' && result.error
-                  ? result.error
-                  : 'Move failed',
-                'error',
-              )
-              return
-            }
-            showToast(`Moved "${displayStyle.name}" to "${newCategory}"`, 'success')
-            setMoveOpen(false)
-          }}
-        />
-      </Portal>
+            }}
+          />
+        </Portal>
+      )}
 
-      <Portal>
-        <EditStyleDialog
-          open={editOpen}
-          style={displayStyle}
-          categories={categories().filter((c) => c !== displayStyle.category)}
-          onCancel={() => setEditOpen(false)}
-          onSave={async (fields) => {
-            const result = await useStylesStore.getState().saveStyle({
-              name: displayStyle.name,
-              prompt: fields.prompt,
-              negative_prompt: fields.negative_prompt,
-              description: fields.description,
-              category: fields.category,
-              source: displayStyle.source_file,
-            })
-            if (!result.ok) {
-              showToast(
-                typeof result.error === 'string' && result.error
-                  ? result.error
-                  : 'Save failed',
-                'error',
-              )
-              return  // keep dialog open so edits aren't lost
-            }
-
-            // styles[] is fresh; selectedStyles still holds the pre-edit
-            // Style objects (detectConflicts / re-apply would read stale
-            // prompt/neg). Patch matching selection rows from the refetch.
-            const updated =
-              result.styles.find(
-                (s) =>
-                  s.name === displayStyle.name &&
-                  s.source_file === displayStyle.source_file,
-              ) ?? {
-                ...displayStyle,
+      {editOpen && (
+        <Portal>
+          <EditStyleDialog
+            open
+            style={displayStyle}
+            categories={useStylesStore
+              .getState()
+              .categories()
+              .filter((c) => c !== displayStyle.category)}
+            onCancel={() => setEditOpen(false)}
+            onSave={async (fields) => {
+              const result = await useStylesStore.getState().saveStyle({
+                name: displayStyle.name,
                 prompt: fields.prompt,
                 negative_prompt: fields.negative_prompt,
                 description: fields.description,
                 category: fields.category,
-              }
-            const wasSelected = useStylesStore.getState().selectedKeySet.has(key)
-            useStylesStore.setState((s) => ({
-              selectedStyles: s.selectedStyles.map((row) =>
-                row.name === displayStyle.name &&
-                row.source_file === displayStyle.source_file
-                  ? updated
-                  : row,
-              ),
-            }))
-            // Host keeps apply-time prompt/neg in a ledger and in the
-            // node widgets — nothing else refreshes them on edit. Swap
-            // so the canvas text matches the saved style.
-            if (wasSelected) {
-              sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
-              sendToHost({
-                type: 'SG_APPLY',
-                styleId: displayStyle.name,
-                prompt: updated.prompt,
-                neg: updated.negative_prompt,
+                source: displayStyle.source_file,
               })
-            }
-            useStylesStore.getState().detectConflicts()
+              if (!result.ok) {
+                showToast(
+                  typeof result.error === 'string' && result.error
+                    ? result.error
+                    : 'Save failed',
+                  'error',
+                )
+                return  // keep dialog open so edits aren't lost
+              }
 
-            showToast(`Saved "${displayStyle.name}"`, 'success')
-            setEditOpen(false)
-          }}
-        />
-      </Portal>
+              // styles[] is fresh; selectedStyles still holds the pre-edit
+              // Style objects (detectConflicts / re-apply would read stale
+              // prompt/neg). Patch matching selection rows from the refetch.
+              const updated =
+                result.styles.find(
+                  (s) =>
+                    s.name === displayStyle.name &&
+                    s.source_file === displayStyle.source_file,
+                ) ?? {
+                  ...displayStyle,
+                  prompt: fields.prompt,
+                  negative_prompt: fields.negative_prompt,
+                  description: fields.description,
+                  category: fields.category,
+                }
+              const wasSelected = useStylesStore.getState().selectedKeySet.has(key)
+              useStylesStore.setState((s) => ({
+                selectedStyles: s.selectedStyles.map((row) =>
+                  row.name === displayStyle.name &&
+                  row.source_file === displayStyle.source_file
+                    ? updated
+                    : row,
+                ),
+              }))
+              // Host keeps apply-time prompt/neg in a ledger and in the
+              // node widgets — nothing else refreshes them on edit. Swap
+              // so the canvas text matches the saved style.
+              if (wasSelected) {
+                sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+                sendToHost({
+                  type: 'SG_APPLY',
+                  styleId: displayStyle.name,
+                  prompt: updated.prompt,
+                  neg: updated.negative_prompt,
+                })
+              }
+              useStylesStore.getState().detectConflicts()
+
+              showToast(`Saved "${displayStyle.name}"`, 'success')
+              setEditOpen(false)
+            }}
+          />
+        </Portal>
+      )}
 
       <input
         ref={fileInputRef}

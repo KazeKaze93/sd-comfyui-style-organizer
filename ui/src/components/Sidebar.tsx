@@ -1,5 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { memo, startTransition, useEffect, useRef, useState } from 'react'
 import { Reorder } from 'framer-motion'
 import { BookMarked, Clock, Star } from 'lucide-react'
 import {
@@ -22,7 +21,8 @@ function CategoryName({ category }: { category: string }) {
   )
 }
 
-export function Sidebar() {
+/** Memo: App selectedStyles updates must not re-run Reorder (profile P). */
+export const Sidebar = memo(function Sidebar() {
   const {
     activeCategory, setCategory, categories, favorites, recentNames,
     setCategoryOrder, presets, styles, activeSource, search,
@@ -100,22 +100,15 @@ export function Sidebar() {
       <button
         type="button"
         onClick={() => startTransition(() => setCategory(null))}
-        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors relative overflow-hidden
+        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors
           ${!activeCategory
-            ? 'text-white'
+            ? 'bg-sg-accent text-white'
             : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
       >
-        {!activeCategory && (
-          <motion.div
-            layoutId="active-category"
-            className="absolute inset-0 bg-sg-accent rounded-md -z-10"
-            transition={{ type: 'spring', bounce: 0.2, duration: 0.3 }}
-          />
-        )}
-        <span className="relative z-10 flex items-center gap-2 min-w-0">
+        <span className="flex items-center gap-2 min-w-0">
           <span className="truncate" style={{ color: allColor }}>All</span>
         </span>
-        <span className="relative z-10 text-xs opacity-60 shrink-0">
+        <span className="text-xs opacity-60 shrink-0">
           {count(null)}
         </span>
       </button>
@@ -154,23 +147,16 @@ export function Sidebar() {
       <button
         type="button"
         onClick={() => startTransition(() => setCategory(activeCategory === 'presets' ? null : 'presets'))}
-        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors relative overflow-hidden
+        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors
           ${activeCategory === 'presets'
-            ? 'text-white'
+            ? 'bg-sg-accent text-white'
             : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
       >
-        {activeCategory === 'presets' && (
-          <motion.div
-            layoutId="active-category"
-            className="absolute inset-0 bg-sg-accent rounded-md -z-10"
-            transition={{ type: 'spring', bounce: 0.2, duration: 0.3 }}
-          />
-        )}
-        <span className="relative z-10 flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
           <BookMarked className="h-4 w-4 shrink-0" aria-hidden />
           <span className="truncate">Presets</span>
         </span>
-        <span className="relative z-10 shrink-0 text-xs opacity-60 tabular-nums">
+        <span className="shrink-0 text-xs opacity-60 tabular-nums">
           {Object.keys(presets).length}
         </span>
       </button>
@@ -205,19 +191,12 @@ export function Sidebar() {
                   setCatMenu({ x: e.clientX, y: e.clientY, cat })
                 }}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm 
-                    transition-colors cursor-context-menu relative overflow-hidden
+                    transition-colors cursor-context-menu
                   ${isActive
                     ? 'bg-sg-accent text-white'
                     : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
               >
-                {isActive && (
-                  <motion.div
-                    layoutId="active-category"
-                    className="absolute inset-0 bg-sg-accent rounded-md -z-10"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.3 }}
-                  />
-                )}
-                <span className="flex items-center gap-2 relative z-10">
+                <span className="flex items-center gap-2">
                   <CategoryName category={cat} />
                   <span className="text-xs opacity-60 shrink-0">{count(cat)}</span>
                 </span>
@@ -276,4 +255,4 @@ export function Sidebar() {
       )}
     </div>
   )
-}
+})

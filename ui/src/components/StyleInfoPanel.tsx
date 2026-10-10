@@ -1,10 +1,16 @@
 import { useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { styleRowKey, useStylesStore } from '../store/stylesStore'
 import { resolveSelectedStyleRow } from '../lib/styleIdentity'
 import { ComboChips } from './ComboChips'
 
 export function StyleInfoPanel() {
-  const { selectedStyles, styles } = useStylesStore()
+  const { selectedStyles, styles } = useStylesStore(
+    useShallow((s) => ({
+      selectedStyles: s.selectedStyles,
+      styles: s.styles,
+    })),
+  )
   const [pinnedStyle, setPinnedStyle] = useState<typeof styles[0] | null>(null)
   const isChipClick = useRef(false)
 

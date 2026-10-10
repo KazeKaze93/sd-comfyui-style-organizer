@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import {
   Save, Import, Eraser, Rows3, ChevronsUpDown, ChevronsDownUp, Plus,
   Palette, AlertTriangle, Maximize2, Minimize2, X, Upload, Download,
@@ -95,6 +96,7 @@ export default function App() {
   const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
   const [conflictsOpen, setConflictsOpen] = useState(false)
   const importFileInputRef = useRef<HTMLInputElement>(null)
+  // Narrow slice — full-store subscribe re-rendered grid/sidebar chrome on every toggle (profile P).
   const {
     setStyles,
     selectedStyles,
@@ -112,7 +114,26 @@ export default function App() {
     setActiveSource,
     categories,
     presetsCorrupt,
-  } = useStylesStore()
+  } = useStylesStore(
+    useShallow((s) => ({
+      setStyles: s.setStyles,
+      selectedStyles: s.selectedStyles,
+      styles: s.styles,
+      conflicts: s.conflicts,
+      toggleStyle: s.toggleStyle,
+      toggleCompact: s.toggleCompact,
+      compactMode: s.compactMode,
+      collapsedCategories: s.collapsedCategories,
+      collapseAll: s.collapseAll,
+      expandAll: s.expandAll,
+      showToast: s.showToast,
+      fetchPresets: s.fetchPresets,
+      activeSource: s.activeSource,
+      setActiveSource: s.setActiveSource,
+      categories: s.categories,
+      presetsCorrupt: s.presetsCorrupt,
+    })),
+  )
 
   const activeSourceIsReadOnly = !!activeSource &&
     styles.some(s => s.source_file === activeSource && s.read_only)
@@ -439,52 +460,54 @@ export default function App() {
       <div className="shrink-0">
         <BottomPanel />
       </div>
-      <EditStyleDialog
-        open={newStyleOpen}
-        nameEditable
-        style={{ name: '', description: '', category: '', prompt: '', negative_prompt: '' }}
-        categories={categories()}
-        onCancel={() => setNewStyleOpen(false)}
-        onSave={async (fields) => {
-          if (styles.some((s) => s.name === fields.name)) {
-            showToast(`A style named "${fields.name}" already exists`, 'error')
-            return
-          }
-          // style/save returns {ok} only — resolve the real write target
-          // from the created row after refetch (samples → data/<basename>).
-          const fromSamples = styles.some(
-            (s) => s.source_file === activeSource && s.read_only,
-          )
-          const result = await useStylesStore.getState().saveStyle({
-            name: fields.name,
-            prompt: fields.prompt,
-            negative_prompt: fields.negative_prompt,
-            description: fields.description,
-            category: fields.category,
-            source: activeSource,
-          })
-          if (!result.ok) {
-            showToast(
-              typeof result.error === 'string' && result.error ? result.error : 'Create failed',
-              'error',
-            )
-            return
-          }
-          showToast(`Created "${fields.name}"`, 'success')
-          if (fromSamples) {
-            const created =
-              result.styles.find((s) => s.name === fields.name && !s.read_only) ??
-              result.styles.find((s) => s.name === fields.name)
-            if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
-              setActiveSource(created.source_file)
-              const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
-                .replace(/\.csv$/i, '')
-              showToast(`Created in ${base} (data/) — switched source`, 'info')
+      {newStyleOpen && (
+        <EditStyleDialog
+          open
+          nameEditable
+          style={{ name: '', description: '', category: '', prompt: '', negative_prompt: '' }}
+          categories={categories()}
+          onCancel={() => setNewStyleOpen(false)}
+          onSave={async (fields) => {
+            if (styles.some((s) => s.name === fields.name)) {
+              showToast(`A style named "${fields.name}" already exists`, 'error')
+              return
             }
-          }
-          setNewStyleOpen(false)
-        }}
-      />
+            // style/save returns {ok} only — resolve the real write target
+            // from the created row after refetch (samples → data/<basename>).
+            const fromSamples = styles.some(
+              (s) => s.source_file === activeSource && s.read_only,
+            )
+            const result = await useStylesStore.getState().saveStyle({
+              name: fields.name,
+              prompt: fields.prompt,
+              negative_prompt: fields.negative_prompt,
+              description: fields.description,
+              category: fields.category,
+              source: activeSource,
+            })
+            if (!result.ok) {
+              showToast(
+                typeof result.error === 'string' && result.error ? result.error : 'Create failed',
+                'error',
+              )
+              return
+            }
+            showToast(`Created "${fields.name}"`, 'success')
+            if (fromSamples) {
+              const created =
+                result.styles.find((s) => s.name === fields.name && !s.read_only) ??
+                result.styles.find((s) => s.name === fields.name)
+              if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
+                setActiveSource(created.source_file)
+                const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
+                  .replace(/\.csv$/i, '')
+                showToast(`Created in ${base} (data/) — switched source`, 'info')
+              }
+            }
+            setNewStyleOpen(false)
+          }}
+        />
+      )}
       {ieMenuPos && (
         <ViewportFixedMenu
           x={ieMenuPos.x}
