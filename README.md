@@ -39,6 +39,7 @@ Right-click a category in the **sidebar** for wildcard actions:
 You can also type or paste `{sg:…}` tokens by hand.
 
 - Works with multiple CSV sources at once, or filtered to one
+- **Theme:** the panel follows the ComfyUI color palette (light / dark) automatically
 
 ## Installation
 

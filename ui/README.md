@@ -22,6 +22,17 @@ npm run build
 - `src/components/StyleCard.tsx` / `ThumbnailPreview.tsx`: style tiles; optional `presetName` disables context menu, usage chip, and hover thumbnail preview.
 - `src/components/*`: other UI (sidebar, modals, etc.).
 
+## Theme
+
+Color tokens live in `src/index.css` as RGB channel triples (`--sg-bg: 26 26 46`, etc.) so Tailwind opacity modifiers (`bg-sg-accent/20`) work. Dark is the default on `:root`; light overrides under `:root[data-sg-theme="light"]`. Contrast for those tokens and for category chip palettes is enforced by `src/lib/themeContrast.test.ts` and `src/store/categoryColor.test.ts` (4.5:1).
+
+**Class mapping**
+
+| Use | Avoid |
+|---|---|
+| `sg-*` token classes (`bg-sg-surface`, `text-sg-muted`, …) and shadcn aliases that map to them | Raw Tailwind palette colors for theme surfaces (`text-white`, `bg-slate-*`, `text-red-400`, …) |
+| Mode-only bridge: host sends light/dark; iframe sets `data-sg-theme` | Per-color remapping from the ComfyUI palette into individual `--sg-*` channels |
+
 ## Integration Flow
 
 ```mermaid
