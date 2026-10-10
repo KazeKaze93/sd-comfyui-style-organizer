@@ -1,4 +1,4 @@
-/** Messages sent from Forge host script to the React iframe. */
+/** Messages sent from ComfyUI host extension (web/js/style_grid.js) to the React iframe. */
 export type HostMessage =
   | { type: 'SG_CLEAR_SELECTION' }
   | { type: 'SG_INIT';           styles: Style[] }
@@ -9,7 +9,7 @@ export type HostMessage =
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
 
-/** Messages sent from the React iframe back to Forge host script. */
+/** Messages sent from the React iframe back to ComfyUI host extension (web/js/style_grid.js). */
 export type FrameMessage =
   | { type: 'SG_READY' }
   | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; source_file?: string }
@@ -41,7 +41,7 @@ export interface Style {
   read_only:         boolean
 }
 
-/** Posts one typed bridge message to the Forge host window. */
+/** Posts one typed bridge message to the ComfyUI host extension (web/js/style_grid.js). */
 export function sendToHost(msg: FrameMessage): void {
   window.parent.postMessage(msg, '*')
 }
