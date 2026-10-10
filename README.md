@@ -82,8 +82,18 @@ input" if they don't already show a socket.
 
 ## Working with styles
 
-Right-click any style card for Edit, Duplicate, Move to category,
-Upload preview image, and Delete.
+The toolbar (icon buttons with tooltips) includes **Backup**,
+**Import/Export**, **Clear all selected styles**, **Compact mode**,
+**Expand/Collapse all**, **New style** (needs a writable CSV source),
+fullscreen, and close. When multi-select finds conflicts, a red warning
+badge with a count appears — **click** it to open a popover listing each
+conflict; you can remove the conflicting style from there.
+
+Favorite styles show a **star** on the tile; selected styles show a
+**check** badge. Right-click any style card for Select/Deselect, Add/Remove
+Favorites, Copy prompt, Edit, Duplicate, Move to category, Upload preview
+image, Delete preview (when one exists), and Delete. **Delete** asks for
+confirmation in a dialog before removing the CSV row.
 
 ![Style card context menu](docs/screenshots/style-card-context-menu.png)
 
@@ -109,10 +119,12 @@ Clicking an already-loaded preset unloads it.
 
 ![Presets](docs/screenshots/presets.png)
 
-**Import/Export** shares your styles, presets, and usage as a single
-JSON file. Import can also restore a Backup zip (CSVs + presets).
+**Import/Export** (toolbar import icon) opens a small menu with
+**Export** and **Import from file…**. Export downloads styles, presets,
+and usage as JSON. Import accepts that JSON, or a Backup zip
+(CSVs + presets).
 
-**Backup** (toolbar diskette) writes a manual zip snapshot of your
+**Backup** (toolbar save icon) writes a manual zip snapshot of your
 `data/` and `data/imports/` CSVs plus `presets.json` into
 `data/backups/` (bundled `samples/` is excluded). It is not automatic,
 and it is separate from Export.

@@ -1,6 +1,6 @@
 # Style Grid UI (V2)
 
-React + TypeScript + Vite frontend loaded by Forge inside an iframe.
+React + TypeScript + Vite frontend for the ComfyUI Style Grid node. Built assets are served by ComfyUI’s extension web directory and loaded in an iframe.
 
 ## Commands
 
@@ -10,7 +10,7 @@ npm install
 npm run build
 ```
 
-`npm run build` outputs `ui/dist/`. The Forge host loads the UI with **`GET /style_grid/ui?t=<timestamp>`** (FastAPI in `stylegrid/routes.py`). **`_get_ui_html()`** in `stylegrid/routes.py` reads `ui/dist/index.html` and rewrites **each** relative `src` / `href` (`./…`) to Gradio **`/file=extensions/sd-webui-style-organizer/ui/dist/…`** with a **new** `?v=<unix time>` on every response so JS, CSS, favicon, and other linked assets stay in sync after rebuilds. The host script sets the iframe `src` in `javascript/style_grid.js`.
+`npm run build` writes into **`../web/ui`** (`vite.config.ts` `build.outDir`). ComfyUI exposes that tree via `WEB_DIRECTORY = "./web"` in the package `__init__.py`, so the panel is available at `/extensions/sd-comfyui-style-organizer/ui/…`. The host script sets the iframe to `IFRAME_SRC` (`/extensions/sd-comfyui-style-organizer/ui/index.html`) with a cache-busting `?t=` query in `web/js/style_grid.js`.
 
 ## Key Files
 
@@ -26,8 +26,8 @@ npm run build
 
 ```mermaid
 flowchart LR
-  H[javascript/style_grid.js] <-->|SG_* postMessage| UI[src/App.tsx]
+  H[web/js/style_grid.js] <-->|SG_* postMessage| UI[src/App.tsx]
   H -->|fetch /style_grid/*| API[stylegrid/routes.py]
 ```
 
-Thumbnail **images** use `GET /style_grid/thumbnail?name=…` (server resolves paths from the cached style list; see `docs/API.md`). **SD preview generation** from the host uses `POST /style_grid/thumbnail/generate` with optional JSON `source` when a specific CSV row must be targeted.
+Thumbnail **images** use `GET /style_grid/thumbnail?name=…` (and optional `source`). Previews are uploaded with `POST /style_grid/thumbnail/upload` from the card menu; there is no generate-from-sampler path in this package.
