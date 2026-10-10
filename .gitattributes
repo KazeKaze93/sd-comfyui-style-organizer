@@ -1,3 +1,5 @@
+# Normalize all text to LF in the index and on checkout; binary detection stays automatic.
+* text=auto eol=lf
 # Keep sources and committed panel assets LF so Linux CI and Windows
 # checkouts/builds compare cleanly (Vite content hashes must match).
 web/ui/** text eol=lf
