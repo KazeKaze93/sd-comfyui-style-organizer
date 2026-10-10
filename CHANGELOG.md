@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.0.8 — 2026-10-11
+
+### Changed
+- **Follows the ComfyUI color palette live:** the panel tracks the host light/dark theme instead of a fixed skin.
+- **Higher contrast** and **clearer selection** so cards and active states read more cleanly.
+- **Conflicts on click:** conflict cues surface when you select a style, not only after the fact.
+- **In-panel delete confirmation** instead of a browser confirm dialog.
+- **Import/Export menu stays in viewport** when opened near the panel edge.
+- **Honest toolbar:** controls reflect what they actually do in the current state.
+- **Visible feedback:** copy confirmation and longer error toasts so actions and failures are obvious.
+- **Helpful empty results** when search or filters match nothing.
+- **Reduced motion** respects the system preference where animations would otherwise run.
+
+Compatibility: current ComfyUI frontend; node inputs/outputs unchanged, existing workflows load as before.
+
 ## 0.0.7 — 2026-10-08
 
 ### Security
