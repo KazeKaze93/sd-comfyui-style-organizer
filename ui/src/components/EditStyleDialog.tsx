@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 export interface EditStyleDialogProps {
   open: boolean
@@ -29,7 +29,7 @@ const inputClassName =
 const textareaClassName =
   'w-full min-h-20 px-3 py-2 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors resize-y disabled:opacity-45'
 
-const labelClassName = 'text-xs text-sg-muted mb-1'
+const labelClassName = 'block text-xs text-sg-muted mb-1'
 
 const chipClassName =
   'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
@@ -61,6 +61,13 @@ export function EditStyleDialog({
   const [prompt, setPrompt] = useState(style.prompt)
   const [negativePrompt, setNegativePrompt] = useState(style.negative_prompt)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const titleId = useId()
+  const nameId = useId()
+  const descriptionId = useId()
+  const combosId = useId()
+  const categoryId = useId()
+  const promptId = useId()
+  const negativeId = useId()
 
   useEffect(() => {
     if (!open) {
@@ -123,13 +130,17 @@ export function EditStyleDialog({
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
           className="pointer-events-auto bg-sg-surface border border-sg-border rounded-lg shadow-xl p-4 w-[28rem]"
           onClick={(e) => e.stopPropagation()}
         >
           {nameEditable ? (
             <div className="mb-3">
-              <div className={labelClassName}>Name</div>
+              <label id={titleId} htmlFor={nameId} className={labelClassName}>Name</label>
               <input
+                id={nameId}
                 type="text"
                 value={name}
                 disabled={isSubmitting}
@@ -140,14 +151,15 @@ export function EditStyleDialog({
               />
             </div>
           ) : (
-            <div className="text-sm font-medium text-sg-text mb-3">
+            <div id={titleId} className="text-sm font-medium text-sg-text mb-3">
               Editing &quot;{style.name}&quot;
             </div>
           )}
 
           <div className="mb-3">
-            <div className={labelClassName}>Description</div>
+            <label htmlFor={descriptionId} className={labelClassName}>Description</label>
             <input
+              id={descriptionId}
               type="text"
               value={descriptionText}
               disabled={isSubmitting}
@@ -157,8 +169,9 @@ export function EditStyleDialog({
           </div>
 
           <div className="mb-3">
-            <div className={labelClassName}>Combos (optional)</div>
+            <label htmlFor={combosId} className={labelClassName}>Combos (optional)</label>
             <input
+              id={combosId}
               type="text"
               value={combosText}
               disabled={isSubmitting}
@@ -169,8 +182,9 @@ export function EditStyleDialog({
           </div>
 
           <div className="mb-3">
-            <div className={labelClassName}>Category</div>
+            <label htmlFor={categoryId} className={labelClassName}>Category</label>
             <input
+              id={categoryId}
               type="text"
               value={category}
               disabled={isSubmitting}
@@ -195,8 +209,9 @@ export function EditStyleDialog({
           </div>
 
           <div className="mb-3">
-            <div className={labelClassName}>Prompt</div>
+            <label htmlFor={promptId} className={labelClassName}>Prompt</label>
             <textarea
+              id={promptId}
               value={prompt}
               disabled={isSubmitting}
               onChange={(e) => setPrompt(e.target.value)}
@@ -205,8 +220,9 @@ export function EditStyleDialog({
           </div>
 
           <div className="mb-3">
-            <div className={labelClassName}>Negative prompt</div>
+            <label htmlFor={negativeId} className={labelClassName}>Negative prompt</label>
             <textarea
+              id={negativeId}
               value={negativePrompt}
               disabled={isSubmitting}
               onChange={(e) => setNegativePrompt(e.target.value)}

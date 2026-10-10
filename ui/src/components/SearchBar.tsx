@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import type { Style } from '../bridge'
 import {
   dedupeStylesByNameForAllSources,
   matchesSearch,
@@ -10,6 +11,14 @@ import {
   CommandItem, CommandList
 } from './ui/command'
 import { Popover, PopoverContent, PopoverAnchor } from './ui/popover'
+
+const SUGGESTION_LIMIT = 8
+
+/** Pure: top name matches for a query against an already-scoped style list. */
+function computeSuggestions(styles: Style[], query: string): Style[] {
+  if (query.length === 0) return []
+  return styles.filter(s => matchesSearch(s, query)).slice(0, SUGGESTION_LIMIT)
+}
 
 export function SearchBar() {
   const { styles, activeSource, search, setSearch, toggleStyle, selectedStyles } = useStylesStore()
@@ -26,19 +35,10 @@ export function SearchBar() {
     ? styles.filter(s => s.source_file === activeSource)
     : dedupeStylesByNameForAllSources(styles)
 
-  // Top 8 matches by name
-  const suggestions = inputValue.length > 0
-    ? searchableStyles
-        .filter(s => matchesSearch(s, inputValue))
-        .slice(0, 8)
-    : []
+  const suggestions = computeSuggestions(searchableStyles, inputValue)
 
   const handleInput = (val: string) => {
-    const nextSuggestions = val.length > 0
-      ? searchableStyles
-          .filter(s => matchesSearch(s, val))
-          .slice(0, 8)
-      : []
+    const nextSuggestions = computeSuggestions(searchableStyles, val)
     setInputValue(val)
     setSearch(val)
     setOpen(val.length > 0 && nextSuggestions.length > 0)
@@ -113,11 +113,7 @@ export function SearchBar() {
         </div>
       </PopoverAnchor>
       <PopoverContent
-        className="p-0 w-72"
-        style={{
-          background: '#0f172a',
-          border: '1px solid #2d2d4e',
-        }}
+        className="p-0 w-72 bg-sg-popover border border-sg-border"
         align="start"
         onOpenAutoFocus={e => e.preventDefault()}
       >

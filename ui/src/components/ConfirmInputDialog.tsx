@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 export interface ConfirmInputDialogProps {
   open: boolean
@@ -24,6 +24,8 @@ export function ConfirmInputDialog({
   const [value, setValue] = useState(initialValue)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const titleId = useId()
+  const inputId = useId()
 
   useEffect(() => {
     if (!open) {
@@ -72,11 +74,17 @@ export function ConfirmInputDialog({
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
           className="pointer-events-auto bg-sg-surface border border-sg-border rounded-lg shadow-xl p-4 w-80"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="text-sm font-medium text-sg-text mb-2">{title}</div>
+          <label id={titleId} htmlFor={inputId} className="block text-sm font-medium text-sg-text mb-2">
+            {title}
+          </label>
           <input
+            id={inputId}
             ref={inputRef}
             type="text"
             value={value}
