@@ -494,6 +494,7 @@ function ensureOverlay() {
     ].join(";");
 
     iframe = document.createElement("iframe");
+    iframe.title = "Style Grid";
     iframe.style.cssText = "width:100%;height:100%;border:none;display:block;";
     iframe.src = `${IFRAME_SRC}?t=${Date.now()}`;
 
