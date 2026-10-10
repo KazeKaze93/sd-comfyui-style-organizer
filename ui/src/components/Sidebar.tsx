@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Reorder } from 'framer-motion'
-import { BookMarked } from 'lucide-react'
+import { BookMarked, Clock, Star } from 'lucide-react'
 import {
   FAVORITES_VIEW,
   RECENT_VIEW,
@@ -50,12 +50,14 @@ export function Sidebar() {
   const specialCategories = [
     {
       id: FAVORITES_VIEW,
-      label: FAVORITES_VIEW,
+      label: 'Favorites',
+      Icon: Star,
       count: filterFavoriteStyles(styles, search, activeSource, favorites).length,
     },
     {
       id: RECENT_VIEW,
-      label: RECENT_VIEW,
+      label: 'Recent',
+      Icon: Clock,
       count: selectFilteredStyles(
         styles, search, RECENT_VIEW, activeSource, favorites, recentNames, presets,
       ).length,
@@ -107,7 +109,7 @@ export function Sidebar() {
           {count(null)}
         </span>
       </button>
-      {specialCategories.map(({ id, label, count }) => (
+      {specialCategories.map(({ id, label, Icon, count }) => (
         <button
           key={id}
           type="button"
@@ -125,15 +127,18 @@ export function Sidebar() {
             }
             : undefined
           }
-          className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors
+          className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors
       ${activeCategory === id
         ? 'bg-sg-accent text-white'
         : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
       ${id === FAVORITES_VIEW || id === RECENT_VIEW ? 'cursor-context-menu' : ''}
       ${count === 0 ? 'opacity-40' : ''}`}
         >
-          {label}
-          <span className="ml-auto float-right text-xs opacity-60">{count}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <Icon className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">{label}</span>
+          </span>
+          <span className="text-xs opacity-60 shrink-0">{count}</span>
         </button>
       ))}
       <button
@@ -217,7 +222,7 @@ export function Sidebar() {
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setFavMenu(null)} />
           <div
-            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
+            className="fixed z-[9999] bg-sg-popover border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
             style={{ left: favMenu.x, top: favMenu.y }}
           >
             <button
@@ -237,7 +242,7 @@ export function Sidebar() {
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setRecentMenu(null)} />
           <div
-            className="fixed z-[9999] bg-[#0f172a] border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
+            className="fixed z-[9999] bg-sg-popover border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
             style={{ left: recentMenu.x, top: recentMenu.y }}
           >
             <button

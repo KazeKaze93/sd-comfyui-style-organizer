@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { sendToHost, type Style } from '../bridge'
 import { buildSliceSpec } from '../lib/wildcardSlice'
 import {
+  FAVORITES_VIEW,
+  RECENT_VIEW,
   getCategoryColor,
   selectFilteredStyles,
   styleRowKey,
@@ -12,6 +15,71 @@ import {
 import { StyleCard } from './StyleCard'
 import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 import { PresetList } from './PresetList'
+
+function emptyCategoryLabel(cat: string): string {
+  if (cat === FAVORITES_VIEW) return 'Favorites'
+  if (cat === RECENT_VIEW) return 'Recent'
+  return cat
+}
+
+function EmptyStylesNotice({
+  search,
+  activeSource,
+  activeCategory,
+  ignoreCategory = false,
+  setSearch,
+  setActiveSource,
+  setCategory,
+}: {
+  search: string
+  activeSource: string | null
+  activeCategory: string | null
+  ignoreCategory?: boolean
+  setSearch: (q: string) => void
+  setActiveSource: (src: string | null) => void
+  setCategory: (cat: string | null) => void
+}) {
+  const hasSearch = search.trim().length > 0
+  const hasSource = Boolean(activeSource)
+  const hasCategory = !ignoreCategory && Boolean(activeCategory)
+
+  const parts: string[] = []
+  if (hasSearch) parts.push(`matching “${search.trim()}”`)
+  if (hasSource) parts.push(`from ${activeSource}`)
+  if (hasCategory && activeCategory) parts.push(`in ${emptyCategoryLabel(activeCategory)}`)
+
+  const reason = parts.length > 0
+    ? `No styles found ${parts.join(' ')}.`
+    : 'No styles found.'
+
+  const resetBtnClass =
+    'text-xs px-2.5 py-1 rounded border border-sg-border text-sg-muted hover:text-sg-text hover:bg-sg-surface/60 transition-colors'
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 h-32 text-sg-muted text-sm px-4 text-center">
+      <p>{reason}</p>
+      {(hasSearch || hasSource || hasCategory) && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {hasSearch && (
+            <button type="button" className={resetBtnClass} onClick={() => setSearch('')}>
+              Clear search
+            </button>
+          )}
+          {hasSource && (
+            <button type="button" className={resetBtnClass} onClick={() => setActiveSource(null)}>
+              All sources
+            </button>
+          )}
+          {hasCategory && (
+            <button type="button" className={resetBtnClass} onClick={() => setCategory(null)}>
+              All categories
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   const {
@@ -23,6 +91,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
     sliceMode, sliceSelection,
     exitSliceMode, toggleSliceSelection,
     selectAllSlice, clearSliceSelection,
+    setSearch, setActiveSource, setCategory,
   } = useStylesStore(
     useShallow(s => ({
       styles: s.styles,
@@ -46,6 +115,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       toggleSliceSelection: s.toggleSliceSelection,
       selectAllSlice: s.selectAllSlice,
       clearSliceSelection: s.clearSliceSelection,
+      setSearch: s.setSearch,
+      setActiveSource: s.setActiveSource,
+      setCategory: s.setCategory,
     }))
   )
   const [catMenu, setCatMenu] = useState<{
@@ -204,9 +276,15 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
       <div className="space-y-2">
         {renderSliceModeBar()}
         {visibleSliceStyles.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-sg-muted text-sm">
-            No styles found
-          </div>
+          <EmptyStylesNotice
+            search={search}
+            activeSource={activeSource}
+            activeCategory={activeCategory}
+            ignoreCategory
+            setSearch={setSearch}
+            setActiveSource={setActiveSource}
+            setCategory={setCategory}
+          />
         ) : (
           <div className={gridClass} style={{ contentVisibility: 'auto' }}>
             {visibleSliceStyles.map(renderSliceCard)}
@@ -222,10 +300,14 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
 
   if (filtered.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 
-                      text-sg-muted text-sm">
-        No styles found
-      </div>
+      <EmptyStylesNotice
+        search={search}
+        activeSource={activeSource}
+        activeCategory={activeCategory}
+        setSearch={setSearch}
+        setActiveSource={setActiveSource}
+        setCategory={setCategory}
+      />
     )
   }
 
@@ -294,7 +376,9 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
               }}
             >
               <span className="text-sg-muted">
-                {isCollapsed ? '▶' : '▼'}
+                {isCollapsed
+                  ? <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                  : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
               </span>
               <span
                 className="text-xs font-bold tracking-wider uppercase"
@@ -302,7 +386,7 @@ export function StyleGrid({ windowed = false }: { windowed?: boolean }) {
               >
                 {cat}
               </span>
-              <span className="text-xs text-sg-muted/60">
+              <span className="text-xs text-sg-muted">
                 ({catStyles.length})
               </span>
               <div className="flex-1" />
