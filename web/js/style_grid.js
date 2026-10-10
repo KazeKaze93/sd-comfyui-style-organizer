@@ -2,14 +2,61 @@ import { app } from "/scripts/app.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
 
+const THEME_CANDIDATES = () => [document.body, document.documentElement];
+const THEME_LIGHT_LUMINANCE = 0.4;
+const THEME_DEBOUNCE_MS = 100;
+const OVERLAY_BG = { dark: "#111111", light: "#f8fafc" };
+
 let overlay = null;
 let backdrop = null;
 let iframe = null;
 let ready = false;
 let currentNode = null;
+let currentTheme = "dark";
+let themeTimer = null;
 let allStylesCache = [];
 /** node → Map<styleName, { prompt, negative_prompt }> written at apply time. */
 const appliedByNode = new Map();
+
+function srgbToLinear(c) {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
+function detectTheme() {
+    for (const el of THEME_CANDIDATES()) {
+        if (!el) continue;
+        const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/);
+        if (!m) continue;
+        const [r, g, b, a = 1] = m[1].split(/[,\s/]+/).filter(Boolean).map(parseFloat);
+        if (!(a > 0)) continue;
+        const luminance =
+            0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
+        return luminance > THEME_LIGHT_LUMINANCE ? "light" : "dark";
+    }
+    return "dark";
+}
+
+function postTheme() {
+    if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({ type: "SG_THEME", mode: currentTheme }, "*");
+    }
+}
+
+function applyOverlayTheme() {
+    if (overlay) overlay.style.background = OVERLAY_BG[currentTheme];
+}
+
+function scheduleThemeCheck() {
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(() => {
+        const next = detectTheme();
+        if (next === currentTheme) return;
+        currentTheme = next;
+        applyOverlayTheme();
+        postTheme();
+    }, THEME_DEBOUNCE_MS);
+}
 
 function closeStyleBrowser() {
     if (backdrop) backdrop.style.display = "none";
@@ -490,13 +537,19 @@ function ensureOverlay() {
         "display:none",
         "overflow:hidden",
         "resize:both",
-        "background:#111",
     ].join(";");
+    currentTheme = detectTheme();
+    applyOverlayTheme();
 
     iframe = document.createElement("iframe");
     iframe.title = "Style Grid";
     iframe.style.cssText = "width:100%;height:100%;border:none;display:block;";
-    iframe.src = `${IFRAME_SRC}?t=${Date.now()}`;
+    iframe.src = `${IFRAME_SRC}?t=${Date.now()}&theme=${currentTheme}`;
+
+    const themeObserver = new MutationObserver(scheduleThemeCheck);
+    for (const el of THEME_CANDIDATES()) {
+        if (el) themeObserver.observe(el, { attributes: true });
+    }
 
     overlay.appendChild(iframe);
     document.body.appendChild(backdrop);
@@ -515,6 +568,7 @@ function ensureOverlay() {
 
         if (msg.type === "SG_READY") {
             ready = true;
+            postTheme();
             rehydrate();
         }
         if (msg.type === "SG_APPLY" && currentNode) {
