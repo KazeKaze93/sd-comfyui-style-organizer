@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
-  Save, Import, Eraser, Rows3, ChevronsUpDown, Plus,
+  Save, Import, Eraser, Rows3, ChevronsUpDown, ChevronsDownUp, Plus,
+  Palette, AlertTriangle, Maximize2, Minimize2, X, Upload, Download,
   type LucideIcon,
 } from 'lucide-react'
 import { onHostMessage, sendToHost, type Style } from './bridge'
@@ -12,12 +13,18 @@ import { StyleGrid } from './components/StyleGrid'
 import { BottomPanel } from './components/BottomPanel'
 import { Toast } from './components/Toast'
 import { EditStyleDialog } from './components/EditStyleDialog'
+import { ViewportFixedMenu } from './components/ViewportFixedMenu'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from './components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from './components/ui/popover'
 import { cn } from './lib/utils'
 
 const WINDOWED_SIZE_KEY = 'sg_windowed_size'
@@ -32,6 +39,7 @@ const ToolBtn = ({
   onClick,
   disabled,
   colorClassName,
+  active,
 }: {
   icon: LucideIcon
   label: string
@@ -39,6 +47,7 @@ const ToolBtn = ({
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
   colorClassName?: string
+  active?: boolean
 }) => {
   const button = (
     <button
@@ -47,17 +56,20 @@ const ToolBtn = ({
       disabled={disabled}
       title={title}
       aria-label={label}
+      aria-pressed={active !== undefined ? active : undefined}
       className={cn(
         'w-8 h-8 flex items-center justify-center rounded transition-colors border',
         disabled
           ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
-          : cn(
-              colorClassName ?? 'text-sg-muted',
-              'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
-            ),
+          : active
+            ? 'bg-sg-accent/15 border-sg-accent/40 text-sg-text'
+            : cn(
+                colorClassName ?? 'text-sg-muted',
+                'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
+              ),
       )}
     >
-      <Icon size={16} />
+      <Icon size={16} aria-hidden />
     </button>
   )
   return (
@@ -80,6 +92,7 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [newStyleOpen, setNewStyleOpen] = useState(false)
   const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const [conflictsOpen, setConflictsOpen] = useState(false)
   const importFileInputRef = useRef<HTMLInputElement>(null)
   const {
     setStyles,
@@ -88,6 +101,7 @@ export default function App() {
     conflicts,
     toggleStyle,
     toggleCompact,
+    compactMode,
     collapsedCategories,
     collapseAll,
     expandAll,
@@ -219,7 +233,10 @@ export default function App() {
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5
                     border-b border-sg-border">
-        <span className="text-sg-accent font-semibold">🎨 Style Grid</span>
+        <span className="text-sg-accent font-semibold inline-flex items-center gap-1.5">
+          <Palette size={16} aria-hidden />
+          Style Grid
+        </span>
         <SourceFilter />
         <div className="flex-1">
           <SearchBar />
@@ -271,7 +288,6 @@ export default function App() {
             <ToolBtn
               icon={Eraser}
               label="Clear all selected styles"
-              title="Clear all selected styles"
               colorClassName="text-red-400/80"
               onClick={() => {
                 sendToHost({ type: 'SG_CLEAR_ALL' })
@@ -282,11 +298,12 @@ export default function App() {
               icon={Rows3}
               label="Compact mode"
               colorClassName="text-violet-300/80"
+              active={compactMode}
               onClick={() => toggleCompact()}
             />
             <ToolBtn
-              icon={ChevronsUpDown}
-              label="Collapse all"
+              icon={collapsedCategories.size > 0 ? ChevronsUpDown : ChevronsDownUp}
+              label={collapsedCategories.size > 0 ? 'Expand all' : 'Collapse all'}
               colorClassName="text-violet-300/80"
               onClick={() =>
                 collapsedCategories.size > 0 ? expandAll() : collapseAll()
@@ -314,23 +331,30 @@ export default function App() {
               {selectedStyles.length > 0 && `${selectedStyles.length} selected`}
             </span>
             {conflicts.length > 0 && (
-              <div className="relative group">
-                <span className="flex items-center gap-1 px-2 py-1 rounded 
-                       bg-red-500/20 border border-red-500/40 
-                       text-red-400 text-xs cursor-help
-                       animate-pulse">
-                  ⚠️ {conflicts.length}
-                </span>
-                <div className="absolute top-full right-0 pt-1 z-50
-                      bg-[#0f172a] border border-sg-border rounded-lg
-                      shadow-xl p-3 min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))]
-                      hidden group-hover:block">
+              <Popover open={conflictsOpen} onOpenChange={setConflictsOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={`${conflicts.length} style conflicts`}
+                    className="flex items-center gap-1 px-2 py-1 rounded
+                       bg-red-500/20 border border-red-500/40
+                       text-red-400 text-xs
+                       motion-safe:animate-pulse"
+                  >
+                    <AlertTriangle size={14} aria-hidden />
+                    {conflicts.length}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="w-auto min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))] p-3 bg-sg-popover border border-sg-border rounded-lg shadow-xl"
+                >
                   <div className="text-xs font-semibold text-white mb-2">
                     Style Conflicts
                   </div>
                   {conflicts.map((c, i) => {
-                    const conflictingStyle = selectedStyles.find(s => s.name === c.styleB)
-                      ?? styles.find(s => s.name === c.styleB)
+                    const conflictingStyle = selectedStyles.find(s => styleRowKey(s) === c.styleBKey)
+                      ?? styles.find(s => styleRowKey(s) === c.styleBKey)
                     return (
                       <div key={i} className="flex items-start justify-between gap-2 py-0.5">
                         <span className="text-xs text-red-400 min-w-0 flex-1 break-words">
@@ -338,7 +362,11 @@ export default function App() {
                         </span>
                         {conflictingStyle && (
                           <button
-                            onClick={() => toggleStyle(conflictingStyle)}
+                            type="button"
+                            onClick={() => {
+                              toggleStyle(conflictingStyle)
+                              setConflictsOpen(false)
+                            }}
                             className="text-xs px-1.5 py-0.5 rounded border
                               border-red-500/40 text-red-400 hover:bg-red-500/20
                               transition-colors shrink-0"
@@ -350,38 +378,21 @@ export default function App() {
                       </div>
                     )
                   })}
-                </div>
-              </div>
+                </PopoverContent>
+              </Popover>
             )}
-            <button
+            <ToolBtn
+              icon={isFullscreen ? Minimize2 : Maximize2}
+              label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               onClick={toggleFullscreen}
-              className="text-sg-muted hover:text-sg-text transition-colors text-sm w-6 h-6
-               flex items-center justify-center"
-              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            >
-              {isFullscreen ? (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                  xmlns="http://www.w3.org/2000/svg">
-                  <rect x="1" y="1" width="12" height="12" rx="1"
-                    stroke="currentColor" strokeWidth="1.2" fill="none" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                  xmlns="http://www.w3.org/2000/svg">
-                  <rect x="1" y="3" width="9" height="9" rx="1"
-                    stroke="currentColor" strokeWidth="1.2" fill="none" />
-                  <path d="M4 3V2a1 1 0 011-1h7a1 1 0 011 1v7a1 1 0 01-1 1h-1"
-                    stroke="currentColor" strokeWidth="1.2" />
-                </svg>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => sendToHost({ type: 'SG_CLOSE_REQUEST' })}
-              className="ml-3 text-sg-muted hover:text-sg-text transition-colors text-lg"
-            >
-              ✕
-            </button>
+            />
+            <span className="ml-3 inline-flex">
+              <ToolBtn
+                icon={X}
+                label="Close Style Grid"
+                onClick={() => sendToHost({ type: 'SG_CLOSE_REQUEST' })}
+              />
+            </span>
           </div>
         </TooltipProvider>
       </div>
@@ -472,54 +483,56 @@ export default function App() {
         }}
       />
       {ieMenuPos && (
-        <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setIeMenuPos(null)} />
-          <div
-            className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48"
-            style={{ left: ieMenuPos.x, top: ieMenuPos.y }}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={async () => {
-                setIeMenuPos(null)
-                try {
-                  const res = await fetch('/style_grid/export')
-                  const data = await res.json().catch(() => ({}))
-                  if (!res.ok || data.error) {
-                    showToast(
-                      typeof data.error === 'string' && data.error ? data.error : 'Export failed',
-                      'error',
-                    )
-                    return
-                  }
-                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `style_grid_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-                  document.body.appendChild(a)
-                  a.click()
-                  a.remove()
-                  URL.revokeObjectURL(url)
-                  showToast('Exported styles', 'success')
-                } catch {
-                  showToast('Export failed', 'error')
+        <ViewportFixedMenu
+          x={ieMenuPos.x}
+          y={ieMenuPos.y}
+          onDismiss={() => setIeMenuPos(null)}
+        >
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+            onClick={async () => {
+              setIeMenuPos(null)
+              try {
+                const res = await fetch('/style_grid/export')
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok || data.error) {
+                  showToast(
+                    typeof data.error === 'string' && data.error ? data.error : 'Export failed',
+                    'error',
+                  )
+                  return
                 }
-              }}
-            >
-              📤 Export
-            </button>
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                setIeMenuPos(null)
-                importFileInputRef.current?.click()
-              }}
-            >
-              📥 Import from file...
-            </button>
-          </div>
-        </>
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `style_grid_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                URL.revokeObjectURL(url)
+                showToast('Exported styles', 'success')
+              } catch {
+                showToast('Export failed', 'error')
+              }
+            }}
+          >
+            <Download size={14} aria-hidden />
+            Export
+          </button>
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+            onClick={() => {
+              setIeMenuPos(null)
+              importFileInputRef.current?.click()
+            }}
+          >
+            <Upload size={14} aria-hidden />
+            Import from file...
+          </button>
+        </ViewportFixedMenu>
       )}
       <input
         ref={importFileInputRef}
