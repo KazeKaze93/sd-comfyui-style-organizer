@@ -8,6 +8,14 @@ import {
 /** Avoid toast spam: categories() runs during render while coverage stays low. */
 let categoryOrderCoverageToastShown = false
 
+/** Memo for categories(); invalidated when styles / activeSource / categoryOrder identity changes. */
+let categoryListCache: {
+  styles: Style[]
+  activeSource: string | null
+  categoryOrder: string[]
+  list: string[]
+} | null = null
+
 /** Preset style ref: legacy bare name, or backend-normalized {name, source_file, weight?}. */
 export type PresetStyleEntry = string | { name: string; source_file?: string; weight?: number }
 
@@ -158,6 +166,26 @@ function buildSelectedKeySet(styles: Style[]): ReadonlySet<string> {
   return new Set(styles.map((s) => styleRowKey(s)))
 }
 
+/** Category → count of selected rows; rebuilt with selectedKeySet. */
+function buildSelectedCountByCategory(styles: Style[]): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>()
+  for (const s of styles) {
+    const cat = s.category || 'OTHER'
+    counts.set(cat, (counts.get(cat) ?? 0) + 1)
+  }
+  return counts
+}
+
+function selectionDerived(styles: Style[]): {
+  selectedKeySet: ReadonlySet<string>
+  selectedCountByCategory: ReadonlyMap<string, number>
+} {
+  return {
+    selectedKeySet: buildSelectedKeySet(styles),
+    selectedCountByCategory: buildSelectedCountByCategory(styles),
+  }
+}
+
 /** Names with 2+ library rows; per-name arrays keep stable refs until `styles` changes. */
 function buildDuplicatesByName(styles: Style[]): Map<string, readonly Style[]> {
   const buckets = new Map<string, Style[]>()
@@ -251,11 +279,35 @@ function buildStyleSearchText(style: Style): string {
   return [nameSearchText(style), cleanDescription].filter(Boolean).join(' ').toLowerCase()
 }
 
-export function matchesSearch(style: Style, rawQuery: string): boolean {
+/** Module snapshot so filters can hit precomputed haystacks without a store circular read. */
+let searchTextByKeySnapshot: ReadonlyMap<string, string> = new Map()
+
+function buildSearchTextByKey(styles: Style[]): ReadonlyMap<string, string> {
+  const map = new Map<string, string>()
+  for (const s of styles) {
+    map.set(styleRowKey(s), buildStyleSearchText(s))
+  }
+  searchTextByKeySnapshot = map
+  return map
+}
+
+/** AND-token match against a lowercased haystack (empty query matches all). */
+function matchSearchTokens(haystack: string, rawQuery: string): boolean {
   const query = rawQuery.trim().toLowerCase()
   if (!query) return true
-  const haystack = buildStyleSearchText(style)
-  return query.split(/\s+/).filter(Boolean).every(token => haystack.includes(token))
+  return query.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token))
+}
+
+export function matchesSearch(style: Style, rawQuery: string): boolean {
+  const key = styleRowKey(style)
+  const cached = searchTextByKeySnapshot.get(key)
+  const haystack = cached !== undefined ? cached : buildStyleSearchText(style)
+  return matchSearchTokens(haystack, rawQuery)
+}
+
+/** Same AND-token semantics as matchesSearch; looks up precomputed haystack by styleRowKey. */
+export function matchesSearchKey(key: string, rawQuery: string): boolean {
+  return matchSearchTokens(searchTextByKeySnapshot.get(key) ?? '', rawQuery)
 }
 
 /** First occurrence wins; use only when the active source is "All sources". */
@@ -306,6 +358,10 @@ interface StylesStore {
   selectedStyles: Style[]
   /** styleRowKey set for `selectedStyles`; rebuilt in the same set() as selection. */
   selectedKeySet: ReadonlySet<string>
+  /** Category → selected row count; rebuilt in the same set() as selectedKeySet. */
+  selectedCountByCategory: ReadonlyMap<string, number>
+  /** styleRowKey → lowercased search haystack; rebuilt only when `styles` change. */
+  searchTextByKey: ReadonlyMap<string, string>
   /** Name → rows sharing that name (length ≥ 2); rebuilt when `styles` changes. */
   duplicatesByName: ReadonlyMap<string, readonly Style[]>
   /** Cache-bust versions keyed by styleRowKey; hydrated once from sg_thumb_v_* LS keys. */
@@ -440,7 +496,7 @@ export function filterFavoriteStyles(
 ): Style[] {
   const bySource = (s: Style) => !activeSource || s.source_file === activeSource
   let favStyles = styles.filter(
-    (s) => favorites.has(s.name) && bySource(s) && matchesSearch(s, search),
+    (s) => favorites.has(s.name) && bySource(s) && matchesSearchKey(styleRowKey(s), search),
   )
   if (!activeSource) favStyles = dedupeStylesByNameForAllSources(favStyles)
   return favStyles
@@ -467,7 +523,7 @@ export function selectFilteredStyles(
     return recentNames
       .map(name => styles.find(s => s.name === name && bySource(s)))
       .filter(Boolean)
-      .filter(s => matchesSearch(s as Style, search)) as Style[]
+      .filter(s => matchesSearchKey(styleRowKey(s as Style), search)) as Style[]
   }
 
   if (activeCategory === 'presets') {
@@ -484,12 +540,12 @@ export function selectFilteredStyles(
     return order
       .map(name => styles.find(s => s.name === name && bySource(s)))
       .filter(Boolean)
-      .filter(s => matchesSearch(s as Style, search)) as Style[]
+      .filter(s => matchesSearchKey(styleRowKey(s as Style), search)) as Style[]
   }
 
   let filtered = styles.filter(s => {
     const matchCat = !activeCategory || (s.category || 'OTHER') === activeCategory
-    return bySource(s) && matchCat && matchesSearch(s, search)
+    return bySource(s) && matchCat && matchesSearchKey(styleRowKey(s), search)
   })
 
   if (!activeSource) {
@@ -535,6 +591,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   sources: [],
   selectedStyles: [],
   selectedKeySet: new Set(),
+  selectedCountByCategory: new Map(),
+  searchTextByKey: new Map(),
   duplicatesByName: new Map(),
   thumbVersions: loadThumbVersionsFromLs(),
   conflicts: [],
@@ -609,6 +667,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       activeSource,
       favorites,
       duplicatesByName: buildDuplicatesByName(normalized),
+      searchTextByKey: buildSearchTextByKey(normalized),
     }
     if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
       patch.activeCategory = null
@@ -670,7 +729,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       const nextSelected = selectedStyles.filter(s => !removeKeys.has(styleRowKey(s)))
       set({
         selectedStyles: nextSelected,
-        selectedKeySet: buildSelectedKeySet(nextSelected),
+        ...selectionDerived(nextSelected),
       })
       catStyles.forEach((style) => {
         sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
@@ -686,7 +745,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const nextSelected = [...selectedStyles, ...toAdd]
     set({
       selectedStyles: nextSelected,
-      selectedKeySet: buildSelectedKeySet(nextSelected),
+      ...selectionDerived(nextSelected),
     })
     toAdd.forEach((style) => {
       // Bulk: bump usage.last_used, but not client Recent MRU (intentional; see Recent P1/P2).
@@ -724,8 +783,10 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
   isFavorite: (name) => get().favorites.has(name),
   addToRecent: (name) => {
-    const recent = [name, ...get().recentNames.filter(n => n !== name)]
-      .slice(0, RECENT_CAP)
+    const prev = get().recentNames
+    // Already at head — keep the same array ref (Sidebar Recent badge skips no-op).
+    if (prev[0] === name) return
+    const recent = [name, ...prev.filter((n) => n !== name)].slice(0, RECENT_CAP)
     localStorage.setItem('sg_v2_recent', JSON.stringify(recent))
     set({ recentNames: recent })
   },
@@ -750,7 +811,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       const nextSelected = selectedStyles.filter(s => styleRowKey(s) !== key)
       set({
         selectedStyles: nextSelected,
-        selectedKeySet: buildSelectedKeySet(nextSelected),
+        ...selectionDerived(nextSelected),
         styleContributors: nextContributors,
       })
       sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
@@ -760,7 +821,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       const nextSelected = [...selectedStyles, style]
       set({
         selectedStyles: nextSelected,
-        selectedKeySet: buildSelectedKeySet(nextSelected),
+        ...selectionDerived(nextSelected),
         styleContributors: {
           ...styleContributors,
           [style.name]: new Set([...existing, 'manual']),
@@ -780,7 +841,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
   setSelectedStyles: (styles: Style[]) => set({
     selectedStyles: styles,
-    selectedKeySet: buildSelectedKeySet(styles),
+    ...selectionDerived(styles),
   }),
   clearAll: () => {
     const { selectedStyles } = get()
@@ -790,6 +851,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     set({
       selectedStyles: [],
       selectedKeySet: new Set(),
+      selectedCountByCategory: new Map(),
       conflicts: [],
       activePresetName: null,
       styleContributors: {},
@@ -799,6 +861,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     set({
       selectedStyles: [],
       selectedKeySet: new Set(),
+      selectedCountByCategory: new Map(),
       conflicts: [],
       activeWildcards: [],
       activePresetName: null,
@@ -936,6 +999,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         return {
           styles,
           duplicatesByName: buildDuplicatesByName(styles),
+          searchTextByKey: buildSearchTextByKey(styles),
         }
       })
     } catch {
@@ -959,6 +1023,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
   },
   incrementUsage: (name: string) => {
+    if (!name) return
     const counts = { ...get().usageCounts }
     counts[name] = (counts[name] || 0) + 1
     set({ usageCounts: counts })
@@ -1078,14 +1143,14 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         set({
           presets: data.presets,
           selectedStyles: nextSelected,
-          selectedKeySet: buildSelectedKeySet(nextSelected),
+          ...selectionDerived(nextSelected),
           styleContributors: nextContributors,
           ...(get().activePresetName === name ? { activePresetName: null } : {}),
         })
       } else {
         set({
           selectedStyles: nextSelected,
-          selectedKeySet: buildSelectedKeySet(nextSelected),
+          ...selectionDerived(nextSelected),
           styleContributors: nextContributors,
         })
         if (get().activePresetName === name) {
@@ -1202,7 +1267,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
     set({
       selectedStyles: selected,
-      selectedKeySet: buildSelectedKeySet(selected),
+      ...selectionDerived(selected),
       activePresetName: name,
       styleContributors: nextContributors,
     })
@@ -1275,7 +1340,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     set({
       selectedStyles: nextSelected,
-      selectedKeySet: buildSelectedKeySet(nextSelected),
+      ...selectionDerived(nextSelected),
       activeWildcards: nextActiveWildcards,
       styleContributors: nextContributors,
     })
@@ -1320,8 +1385,9 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const patch: Partial<StylesStore> = {
       styles,
       selectedStyles,
-      selectedKeySet: buildSelectedKeySet(selectedStyles),
+      ...selectionDerived(selectedStyles),
       duplicatesByName: buildDuplicatesByName(styles),
+      searchTextByKey: buildSearchTextByKey(styles),
     }
 
     // favorites / recent / usage are name-keyed — only drop the name when no
@@ -1371,6 +1437,16 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
   categories: () => {
     const { styles, activeSource, categoryOrder } = get()
+    const hit = categoryListCache
+    if (
+      hit &&
+      hit.styles === styles &&
+      hit.activeSource === activeSource &&
+      hit.categoryOrder === categoryOrder
+    ) {
+      return hit.list
+    }
+
     const filtered = activeSource
       ? styles.filter(s => s.source_file === activeSource)
       : styles
@@ -1380,61 +1456,106 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     // When specific source selected — always alphabetical
     // Saved category order only applies to All Sources view
+    let list: string[]
     if (activeSource) {
-      return all.sort()
-    }
+      list = all.sort()
+    } else {
+      // Only use saved order if it was saved for All Sources context
+      // (contains most of the current categories)
+      const allSorted = all.sort()
+      if (categoryOrder.length === 0) {
+        list = allSorted
+      } else {
+        const savedForSource = localStorage.getItem('sg_v2_category_order_source')
+        if (savedForSource !== 'all') {
+          list = allSorted
+        } else {
+          const relevantOrder = categoryOrder.filter(c => all.includes(c))
+          const coverage = relevantOrder.length / all.length
 
-    // Only use saved order if it was saved for All Sources context
-    // (contains most of the current categories)
-    const allSorted = all.sort()
-    if (categoryOrder.length === 0) return allSorted
-
-    const savedForSource = localStorage.getItem('sg_v2_category_order_source')
-    if (savedForSource !== 'all' && !activeSource) {
-      return allSorted
-    }
-
-    const relevantOrder = categoryOrder.filter(c => all.includes(c))
-    const coverage = relevantOrder.length / all.length
-
-    // If saved order covers less than 80% of current categories — ignore it
-    if (coverage < 0.8) {
-      if (!categoryOrderCoverageToastShown) {
-        categoryOrderCoverageToastShown = true
-        // categories() is called during render — defer store writes
-        queueMicrotask(() => {
-          get().showToast('Category order reset — new categories detected', 'info')
-        })
+          // If saved order covers less than 80% of current categories — ignore it
+          if (coverage < 0.8) {
+            if (!categoryOrderCoverageToastShown) {
+              categoryOrderCoverageToastShown = true
+              // categories() is called during render — defer store writes
+              queueMicrotask(() => {
+                get().showToast('Category order reset — new categories detected', 'info')
+              })
+            }
+            list = allSorted
+          } else {
+            categoryOrderCoverageToastShown = false
+            const rest = all.filter(c => !relevantOrder.includes(c)).sort()
+            list = [...relevantOrder, ...rest]
+          }
+        }
       }
-      return allSorted
     }
-    categoryOrderCoverageToastShown = false
 
-    const rest = all.filter(c => !relevantOrder.includes(c)).sort()
-    return [...relevantOrder, ...rest]
+    categoryListCache = { styles, activeSource, categoryOrder, list }
+    return list
   }
 }))
 
-/** Rebuild selectedKeySet when selectedStyles changes (incl. raw setState bypasses). */
+/** Keep searchTextByKey (+ module snapshot) aligned when styles change via raw setState. */
 useStylesStore.subscribe((state, prev) => {
-  if (state.selectedStyles === prev.selectedStyles) return
-  const next = buildSelectedKeySet(state.selectedStyles)
-  const cur = state.selectedKeySet
-  if (cur.size === next.size) {
-    let same = true
-    for (const key of next) {
-      if (!cur.has(key)) {
-        same = false
+  if (state.styles === prev.styles) return
+  const map = state.searchTextByKey
+  if (map.size === state.styles.length) {
+    let ok = true
+    for (const s of state.styles) {
+      if (!map.has(styleRowKey(s))) {
+        ok = false
         break
       }
     }
-    if (same) return
+    if (ok) {
+      searchTextByKeySnapshot = map
+      return
+    }
   }
-  useStylesStore.setState({ selectedKeySet: next })
+  useStylesStore.setState({ searchTextByKey: buildSearchTextByKey(state.styles) })
+})
+
+/** Rebuild selectedKeySet + selectedCountByCategory when selectedStyles changes (incl. raw setState bypasses). */
+useStylesStore.subscribe((state, prev) => {
+  if (state.selectedStyles === prev.selectedStyles) return
+  const derived = selectionDerived(state.selectedStyles)
+  const cur = state.selectedKeySet
+  const next = derived.selectedKeySet
+  let keysSame = cur.size === next.size
+  if (keysSame) {
+    for (const key of next) {
+      if (!cur.has(key)) {
+        keysSame = false
+        break
+      }
+    }
+  }
+  const curCounts = state.selectedCountByCategory
+  const nextCounts = derived.selectedCountByCategory
+  let countsSame = curCounts.size === nextCounts.size
+  if (countsSame) {
+    for (const [cat, n] of nextCounts) {
+      if (curCounts.get(cat) !== n) {
+        countsSame = false
+        break
+      }
+    }
+  }
+  if (keysSame && countsSame) return
+  useStylesStore.setState({
+    selectedKeySet: next,
+    selectedCountByCategory: nextCounts,
+  })
 })
 
 export function useIsSelected(key: string): boolean {
   return useStylesStore((s) => s.selectedKeySet.has(key))
+}
+
+export function useCategorySelectedCount(category: string): number {
+  return useStylesStore((s) => s.selectedCountByCategory.get(category) ?? 0)
 }
 
 export function useStyleDuplicates(name: string): readonly Style[] {
