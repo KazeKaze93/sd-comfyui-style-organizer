@@ -6,12 +6,21 @@ import {
   FAVORITES_VIEW,
   RECENT_VIEW,
   filterFavoriteStyles,
-  getCategoryColor,
   selectFilteredStyles,
+  useCategoryColor,
   useStylesStore,
 } from '../store/stylesStore'
 import { useShallow } from 'zustand/react/shallow'
 import { WildcardCategoryMenu } from './WildcardCategoryMenu'
+
+function CategoryName({ category }: { category: string }) {
+  const color = useCategoryColor(category)
+  return (
+    <span className="flex-1 truncate" style={{ color }}>
+      {category}
+    </span>
+  )
+}
 
 export function Sidebar() {
   const {
@@ -36,6 +45,7 @@ export function Sidebar() {
       search: s.search,
     }))
   )
+  const allColor = useCategoryColor('All')
   const [catMenu, setCatMenu] = useState<{
     x: number
     y: number
@@ -103,7 +113,7 @@ export function Sidebar() {
           />
         )}
         <span className="relative z-10 flex items-center gap-2 min-w-0">
-          <span className="truncate" style={{ color: getCategoryColor('All') }}>All</span>
+          <span className="truncate" style={{ color: allColor }}>All</span>
         </span>
         <span className="relative z-10 text-xs opacity-60 shrink-0">
           {count(null)}
@@ -208,9 +218,7 @@ export function Sidebar() {
                   />
                 )}
                 <span className="flex items-center gap-2 relative z-10">
-                  <span className="flex-1 truncate" style={{ color: getCategoryColor(cat) }}>
-                    {cat}
-                  </span>
+                  <CategoryName category={cat} />
                   <span className="text-xs opacity-60 shrink-0">{count(cat)}</span>
                 </span>
               </button>
@@ -227,7 +235,7 @@ export function Sidebar() {
           >
             <button
               type="button"
-              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => {
                 clearFavorites()
                 setFavMenu(null)
@@ -247,7 +255,7 @@ export function Sidebar() {
           >
             <button
               type="button"
-              className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-sg-accent/20 transition-colors"
+              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
               onClick={() => {
                 clearRecent()
                 setRecentMenu(null)
