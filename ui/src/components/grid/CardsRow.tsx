@@ -12,6 +12,24 @@ export type CardsRowProps = {
   renderCard?: (style: Style) => ReactNode
 }
 
+function cardsRowPropsEqual(prev: CardsRowProps, next: CardsRowProps): boolean {
+  if (
+    prev.columns !== next.columns ||
+    prev.compactMode !== next.compactMode ||
+    prev.windowed !== next.windowed ||
+    prev.renderCard !== next.renderCard ||
+    prev.styles.length !== next.styles.length
+  ) {
+    return false
+  }
+  // Prefer reference equality; fall back to row-key identity for rebuilt slices.
+  if (prev.styles === next.styles) return true
+  for (let i = 0; i < prev.styles.length; i += 1) {
+    if (prev.styles[i] !== next.styles[i]) return false
+  }
+  return true
+}
+
 /** Column gap only; vertical gap is padding-bottom on the virtual row. */
 export const CardsRow = memo(function CardsRow({
   styles,
@@ -36,4 +54,4 @@ export const CardsRow = memo(function CardsRow({
       )}
     </div>
   )
-})
+}, cardsRowPropsEqual)

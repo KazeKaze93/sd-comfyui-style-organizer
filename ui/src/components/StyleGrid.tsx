@@ -193,6 +193,12 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
     [],
   )
 
+  /** Flat single-group view — stable identity so VirtualStyleGrid skips row rebuilds. */
+  const flatCategoryGroups = useMemo((): Array<[string, Style[]]> => {
+    if (!activeCategory || activeCategory === 'presets') return []
+    return [[activeCategory, filtered]]
+  }, [activeCategory, filtered])
+
   const renderSliceCard = (style: Style) => {
     const checked = sliceSelection.includes(style.name)
     const label = style.name.includes('_')
@@ -333,10 +339,9 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
 
   // Specific category / Favorites / Recent — flat virtualized grid, no section headers.
   if (activeCategory) {
-    const groups: Array<[string, Style[]]> = [[activeCategory, filtered]]
     return (
       <VirtualStyleGrid
-        groups={groups}
+        groups={flatCategoryGroups}
         collapsedCategories={collapsedCategories}
         compactMode={compactMode}
         windowed={windowed}

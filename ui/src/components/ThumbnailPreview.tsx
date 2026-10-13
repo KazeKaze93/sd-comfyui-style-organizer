@@ -1,11 +1,15 @@
 import { createPortal } from 'react-dom'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Style } from '../bridge'
 import { styleRowKey, useStylesStore, useThumbVersion } from '../store/stylesStore'
 
 interface Props {
   style: Style
   children: React.ReactNode
+}
+
+function thumbPreviewPropsEqual(prev: Props, next: Props): boolean {
+  return prev.style === next.style && prev.children === next.children
 }
 
 /** Memo: toggle path was ThumbnailPreview×144 with StyleCard×0 (profile P). */
@@ -23,14 +27,17 @@ export const ThumbnailPreview = memo(function ThumbnailPreview({ style, children
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const activeSource = useStylesStore((s) => s.activeSource)
-  const sourceForThumb = style.source_file || activeSource || ''
-  const thumbUrl = `/style_grid/thumbnail?name=${encodeURIComponent(style.name)}${
-    sourceForThumb ? `&source=${encodeURIComponent(sourceForThumb)}` : ''
-  }&v=${thumbVersion}`
+  // activeSource via getState — avoid per-card subscription on scroll remounts.
+  const thumbUrl = useMemo(() => {
+    const sourceForThumb =
+      style.source_file || useStylesStore.getState().activeSource || ''
+    return `/style_grid/thumbnail?name=${encodeURIComponent(style.name)}${
+      sourceForThumb ? `&source=${encodeURIComponent(sourceForThumb)}` : ''
+    }&v=${thumbVersion}`
+  }, [style.name, style.source_file, thumbVersion])
   const imgOk = loadedUrl === thumbUrl
 
-  const handleEnter = () => {
+  const handleEnter = useCallback(() => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
     enterTimer.current = setTimeout(() => {
       if (containerRef.current) {
@@ -46,15 +53,15 @@ export const ThumbnailPreview = memo(function ThumbnailPreview({ style, children
       }
       setVisible(true)
     }, 300)
-  }
+  }, [])
 
-  const handleLeave = () => {
+  const handleLeave = useCallback(() => {
     if (enterTimer.current) clearTimeout(enterTimer.current)
     leaveTimer.current = setTimeout(() => {
       setVisible(false)
       setLoadedUrl(null)
     }, 100)
-  }
+  }, [])
 
   const displayName = style.name.includes('_')
     ? style.name.split('_').slice(1).join(' ')
@@ -123,4 +130,4 @@ export const ThumbnailPreview = memo(function ThumbnailPreview({ style, children
       )}
     </div>
   )
-})
+}, thumbPreviewPropsEqual)

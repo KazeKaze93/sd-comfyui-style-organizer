@@ -13,10 +13,8 @@ import {
 import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
 import {
+  getCategoryColor,
   styleRowKey,
-  useCategoryColor,
-  useIsSelected,
-  useStyleDuplicates,
   useStylesStore,
 } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
@@ -26,6 +24,7 @@ import { ConfirmInputDialog } from './ConfirmInputDialog'
 import { EditStyleDialog } from './EditStyleDialog'
 
 const MENU_ICON_SIZE = 14
+const EMPTY_DUPLICATES: readonly Style[] = []
 
 interface Props {
   style: Style
@@ -45,23 +44,25 @@ function nextDuplicateName(baseName: string, catalog: Style[]): string {
   return `${baseName} copy ${n}`
 }
 
+function styleCardPropsEqual(prev: Props, next: Props): boolean {
+  return (
+    prev.windowed === next.windowed &&
+    prev.style === next.style
+  )
+}
+
 export const StyleCard = memo(function StyleCard({ style, windowed = false }: Props) {
   const key = useMemo(() => styleRowKey(style), [style])
-  const isSelected = useIsSelected(key)
-  const duplicates = useStyleDuplicates(style.name)
-  const usageCount = useStylesStore(s => s.usageCounts[style.name] || 0)
-  const activeSource = useStylesStore(s => s.activeSource)
-  const fav = useStylesStore(s => s.favorites.has(style.name))
-  const {
-    toggleStyle, toggleFavorite, showToast,
-    setActiveSource,
-  } = useStylesStore(
-    useShallow(s => ({
-      toggleStyle: s.toggleStyle,
-      toggleFavorite: s.toggleFavorite,
-      showToast: s.showToast,
-      setActiveSource: s.setActiveSource,
-    }))
+  // One shallow subscription for scroll-remount path (profile: useStore ×N).
+  // Actions + activeSource read via getState — no per-card action subscriptions.
+  const { isSelected, duplicates, usageCount, fav, borderColor } = useStylesStore(
+    useShallow((s) => ({
+      isSelected: s.selectedKeySet.has(key),
+      duplicates: s.duplicatesByName.get(style.name) ?? EMPTY_DUPLICATES,
+      usageCount: s.usageCounts[style.name] || 0,
+      fav: s.favorites.has(style.name),
+      borderColor: getCategoryColor(style.category || 'OTHER', s.themeMode),
+    })),
   )
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
@@ -69,6 +70,8 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
   const [moveOpen, setMoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
+  /** Hidden file input is mount-heavy (profile initInput); arm only on upload click. */
+  const [fileInputArmed, setFileInputArmed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Grid prop is the catalog row; saveStyle refetches styles[] so post-edit
   // fields stay fresh without a selectedStyles subscription.
@@ -91,7 +94,13 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
     ? displayStyle.name.split('_').slice(1).join(' ')
     : displayStyle.name
 
-  const borderColor = useCategoryColor(displayStyle.category || 'OTHER')
+  // Stable action refs — no subscription (scroll remount fan-out).
+  const { showToast, toggleStyle, setActiveSource } = useStylesStore.getState()
+
+  useEffect(() => {
+    if (!fileInputArmed) return
+    fileInputRef.current?.click()
+  }, [fileInputArmed])
 
   useEffect(() => {
     if (!menuPos) return
@@ -131,14 +140,15 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
             setMenuPos({ x: e.clientX, y: e.clientY })
           }}
           onClick={(e) => {
-            if (hasMultipleSources && !activeSource && !isSelected) {
+            const store = useStylesStore.getState()
+            if (hasMultipleSources && !store.activeSource && !isSelected) {
               const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
               const left = Math.min(rect.right + 8, window.innerWidth - 280)
               const top = Math.max(8, rect.top)
               setPickerPos({ x: left, y: top })
               return
             }
-            toggleStyle(style)
+            store.toggleStyle(style)
           }}
           className={`
             relative cursor-pointer rounded-lg border ${windowed ? 'p-2' : 'p-3'}
@@ -196,13 +206,19 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
           >
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { toggleStyle(style); setMenuPos(null) }}
+              onClick={() => {
+                useStylesStore.getState().toggleStyle(style)
+                setMenuPos(null)
+              }}
             >
               {isSelected ? '✕ Deselect' : '✓ Select'}
             </button>
             <button
               className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { toggleFavorite(style.name); setMenuPos(null) }}
+              onClick={() => {
+                useStylesStore.getState().toggleFavorite(style.name)
+                setMenuPos(null)
+              }}
             >
               <Star size={MENU_ICON_SIZE} fill={fav ? 'currentColor' : 'none'} />
               {fav ? 'Remove from Favorites' : 'Add to Favorites'}
@@ -214,9 +230,9 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
                 setMenuPos(null)
                 try {
                   await navigator.clipboard.writeText(displayStyle.prompt)
-                  showToast('Prompt copied', 'success')
+                  useStylesStore.getState().showToast('Prompt copied', 'success')
                 } catch {
-                  showToast('Copy failed', 'error')
+                  useStylesStore.getState().showToast('Copy failed', 'error')
                 }
               }}
             >
@@ -231,7 +247,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
               onClick={() => {
                 if (displayStyle.read_only) {
                   setMenuPos(null)
-                  showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.', 'info')
+                  useStylesStore.getState().showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.', 'info')
                   return
                 }
                 setMenuPos(null); setEditOpen(true)
@@ -256,7 +272,7 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
               onClick={() => {
                 if (displayStyle.read_only) {
                   setMenuPos(null)
-                  showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.', 'info')
+                  useStylesStore.getState().showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.', 'info')
                   return
                 }
                 setMenuPos(null); setMoveOpen(true)
@@ -269,7 +285,14 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
             <div className="h-px my-1 bg-sg-border" />
             <button
               className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { setMenuPos(null); fileInputRef.current?.click() }}
+              onClick={() => {
+                setMenuPos(null)
+                if (fileInputArmed) {
+                  fileInputRef.current?.click()
+                } else {
+                  setFileInputArmed(true)
+                }
+              }}
             >
               <ImagePlus size={MENU_ICON_SIZE} /> Upload preview image
             </button>
@@ -611,58 +634,60 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
         </Portal>
       )}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          e.target.value = ''  // allow re-selecting the same file later
-          if (!file) return
-          if (file.size > 10 * 1024 * 1024) {
-            showToast('Image must be under 10MB', 'error')
-            return
-          }
-          const reader = new FileReader()
-          reader.onload = async () => {
-            try {
-              const res = await fetch('/style_grid/thumbnail/upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  name: displayStyle.name,
-                  source: displayStyle.source_file,
-                  image: reader.result,
-                }),
-              })
-              const data = await res.json().catch(() => ({}))
-              if (!res.ok || data.ok === false || data.error) {
-                showToast(
-                  typeof data.error === 'string' && data.error
-                    ? data.error
-                    : 'Upload failed',
-                  'error',
-                )
-                return
-              }
-              const version = String(Date.now())
-              useStylesStore.getState().bumpThumbVersion(key, version)
-              // App's single onHostMessage also bumps via SG_THUMB_DONE.
-              window.postMessage(
-                { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
-                '*',
-              )
-              void useStylesStore.getState().loadThumbnails()
-              showToast('Preview updated', 'success')
-            } catch {
-              showToast('Upload failed', 'error')
+      {fileInputArmed && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''  // allow re-selecting the same file later
+            if (!file) return
+            if (file.size > 10 * 1024 * 1024) {
+              showToast('Image must be under 10MB', 'error')
+              return
             }
-          }
-          reader.onerror = () => showToast('Failed to read image file', 'error')
-          reader.readAsDataURL(file)
-        }}
-      />
+            const reader = new FileReader()
+            reader.onload = async () => {
+              try {
+                const res = await fetch('/style_grid/thumbnail/upload', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    name: displayStyle.name,
+                    source: displayStyle.source_file,
+                    image: reader.result,
+                  }),
+                })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok || data.ok === false || data.error) {
+                  showToast(
+                    typeof data.error === 'string' && data.error
+                      ? data.error
+                      : 'Upload failed',
+                    'error',
+                  )
+                  return
+                }
+                const version = String(Date.now())
+                useStylesStore.getState().bumpThumbVersion(key, version)
+                // App's single onHostMessage also bumps via SG_THUMB_DONE.
+                window.postMessage(
+                  { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
+                  '*',
+                )
+                void useStylesStore.getState().loadThumbnails()
+                showToast('Preview updated', 'success')
+              } catch {
+                showToast('Upload failed', 'error')
+              }
+            }
+            reader.onerror = () => showToast('Failed to read image file', 'error')
+            reader.readAsDataURL(file)
+          }}
+        />
+      )}
     </>
   )
-})
+}, styleCardPropsEqual)
