@@ -39,6 +39,10 @@ export const HEADER_ROW_HEIGHT = 28
 /** Profile (scroll N=5000): StyleCard/ThumbnailPreview remounts dominate — keep overscan tight. */
 export const GRID_VIRTUAL_OVERSCAN = 2
 
+/** Token focus ring — keyboard-only (`:focus-visible`), matches slice overlay buttons. */
+export const GRID_FOCUS_RING_CLASS =
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent'
+
 /** @deprecated Prefer CARD_ROW_HEIGHT_* / HEADER_ROW_HEIGHT. */
 export const GRID_HEADER_ROW_ESTIMATE_PX = HEADER_ROW_HEIGHT + GRID_GAP_NORMAL_PX
 /** @deprecated Prefer CARD_ROW_HEIGHT_COMPACT_PX. */

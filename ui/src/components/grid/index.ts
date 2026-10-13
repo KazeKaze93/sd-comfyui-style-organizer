@@ -21,6 +21,8 @@ export {
   CARD_ROW_HEIGHT_WINDOWED_PX,
   HEADER_ROW_HEIGHT,
   VIRTUALIZER_TEST_INITIAL_RECT,
+  GRID_VIRTUAL_OVERSCAN,
+  GRID_FOCUS_RING_CLASS,
   columnsForWidth,
   minCardWidthPx,
   gridGapPx,
@@ -32,3 +34,13 @@ export {
 export { VirtualStyleGrid, type VirtualStyleGridProps } from './VirtualStyleGrid'
 export { CategoryHeaderRow, type CategoryHeaderRowProps } from './CategoryHeaderRow'
 export { CardsRow, type CardsRowProps } from './CardsRow'
+export {
+  CELL_ROW_ATTR,
+  CELL_COL_ATTR,
+  cellSelector,
+  findCellElement,
+  focusCell,
+  readCellPos,
+  dispatchCellContextMenu,
+  cellTabIndex,
+} from './gridCellDom'

@@ -14,6 +14,10 @@ import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 import { PresetList } from './PresetList'
 import { autoFillGridClass, VirtualStyleGrid } from './grid'
 
+/** Stable stubs — Favorites/Recent store churn must not invalidate All/category memos. */
+const EMPTY_FAVORITES = new Set<string>()
+const EMPTY_RECENT: string[] = []
+
 function emptyCategoryLabel(cat: string): string {
   if (cat === FAVORITES_VIEW) return 'Favorites'
   if (cat === RECENT_VIEW) return 'Recent'
@@ -79,7 +83,11 @@ function EmptyStylesNotice({
   )
 }
 
-/** Memo: App subscribes to selectedStyles and would otherwise re-run grouping. */
+/**
+ * Memo: App selectedStyles must not re-run grouping.
+ * Profile (toggle N=5000): always-on recentNames/favorites made addToRecent
+ * rebuild selectFilteredStyles + VirtualStyleGrid on every select click.
+ */
 export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowed?: boolean }) {
   const {
     styles, search, activeCategory, activeSource,
@@ -93,36 +101,40 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
     selectAllSlice, clearSliceSelection,
     setSearch, setActiveSource, setCategory,
   } = useStylesStore(
-    useShallow(s => ({
-      styles: s.styles,
-      search: s.search,
-      activeCategory: s.activeCategory,
-      activeSource: s.activeSource,
-      favorites: s.favorites,
-      recentNames: s.recentNames,
-      presets: s.presets,
-      compactMode: s.compactMode,
-      collapsedCategories: s.collapsedCategories,
-      toggleCollapse: s.toggleCollapse,
-      selectAllInCategory: s.selectAllInCategory,
-      categories: s.categories,
-      // subscribe so sidebar reorder re-renders group order
-      categoryOrder: s.categoryOrder,
-      sliceMode: s.sliceMode,
-      sliceSelection: s.sliceSelection,
-      exitSliceMode: s.exitSliceMode,
-      toggleSliceSelection: s.toggleSliceSelection,
-      selectAllSlice: s.selectAllSlice,
-      clearSliceSelection: s.clearSliceSelection,
-      setSearch: s.setSearch,
-      setActiveSource: s.setActiveSource,
-      setCategory: s.setCategory,
-    }))
+    useShallow((s) => {
+      const cat = s.activeCategory
+      return {
+        styles: s.styles,
+        search: s.search,
+        activeCategory: cat,
+        activeSource: s.activeSource,
+        favorites: cat === FAVORITES_VIEW ? s.favorites : EMPTY_FAVORITES,
+        recentNames: cat === RECENT_VIEW ? s.recentNames : EMPTY_RECENT,
+        presets: s.presets,
+        compactMode: s.compactMode,
+        collapsedCategories: s.collapsedCategories,
+        toggleCollapse: s.toggleCollapse,
+        selectAllInCategory: s.selectAllInCategory,
+        categories: s.categories,
+        // subscribe so sidebar reorder re-renders group order
+        categoryOrder: s.categoryOrder,
+        sliceMode: s.sliceMode,
+        sliceSelection: s.sliceSelection,
+        exitSliceMode: s.exitSliceMode,
+        toggleSliceSelection: s.toggleSliceSelection,
+        selectAllSlice: s.selectAllSlice,
+        clearSliceSelection: s.clearSliceSelection,
+        setSearch: s.setSearch,
+        setActiveSource: s.setActiveSource,
+        setCategory: s.setCategory,
+      }
+    }),
   )
   const [catMenu, setCatMenu] = useState<{
     x: number
     y: number
     cat: string
+    restoreFocusTo: HTMLElement | null
   } | null>(null)
 
   const filtered = useMemo(
@@ -189,7 +201,8 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
   }, [filtered, categories, categoryOrder])
 
   const handleHeaderContextMenu = useCallback(
-    (cat: string, x: number, y: number) => setCatMenu({ x, y, cat }),
+    (cat: string, x: number, y: number, restoreFocusTo: HTMLElement) =>
+      setCatMenu({ x, y, cat, restoreFocusTo }),
     [],
   )
 
@@ -371,6 +384,7 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
           x={catMenu.x}
           y={catMenu.y}
           onClose={() => setCatMenu(null)}
+          restoreFocusTo={catMenu.restoreFocusTo}
         />
       )}
     </VirtualStyleGrid>
