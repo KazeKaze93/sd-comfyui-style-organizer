@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { sendToHost, type Style } from '../bridge'
 import { buildSliceSpec } from '../lib/wildcardSlice'
@@ -188,6 +188,11 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional categories() dep
   }, [filtered, categories, categoryOrder])
 
+  const handleHeaderContextMenu = useCallback(
+    (cat: string, x: number, y: number) => setCatMenu({ x, y, cat }),
+    [],
+  )
+
   const renderSliceCard = (style: Style) => {
     const checked = sliceSelection.includes(style.name)
     const label = style.name.includes('_')
@@ -353,7 +358,7 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
       scrollResetKey={scrollResetKey}
       onToggleCollapse={toggleCollapse}
       onSelectAll={selectAllInCategory}
-      onHeaderContextMenu={(cat, x, y) => setCatMenu({ x, y, cat })}
+      onHeaderContextMenu={handleHeaderContextMenu}
     >
       {catMenu && (
         <WildcardCategoryMenu

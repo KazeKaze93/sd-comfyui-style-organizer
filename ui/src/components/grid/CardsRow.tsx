@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import type { Style } from '../../bridge'
 import { styleRowKey } from '../../store/stylesStore'
 import { StyleCard } from '../StyleCard'
@@ -12,7 +12,8 @@ export type CardsRowProps = {
   renderCard?: (style: Style) => ReactNode
 }
 
-export function CardsRow({
+/** Column gap only; vertical gap is padding-bottom on the virtual row. */
+export const CardsRow = memo(function CardsRow({
   styles,
   columns,
   compactMode,
@@ -35,4 +36,4 @@ export function CardsRow({
       )}
     </div>
   )
-}
+})

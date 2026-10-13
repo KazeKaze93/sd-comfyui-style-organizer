@@ -227,16 +227,12 @@ async function measureScrollTbt(page) {
   const scrollStart = await page.evaluate(() => performance.now())
 
   await page.evaluate(async () => {
-    const gridScroll = Array.from(document.querySelectorAll('div')).find((el) => {
-      const style = getComputedStyle(el)
-      return (
-        style.overflowY === 'auto' &&
-        el.scrollHeight > el.clientHeight + 40 &&
-        el.querySelector('.cursor-pointer.rounded-lg.border')
-      )
-    })
-    if (!gridScroll) throw new Error('grid scroll container not found')
+    // Same element VirtualStyleGrid binds: parent of [data-sg-item-count].
+    const gridRoot = document.querySelector('[data-sg-item-count]')
+    const gridScroll = gridRoot?.parentElement
+    if (!gridScroll) throw new Error('grid scroll container not found (parent of data-sg-item-count)')
     const max = gridScroll.scrollHeight - gridScroll.clientHeight
+    if (max <= 40) throw new Error('grid scroll container not scrollable')
     const steps = 12
     for (let i = 1; i <= steps; i += 1) {
       gridScroll.scrollTop = Math.round((max * i) / steps)

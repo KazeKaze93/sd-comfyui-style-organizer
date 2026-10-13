@@ -4,17 +4,47 @@ export const MIN_CARD_WIDTH_WINDOWED_PX = 110
 export const MIN_CARD_WIDTH_COMPACT_PX = 110
 export const MIN_CARD_WIDTH_COMPACT_WINDOWED_PX = 80
 
-/** Tailwind `gap-2` / `gap-1` in px (default root font size). */
+/** Tailwind `gap-2` / `gap-1` in px (default root font size). Column gap = row gap. */
 export const GRID_GAP_NORMAL_PX = 8
 export const GRID_GAP_COMPACT_PX = 4
 
 /** Named rect so jsdom virtualizer tests have a stable layout box. */
 export const VIRTUALIZER_TEST_INITIAL_RECT = { width: 800, height: 600 } as const
 
-export const GRID_HEADER_ROW_ESTIMATE_PX = 36
-export const GRID_CARD_ROW_ESTIMATE_COMPACT_PX = 44
-export const GRID_CARD_ROW_ESTIMATE_NORMAL_PX = 56
-export const GRID_VIRTUAL_OVERSCAN = 4
+/**
+ * Card chrome heights (border + padding + one truncated line), excluding row gap.
+ * Windowed uses `p-2`/`text-xs` (measured 34px @ 1280 bench); normal/compact
+ * use `p-3`/`text-sm` (measured ~46–48px).
+ */
+export const CARD_HEIGHT_WINDOWED_PX = 34
+export const CARD_HEIGHT_NORMAL_PX = 46
+
+/**
+ * Virtualizer card-row sizes = card height + ROW_GAP (padding-bottom).
+ * ROW_GAP matches column gap: normal fullscreen `gap-2`, compact/windowed `gap-1`.
+ */
+export const CARD_ROW_HEIGHT_NORMAL_PX =
+  CARD_HEIGHT_NORMAL_PX + GRID_GAP_NORMAL_PX
+export const CARD_ROW_HEIGHT_COMPACT_PX =
+  CARD_HEIGHT_NORMAL_PX + GRID_GAP_COMPACT_PX
+export const CARD_ROW_HEIGHT_WINDOWED_PX =
+  CARD_HEIGHT_WINDOWED_PX + GRID_GAP_COMPACT_PX
+
+/**
+ * Header content (py-1 + label/chevron; measured ~28px). estimateSize adds
+ * ROW_GAP via padding-bottom so vertical rhythm matches phase-A CSS gap.
+ */
+export const HEADER_ROW_HEIGHT = 28
+
+/** Profile (scroll N=5000): StyleCard/ThumbnailPreview remounts dominate — keep overscan tight. */
+export const GRID_VIRTUAL_OVERSCAN = 2
+
+/** @deprecated Prefer CARD_ROW_HEIGHT_* / HEADER_ROW_HEIGHT. */
+export const GRID_HEADER_ROW_ESTIMATE_PX = HEADER_ROW_HEIGHT + GRID_GAP_NORMAL_PX
+/** @deprecated Prefer CARD_ROW_HEIGHT_COMPACT_PX. */
+export const GRID_CARD_ROW_ESTIMATE_COMPACT_PX = CARD_ROW_HEIGHT_COMPACT_PX
+/** @deprecated Prefer CARD_ROW_HEIGHT_NORMAL_PX. */
+export const GRID_CARD_ROW_ESTIMATE_NORMAL_PX = CARD_ROW_HEIGHT_NORMAL_PX
 
 export function minCardWidthPx(compactMode: boolean, windowed: boolean): number {
   if (compactMode && windowed) return MIN_CARD_WIDTH_COMPACT_WINDOWED_PX
@@ -31,9 +61,21 @@ export function gridGapPx(compactMode: boolean, windowed: boolean): number {
   return compactMode || windowed ? GRID_GAP_COMPACT_PX : GRID_GAP_NORMAL_PX
 }
 
+/** Alias — row gap equals column gap for phase-A parity. */
+export function rowGapPx(compactMode: boolean, windowed: boolean): number {
+  return gridGapPx(compactMode, windowed)
+}
+
 /** CSS gap utility matching {@link gridGapPx}. */
 export function gridGapClass(compactMode: boolean, windowed: boolean): string {
   return compactMode || windowed ? 'gap-1' : 'gap-2'
+}
+
+/** Fixed card-row estimateSize for the active density. */
+export function cardRowHeightPx(compactMode: boolean, windowed: boolean): number {
+  if (windowed) return CARD_ROW_HEIGHT_WINDOWED_PX
+  if (compactMode) return CARD_ROW_HEIGHT_COMPACT_PX
+  return CARD_ROW_HEIGHT_NORMAL_PX
 }
 
 /**

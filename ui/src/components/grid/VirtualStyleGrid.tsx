@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -24,14 +25,14 @@ import {
 import { CardsRow } from './CardsRow'
 import { CategoryHeaderRow } from './CategoryHeaderRow'
 import {
+  cardRowHeightPx,
   columnsForWidth,
-  GRID_CARD_ROW_ESTIMATE_COMPACT_PX,
-  GRID_CARD_ROW_ESTIMATE_NORMAL_PX,
-  GRID_HEADER_ROW_ESTIMATE_PX,
   GRID_VIRTUAL_OVERSCAN,
+  HEADER_ROW_HEIGHT,
   VIRTUALIZER_TEST_INITIAL_RECT,
   gridGapPx,
   minCardWidthPx,
+  rowGapPx,
 } from './constants'
 
 export type VirtualStyleGridProps = {
@@ -49,15 +50,23 @@ export type VirtualStyleGridProps = {
   children?: ReactNode
 }
 
-function estimateRowSize(row: GridRow | undefined, compactMode: boolean): number {
-  if (!row) return GRID_CARD_ROW_ESTIMATE_NORMAL_PX
-  if (row.kind === 'header') return GRID_HEADER_ROW_ESTIMATE_PX
-  return compactMode
-    ? GRID_CARD_ROW_ESTIMATE_COMPACT_PX
-    : GRID_CARD_ROW_ESTIMATE_NORMAL_PX
+function estimateRowSize(
+  row: GridRow | undefined,
+  compactMode: boolean,
+  windowed: boolean,
+): number {
+  const gap = rowGapPx(compactMode, windowed)
+  if (!row || row.kind === 'cards') {
+    return cardRowHeightPx(compactMode, windowed)
+  }
+  return HEADER_ROW_HEIGHT + gap
 }
 
-export function VirtualStyleGrid({
+/**
+ * Profile (phase-B init N=5000): measureElement ~29 ms self — fixed estimates only.
+ * Memo: avoid remount fan-out when parent chrome re-renders.
+ */
+export const VirtualStyleGrid = memo(function VirtualStyleGrid({
   groups,
   collapsedCategories,
   compactMode,
@@ -89,6 +98,12 @@ export function VirtualStyleGrid({
   )
 
   const stickyIndexes = useMemo(() => headerRowIndexes(rows), [rows])
+
+  // Catalog size for bench/profile readiness (virtualized DOM ≠ N cards).
+  const itemCount = useMemo(
+    () => groups.reduce((n, [, styles]) => n + styles.length, 0),
+    [groups],
+  )
 
   useLayoutEffect(() => {
     const root = rootRef.current
@@ -129,18 +144,26 @@ export function VirtualStyleGrid({
     [stickyIndexes],
   )
 
+  const estimateSize = useCallback(
+    (index: number) => estimateRowSize(rows[index], compactMode, windowed),
+    [rows, compactMode, windowed],
+  )
+
+  // TanStack Virtual returns unstable function identities; React Compiler skips this file.
+  // eslint-disable-next-line react-hooks/incompatible-library -- required virtualizer API
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollElRef.current ?? scrollEl,
-    estimateSize: (index) => estimateRowSize(rows[index], compactMode),
+    estimateSize,
     overscan: GRID_VIRTUAL_OVERSCAN,
     rangeExtractor,
     initialRect: VIRTUALIZER_TEST_INITIAL_RECT,
+    // Fixed row heights — measureElement ResizeObserver thrash caused multi-second scroll TBT.
   })
 
   useEffect(() => {
     virtualizer.measure()
-  }, [columns, compactMode, windowed, rows, virtualizer])
+  }, [columns, compactMode, windowed, virtualizer])
 
   useEffect(() => {
     if (scrollResetKey === undefined) return
@@ -166,11 +189,6 @@ export function VirtualStyleGrid({
   )
 
   const virtualItems = virtualizer.getVirtualItems()
-  // Catalog size for bench/profile readiness (virtualized DOM ≠ N cards).
-  const itemCount = useMemo(
-    () => groups.reduce((n, [, styles]) => n + styles.length, 0),
-    [groups],
-  )
 
   return (
     <div
@@ -199,9 +217,9 @@ export function VirtualStyleGrid({
             <div
               key={virtualRow.key}
               data-index={virtualRow.index}
+              data-sg-row-kind={row.kind}
               role="row"
               aria-rowindex={virtualRow.index + 1}
-              ref={virtualizer.measureElement}
               style={
                 isActiveSticky
                   ? {
@@ -210,12 +228,18 @@ export function VirtualStyleGrid({
                       zIndex: 10,
                       left: 0,
                       width: '100%',
+                      height: `${virtualRow.size}px`,
+                      paddingBottom: `${gapPx}px`,
+                      boxSizing: 'border-box',
                     }
                   : {
                       position: 'absolute',
                       top: 0,
                       left: 0,
                       width: '100%',
+                      height: `${virtualRow.size}px`,
+                      paddingBottom: `${gapPx}px`,
+                      boxSizing: 'border-box',
                       transform: `translateY(${virtualRow.start}px)`,
                     }
               }
@@ -246,4 +270,4 @@ export function VirtualStyleGrid({
       {children}
     </div>
   )
-}
+})
