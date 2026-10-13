@@ -583,12 +583,17 @@ function resolveSelectedForConflicts(selected: Style, live: Style[]): Style {
 }
 
 /** After selection paint — never batch conflicts into the same set() as selection. */
-let conflictsRaf = 0
-function scheduleDetectConflicts(get: () => StylesStore): void {
-  if (conflictsRaf !== 0) {
-    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(conflictsRaf)
-    else clearTimeout(conflictsRaf)
+// Node setTimeout → Timeout; browser rAF → number (tsconfig.test pulls @types/node).
+let conflictsRaf: number | ReturnType<typeof setTimeout> = 0
+function clearConflictsHandle(handle: number | ReturnType<typeof setTimeout>): void {
+  if (typeof handle === 'number' && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(handle)
+  } else {
+    clearTimeout(handle)
   }
+}
+function scheduleDetectConflicts(get: () => StylesStore): void {
+  if (conflictsRaf !== 0) clearConflictsHandle(conflictsRaf)
   const run = () => {
     conflictsRaf = 0
     get().detectConflicts()
@@ -600,8 +605,7 @@ function scheduleDetectConflicts(get: () => StylesStore): void {
 }
 function cancelScheduledDetectConflicts(): void {
   if (conflictsRaf === 0) return
-  if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(conflictsRaf)
-  else clearTimeout(conflictsRaf)
+  clearConflictsHandle(conflictsRaf)
   conflictsRaf = 0
 }
 
