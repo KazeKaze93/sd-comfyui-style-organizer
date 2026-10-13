@@ -1,7 +1,15 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useStylesStore } from '../store/stylesStore'
 
 export function SourceFilter() {
-  const { sources, activeSource, setActiveSource, styles } = useStylesStore()
+  const { sources, activeSource, setActiveSource, styles } = useStylesStore(
+    useShallow((s) => ({
+      sources: s.sources,
+      activeSource: s.activeSource,
+      setActiveSource: s.setActiveSource,
+      styles: s.styles,
+    })),
+  )
   if (sources.length === 0) return null
   const onlySourceIsReadOnly = sources.length === 1 &&
     styles.some(s => s.source_file === sources[0] && s.read_only)

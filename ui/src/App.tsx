@@ -90,19 +90,86 @@ const ToolBtn = ({
   )
 }
 
+function SelectedCountBadge() {
+  const selectedCount = useStylesStore((s) => s.selectedStyles.length)
+  if (selectedCount === 0) return null
+  return (
+    <span className="text-xs text-sg-muted">
+      {selectedCount} selected
+    </span>
+  )
+}
+
+/** Isolated: conflicts set() must not re-render the whole App chrome (profile P). */
+function ConflictsChip() {
+  const [conflictsOpen, setConflictsOpen] = useState(false)
+  const conflicts = useStylesStore((s) => s.conflicts)
+  const toggleStyle = useStylesStore((s) => s.toggleStyle)
+  if (conflicts.length === 0) return null
+
+  return (
+    <Popover open={conflictsOpen} onOpenChange={setConflictsOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${conflicts.length} style conflicts`}
+          className="flex items-center gap-1 px-2 py-1 rounded
+             bg-sg-danger/20 border border-sg-danger/40
+             text-sg-danger-text text-xs
+             motion-safe:animate-pulse"
+        >
+          <AlertTriangle size={14} aria-hidden />
+          {conflicts.length}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-auto min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))] p-3 bg-sg-popover border border-sg-border rounded-lg shadow-xl"
+      >
+        <div className="text-xs font-semibold text-sg-text mb-2">
+          Style Conflicts
+        </div>
+        {conflicts.map((c, i) => {
+          const { selectedStyles, styles } = useStylesStore.getState()
+          const conflictingStyle = selectedStyles.find(s => styleRowKey(s) === c.styleBKey)
+            ?? styles.find(s => styleRowKey(s) === c.styleBKey)
+          return (
+            <div key={i} className="flex items-start justify-between gap-2 py-0.5">
+              <span className="text-xs text-sg-danger-text min-w-0 flex-1 break-words">
+                {c.reason}
+              </span>
+              {conflictingStyle && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleStyle(conflictingStyle)
+                    setConflictsOpen(false)
+                  }}
+                  className="text-xs px-1.5 py-0.5 rounded border
+                    border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20
+                    transition-colors shrink-0"
+                  title={`Remove "${c.styleB}"`}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [newStyleOpen, setNewStyleOpen] = useState(false)
   const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
-  const [conflictsOpen, setConflictsOpen] = useState(false)
   const importFileInputRef = useRef<HTMLInputElement>(null)
-  // Narrow slice — full-store subscribe re-rendered grid/sidebar chrome on every toggle (profile P).
+  // Narrow slice — avoid selectedStyles/conflicts fan-out on every toggle (profile P).
   const {
     setStyles,
-    selectedStyles,
     styles,
-    conflicts,
-    toggleStyle,
     toggleCompact,
     compactMode,
     collapsedCategories,
@@ -117,10 +184,7 @@ export default function App() {
   } = useStylesStore(
     useShallow((s) => ({
       setStyles: s.setStyles,
-      selectedStyles: s.selectedStyles,
       styles: s.styles,
-      conflicts: s.conflicts,
-      toggleStyle: s.toggleStyle,
       toggleCompact: s.toggleCompact,
       compactMode: s.compactMode,
       collapsedCategories: s.collapsedCategories,
@@ -134,7 +198,6 @@ export default function App() {
       presetsCorrupt: s.presetsCorrupt,
     })),
   )
-
   const activeSourceIsReadOnly = !!activeSource &&
     styles.some(s => s.source_file === activeSource && s.read_only)
 
@@ -351,60 +414,8 @@ export default function App() {
                 setNewStyleOpen(true)
               }}
             />
-            <span className="text-xs text-sg-muted">
-              {selectedStyles.length > 0 && `${selectedStyles.length} selected`}
-            </span>
-            {conflicts.length > 0 && (
-              <Popover open={conflictsOpen} onOpenChange={setConflictsOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={`${conflicts.length} style conflicts`}
-                    className="flex items-center gap-1 px-2 py-1 rounded
-                       bg-sg-danger/20 border border-sg-danger/40
-                       text-sg-danger-text text-xs
-                       motion-safe:animate-pulse"
-                  >
-                    <AlertTriangle size={14} aria-hidden />
-                    {conflicts.length}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="w-auto min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))] p-3 bg-sg-popover border border-sg-border rounded-lg shadow-xl"
-                >
-                  <div className="text-xs font-semibold text-sg-text mb-2">
-                    Style Conflicts
-                  </div>
-                  {conflicts.map((c, i) => {
-                    const conflictingStyle = selectedStyles.find(s => styleRowKey(s) === c.styleBKey)
-                      ?? styles.find(s => styleRowKey(s) === c.styleBKey)
-                    return (
-                      <div key={i} className="flex items-start justify-between gap-2 py-0.5">
-                        <span className="text-xs text-sg-danger-text min-w-0 flex-1 break-words">
-                          {c.reason}
-                        </span>
-                        {conflictingStyle && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              toggleStyle(conflictingStyle)
-                              setConflictsOpen(false)
-                            }}
-                            className="text-xs px-1.5 py-0.5 rounded border
-                              border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20
-                              transition-colors shrink-0"
-                            title={`Remove "${c.styleB}"`}
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </PopoverContent>
-              </Popover>
-            )}
+            <SelectedCountBadge />
+            <ConflictsChip />
             <ToolBtn
               icon={isFullscreen ? Minimize2 : Maximize2}
               label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}

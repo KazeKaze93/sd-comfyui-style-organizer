@@ -13,6 +13,7 @@ import {
 import { Popover, PopoverContent, PopoverAnchor } from './ui/popover'
 
 const SUGGESTION_LIMIT = 8
+const EMPTY_SELECTED: Style[] = []
 
 /** Pure: top name matches for a query against an already-scoped style list. */
 function computeSuggestions(styles: Style[], query: string): Style[] {
@@ -21,12 +22,19 @@ function computeSuggestions(styles: Style[], query: string): Style[] {
 }
 
 export function SearchBar() {
-  const { styles, activeSource, search, setSearch, toggleStyle, selectedStyles } = useStylesStore()
+  // Atomic selectors — full-store subscribe re-rendered on every toggle (profile P).
+  const styles = useStylesStore((s) => s.styles)
+  const activeSource = useStylesStore((s) => s.activeSource)
+  const search = useStylesStore((s) => s.search)
+  const setSearch = useStylesStore((s) => s.setSearch)
+  const toggleStyle = useStylesStore((s) => s.toggleStyle)
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(search)
   /** cmdk controlled highlight (Command value / onValueChange). */
   const [highlight, setHighlight] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  // When closed, return a stable empty ref so selection toggles skip this subtree.
+  const selectedStyles = useStylesStore((s) => (open ? s.selectedStyles : EMPTY_SELECTED))
 
   // Autocomplete suggestions:
   // - specific source selected: search only in that CSV
@@ -45,12 +53,12 @@ export function SearchBar() {
     setHighlight(nextSuggestions[0]?.name ?? '')
   }
 
-  const handleSelect = (style: typeof styles[0]) => {
+  const handleSelect = (style: Style) => {
     setOpen(false)
     setHighlight('')
-    // Apply immediately if not already selected
-    const isSelected = selectedStyles.some(s => styleRowKey(s) === styleRowKey(style))
-    if (!isSelected) toggleStyle(style)
+    const { selectedStyles: current, toggleStyle: toggle } = useStylesStore.getState()
+    const isSelected = current.some(s => styleRowKey(s) === styleRowKey(style))
+    if (!isSelected) toggle(style)
   }
 
   return (

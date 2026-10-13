@@ -582,6 +582,29 @@ function resolveSelectedForConflicts(selected: Style, live: Style[]): Style {
   return byName ?? selected
 }
 
+/** After selection paint — never batch conflicts into the same set() as selection. */
+let conflictsRaf = 0
+function scheduleDetectConflicts(get: () => StylesStore): void {
+  if (conflictsRaf !== 0) {
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(conflictsRaf)
+    else clearTimeout(conflictsRaf)
+  }
+  const run = () => {
+    conflictsRaf = 0
+    get().detectConflicts()
+  }
+  // Vitest/node has no rAF — setTimeout(0) still keeps conflicts off the sync toggle set().
+  conflictsRaf = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame(run)
+    : setTimeout(run, 0)
+}
+function cancelScheduledDetectConflicts(): void {
+  if (conflictsRaf === 0) return
+  if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(conflictsRaf)
+  else clearTimeout(conflictsRaf)
+  conflictsRaf = 0
+}
+
 export const useStylesStore = create<StylesStore>((set, get) => ({
   toasts: [],
   styles: [],
@@ -815,7 +838,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         styleContributors: nextContributors,
       })
       sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
-      get().detectConflicts()
+      scheduleDetectConflicts(get)
     } else {
       const existing = styleContributors[style.name] ?? new Set<string>()
       const nextSelected = [...selectedStyles, style]
@@ -836,7 +859,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         neg: style.negative_prompt,
         source_file: style.source_file,
       })
-      get().detectConflicts()
+      scheduleDetectConflicts(get)
     }
   },
   setSelectedStyles: (styles: Style[]) => set({
@@ -845,6 +868,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   }),
   clearAll: () => {
     const { selectedStyles } = get()
+    cancelScheduledDetectConflicts()
     selectedStyles.forEach(s =>
       sendToHost({ type: 'SG_UNAPPLY', styleId: s.name })
     )
@@ -858,6 +882,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })
   },
   clearSelectionChrome: () => {
+    cancelScheduledDetectConflicts()
     set({
       selectedStyles: [],
       selectedKeySet: new Set(),

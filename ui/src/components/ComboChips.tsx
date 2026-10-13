@@ -1,4 +1,5 @@
 import { startTransition } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useStylesStore, styleRowKey } from '../store/stylesStore'
 import { resolveCombosInSourceFile } from '../lib/styleIdentity'
 import type { Style } from '../bridge'
@@ -13,7 +14,14 @@ function chipLabel(token: string): string {
 }
 
 export function ComboChips({ style, onBeforeToggle }: Props) {
-  const { styles, setCategory, toggleStyle, selectedStyles } = useStylesStore()
+  const { styles, setCategory, toggleStyle, selectedStyles } = useStylesStore(
+    useShallow((s) => ({
+      styles: s.styles,
+      setCategory: s.setCategory,
+      toggleStyle: s.toggleStyle,
+      selectedStyles: s.selectedStyles,
+    })),
+  )
 
   if (!style.description) return null
 

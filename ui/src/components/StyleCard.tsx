@@ -19,9 +19,14 @@ import {
 } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
 import { ThumbnailPreview } from './ThumbnailPreview'
+import { ViewportFixedMenu } from './ViewportFixedMenu'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ConfirmInputDialog } from './ConfirmInputDialog'
 import { EditStyleDialog } from './EditStyleDialog'
+import {
+  CARD_HEIGHT_NORMAL_PX,
+  CARD_HEIGHT_WINDOWED_PX,
+} from './grid/constants'
 
 const MENU_ICON_SIZE = 14
 const EMPTY_DUPLICATES: readonly Style[] = []
@@ -55,15 +60,16 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
   const key = useMemo(() => styleRowKey(style), [style])
   // One shallow subscription for scroll-remount path (profile: useStore ×N).
   // Actions + activeSource read via getState — no per-card action subscriptions.
-  const { isSelected, duplicates, usageCount, fav, borderColor } = useStylesStore(
+  const { isSelected, duplicates, fav, borderColor } = useStylesStore(
     useShallow((s) => ({
       isSelected: s.selectedKeySet.has(key),
       duplicates: s.duplicatesByName.get(style.name) ?? EMPTY_DUPLICATES,
-      usageCount: s.usageCounts[style.name] || 0,
       fav: s.favorites.has(style.name),
       borderColor: getCategoryColor(style.category || 'OTHER', s.themeMode),
     })),
   )
+  // CARD_HEIGHT_* === CARD_ROW_HEIGHT_<mode> - ROW_GAP (gap lives on the virtual row).
+  const cardHeightPx = windowed ? CARD_HEIGHT_WINDOWED_PX : CARD_HEIGHT_NORMAL_PX
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
@@ -143,15 +149,13 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
             const store = useStylesStore.getState()
             if (hasMultipleSources && !store.activeSource && !isSelected) {
               const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-              const left = Math.min(rect.right + 8, window.innerWidth - 280)
-              const top = Math.max(8, rect.top)
-              setPickerPos({ x: left, y: top })
+              setPickerPos({ x: rect.right + 8, y: rect.top })
               return
             }
             store.toggleStyle(style)
           }}
           className={`
-            relative cursor-pointer rounded-lg border ${windowed ? 'p-2' : 'p-3'}
+            relative overflow-hidden cursor-pointer rounded-lg border ${windowed ? 'p-2' : 'p-3'}
             select-none transition-colors
             transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]
             motion-reduce:transition-none motion-reduce:transform-none
@@ -160,22 +164,16 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
               : 'border-sg-border bg-sg-surface hover:border-sg-accent/50'}
           `}
           style={{
+            height: cardHeightPx,
             borderLeftColor: isSelected ? undefined : borderColor,
-            borderLeftWidth: '3px'
+            borderLeftWidth: '3px',
           }}
         >
-          {/* Usage is inline: absolute bottom-left overlapped the name on short cards. */}
+          {/* One truncated name line; star/dot are absolute so they never share the line. */}
           <div
-            className={`flex min-w-0 items-baseline gap-1.5 ${windowed ? 'text-xs' : 'text-sm'}`}
+            className={`truncate font-medium text-sg-text pr-5 ${windowed ? 'text-xs' : 'text-sm'}`}
           >
-            <span className="min-w-0 truncate font-medium text-sg-text">
-              {displayName}
-            </span>
-            {usageCount > 0 && (
-              <span className="shrink-0 font-mono text-[10px] leading-none text-sg-muted">
-                {usageCount > 99 ? '99+' : usageCount}
-              </span>
-            )}
+            {displayName}
           </div>
 
           {/* Selected indicator: accent border/tint + corner dot (0.0.7) */}
@@ -198,224 +196,212 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
       </ThumbnailPreview>
 
       {menuPos && (
-        <Portal>
-          <div
-            className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48"
-            style={{ left: menuPos.x, top: menuPos.y }}
-            onContextMenu={(e) => e.preventDefault()}
+        <ViewportFixedMenu
+          x={menuPos.x}
+          y={menuPos.y}
+          onDismiss={() => setMenuPos(null)}
+          className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48"
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+            onClick={() => {
+              useStylesStore.getState().toggleStyle(style)
+              setMenuPos(null)
+            }}
           >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                useStylesStore.getState().toggleStyle(style)
+            {isSelected ? '✕ Deselect' : '✓ Select'}
+          </button>
+          <button
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+            onClick={() => {
+              useStylesStore.getState().toggleFavorite(style.name)
+              setMenuPos(null)
+            }}
+          >
+            <Star size={MENU_ICON_SIZE} fill={fav ? 'currentColor' : 'none'} />
+            {fav ? 'Remove from Favorites' : 'Add to Favorites'}
+          </button>
+          <div className="h-px my-1 bg-sg-border" />
+          <button
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+            onClick={async () => {
+              setMenuPos(null)
+              try {
+                await navigator.clipboard.writeText(displayStyle.prompt)
+                useStylesStore.getState().showToast('Prompt copied', 'success')
+              } catch {
+                useStylesStore.getState().showToast('Copy failed', 'error')
+              }
+            }}
+          >
+            <Clipboard size={MENU_ICON_SIZE} /> Copy prompt
+          </button>
+          <button
+            className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
+              displayStyle.read_only
+                ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                : 'text-sg-text hover:bg-sg-accent/20'
+            }`}
+            onClick={() => {
+              if (displayStyle.read_only) {
                 setMenuPos(null)
-              }}
-            >
-              {isSelected ? '✕ Deselect' : '✓ Select'}
-            </button>
-            <button
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                useStylesStore.getState().toggleFavorite(style.name)
+                useStylesStore.getState().showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.', 'info')
+                return
+              }
+              setMenuPos(null); setEditOpen(true)
+            }}
+          >
+            {displayStyle.read_only
+              ? <><Lock size={MENU_ICON_SIZE} /> Edit</>
+              : <><Pencil size={MENU_ICON_SIZE} /> Edit</>}
+          </button>
+          <button
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+            onClick={() => { setMenuPos(null); setDuplicateOpen(true) }}
+          >
+            <Copy size={MENU_ICON_SIZE} /> Duplicate
+          </button>
+          <button
+            className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
+              displayStyle.read_only
+                ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                : 'text-sg-text hover:bg-sg-accent/20'
+            }`}
+            onClick={() => {
+              if (displayStyle.read_only) {
                 setMenuPos(null)
-              }}
-            >
-              <Star size={MENU_ICON_SIZE} fill={fav ? 'currentColor' : 'none'} />
-              {fav ? 'Remove from Favorites' : 'Add to Favorites'}
-            </button>
-            <div className="h-px my-1 bg-sg-border" />
+                useStylesStore.getState().showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.', 'info')
+                return
+              }
+              setMenuPos(null); setMoveOpen(true)
+            }}
+          >
+            {displayStyle.read_only
+              ? <><Lock size={MENU_ICON_SIZE} /> Move to category...</>
+              : <><FolderInput size={MENU_ICON_SIZE} /> Move to category...</>}
+          </button>
+          <div className="h-px my-1 bg-sg-border" />
+          <button
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+            onClick={() => {
+              setMenuPos(null)
+              if (fileInputArmed) {
+                fileInputRef.current?.click()
+              } else {
+                setFileInputArmed(true)
+              }
+            }}
+          >
+            <ImagePlus size={MENU_ICON_SIZE} /> Upload preview image
+          </button>
+          {displayStyle.has_thumbnail && (
             <button
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
+                displayStyle.read_only
+                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                  : 'text-sg-text hover:bg-sg-accent/20'
+              }`}
               onClick={async () => {
+                if (displayStyle.read_only) {
+                  setMenuPos(null)
+                  showToast(
+                    'This style is from the protected samples pack (read-only). Duplicate it into a data source to manage your own preview.',
+                    'info',
+                  )
+                  return
+                }
                 setMenuPos(null)
                 try {
-                  await navigator.clipboard.writeText(displayStyle.prompt)
-                  useStylesStore.getState().showToast('Prompt copied', 'success')
-                } catch {
-                  useStylesStore.getState().showToast('Copy failed', 'error')
-                }
-              }}
-            >
-              <Clipboard size={MENU_ICON_SIZE} /> Copy prompt
-            </button>
-            <button
-              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
-                displayStyle.read_only
-                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                  : 'text-sg-text hover:bg-sg-accent/20'
-              }`}
-              onClick={() => {
-                if (displayStyle.read_only) {
-                  setMenuPos(null)
-                  useStylesStore.getState().showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.', 'info')
-                  return
-                }
-                setMenuPos(null); setEditOpen(true)
-              }}
-            >
-              {displayStyle.read_only
-                ? <><Lock size={MENU_ICON_SIZE} /> Edit</>
-                : <><Pencil size={MENU_ICON_SIZE} /> Edit</>}
-            </button>
-            <button
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => { setMenuPos(null); setDuplicateOpen(true) }}
-            >
-              <Copy size={MENU_ICON_SIZE} /> Duplicate
-            </button>
-            <button
-              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
-                displayStyle.read_only
-                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                  : 'text-sg-text hover:bg-sg-accent/20'
-              }`}
-              onClick={() => {
-                if (displayStyle.read_only) {
-                  setMenuPos(null)
-                  useStylesStore.getState().showToast('This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.', 'info')
-                  return
-                }
-                setMenuPos(null); setMoveOpen(true)
-              }}
-            >
-              {displayStyle.read_only
-                ? <><Lock size={MENU_ICON_SIZE} /> Move to category...</>
-                : <><FolderInput size={MENU_ICON_SIZE} /> Move to category...</>}
-            </button>
-            <div className="h-px my-1 bg-sg-border" />
-            <button
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                setMenuPos(null)
-                if (fileInputArmed) {
-                  fileInputRef.current?.click()
-                } else {
-                  setFileInputArmed(true)
-                }
-              }}
-            >
-              <ImagePlus size={MENU_ICON_SIZE} /> Upload preview image
-            </button>
-            {displayStyle.has_thumbnail && (
-              <button
-                className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
-                  displayStyle.read_only
-                    ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                    : 'text-sg-text hover:bg-sg-accent/20'
-                }`}
-                onClick={async () => {
-                  if (displayStyle.read_only) {
-                    setMenuPos(null)
+                  const params = new URLSearchParams({ name: displayStyle.name })
+                  if (displayStyle.source_file) {
+                    params.set('source', displayStyle.source_file)
+                  }
+                  const res = await fetch(`/style_grid/thumbnail?${params}`, {
+                    method: 'DELETE',
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || data.ok === false || data.error) {
                     showToast(
-                      'This style is from the protected samples pack (read-only). Duplicate it into a data source to manage your own preview.',
-                      'info',
+                      typeof data.error === 'string' && data.error
+                        ? data.error
+                        : 'Delete preview failed',
+                      'error',
                     )
                     return
                   }
-                  setMenuPos(null)
-                  try {
-                    const params = new URLSearchParams({ name: displayStyle.name })
-                    if (displayStyle.source_file) {
-                      params.set('source', displayStyle.source_file)
-                    }
-                    const res = await fetch(`/style_grid/thumbnail?${params}`, {
-                      method: 'DELETE',
-                    })
-                    const data = await res.json().catch(() => ({}))
-                    if (!res.ok || data.ok === false || data.error) {
-                      showToast(
-                        typeof data.error === 'string' && data.error
-                          ? data.error
-                          : 'Delete preview failed',
-                        'error',
-                      )
-                      return
-                    }
-                    const version = String(Date.now())
-                    useStylesStore.getState().bumpThumbVersion(key, version)
-                    // App's single onHostMessage also bumps via SG_THUMB_DONE.
-                    window.postMessage(
-                      { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
-                      '*',
-                    )
-                    void useStylesStore.getState().loadThumbnails()
-                    showToast('Preview deleted', 'success')
-                  } catch {
-                    showToast('Delete preview failed', 'error')
-                  }
-                }}
-              >
-                {displayStyle.read_only
-                  ? <><Lock size={MENU_ICON_SIZE} /> Delete preview</>
-                  : <><Trash2 size={MENU_ICON_SIZE} /> Delete preview</>}
-              </button>
-            )}
-            <div className="h-px my-1 bg-sg-border" />
-            <button
-              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
-                displayStyle.read_only
-                  ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                  : 'text-sg-danger-text hover:bg-sg-danger/20'
-              }`}
-              onClick={() => {
-                setMenuPos(null)
-                if (displayStyle.read_only) {
-                  showToast('This style is from the protected samples pack (read-only) and cannot be deleted.', 'info')
-                  return
+                  const version = String(Date.now())
+                  useStylesStore.getState().bumpThumbVersion(key, version)
+                  // App's single onHostMessage also bumps via SG_THUMB_DONE.
+                  window.postMessage(
+                    { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
+                    '*',
+                  )
+                  void useStylesStore.getState().loadThumbnails()
+                  showToast('Preview deleted', 'success')
+                } catch {
+                  showToast('Delete preview failed', 'error')
                 }
-                setPendingDelete(true)
               }}
             >
               {displayStyle.read_only
-                ? <><Lock size={MENU_ICON_SIZE} /> Delete</>
-                : <><Trash2 size={MENU_ICON_SIZE} /> Delete</>}
+                ? <><Lock size={MENU_ICON_SIZE} /> Delete preview</>
+                : <><Trash2 size={MENU_ICON_SIZE} /> Delete preview</>}
             </button>
-          </div>
-          <div
-            className="fixed inset-0 z-[9998]"
-            onClick={() => setMenuPos(null)}
-            onContextMenu={(e) => e.preventDefault()}
-          />
-        </Portal>
+          )}
+          <div className="h-px my-1 bg-sg-border" />
+          <button
+            className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm transition-colors ${
+              displayStyle.read_only
+                ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+                : 'text-sg-danger-text hover:bg-sg-danger/20'
+            }`}
+            onClick={() => {
+              setMenuPos(null)
+              if (displayStyle.read_only) {
+                showToast('This style is from the protected samples pack (read-only) and cannot be deleted.', 'info')
+                return
+              }
+              setPendingDelete(true)
+            }}
+          >
+            {displayStyle.read_only
+              ? <><Lock size={MENU_ICON_SIZE} /> Delete</>
+              : <><Trash2 size={MENU_ICON_SIZE} /> Delete</>}
+          </button>
+        </ViewportFixedMenu>
       )}
 
       {pickerPos && (
-        <Portal>
-          <div
-            className="fixed z-[10005] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              left: pickerPos.x,
-              top: pickerPos.y,
-              width: `${pickerWidthCh}ch`,
-              minWidth: '18ch',
-              maxWidth: '48ch',
-            }}
-          >
-            {duplicates.map((dup, idx) => {
-              const sourceLabel = sourceLabels[idx] || 'Unknown'
-              return (
-                <button
-                  key={`${dup.source_file || 'unknown'}-${idx}`}
-                  className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    toggleStyle(dup)
-                    setPickerPos(null)
-                  }}
-                >
-                  <div className="font-medium truncate">{sourceLabel}</div>
-                </button>
-              )
-            })}
-          </div>
-          <div
-            className="fixed inset-0 z-[10004]"
-            onMouseDown={() => setPickerPos(null)}
-          />
-        </Portal>
+        <ViewportFixedMenu
+          x={pickerPos.x}
+          y={pickerPos.y}
+          onDismiss={() => setPickerPos(null)}
+          className="fixed z-[10005] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1"
+          backdropClassName="fixed inset-0 z-[10004]"
+          style={{
+            width: `${pickerWidthCh}ch`,
+            minWidth: '18ch',
+            maxWidth: '48ch',
+          }}
+        >
+          {duplicates.map((dup, idx) => {
+            const sourceLabel = sourceLabels[idx] || 'Unknown'
+            return (
+              <button
+                key={`${dup.source_file || 'unknown'}-${idx}`}
+                className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  toggleStyle(dup)
+                  setPickerPos(null)
+                }}
+              >
+                <div className="font-medium truncate">{sourceLabel}</div>
+              </button>
+            )
+          })}
+        </ViewportFixedMenu>
       )}
 
       {pendingDelete && (

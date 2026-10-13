@@ -1,4 +1,4 @@
-import { memo, startTransition, useEffect, useRef, useState } from 'react'
+import { memo, startTransition, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Reorder } from 'framer-motion'
 import { BookMarked, Clock, Star } from 'lucide-react'
 import {
@@ -21,10 +21,55 @@ function CategoryName({ category }: { category: string }) {
   )
 }
 
+/** Isolated: toggle → addToRecent must not re-render category Reorder (profile P). */
+const RecentNavButton = memo(function RecentNavButton({
+  active,
+  onActivate,
+  onContextMenu,
+}: {
+  active: boolean
+  onActivate: () => void
+  onContextMenu: (e: MouseEvent) => void
+}) {
+  const {
+    styles, search, activeSource, favorites, recentNames, presets,
+  } = useStylesStore(
+    useShallow((s) => ({
+      styles: s.styles,
+      search: s.search,
+      activeSource: s.activeSource,
+      favorites: s.favorites,
+      recentNames: s.recentNames,
+      presets: s.presets,
+    })),
+  )
+  const count = selectFilteredStyles(
+    styles, search, RECENT_VIEW, activeSource, favorites, recentNames, presets,
+  ).length
+  return (
+    <button
+      type="button"
+      onClick={onActivate}
+      onContextMenu={onContextMenu}
+      className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu
+      ${active
+        ? 'bg-sg-accent text-white'
+        : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
+      ${count === 0 ? 'opacity-40' : ''}`}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <Clock className="h-4 w-4 shrink-0" aria-hidden />
+        <span className="truncate">Recent</span>
+      </span>
+      <span className="text-xs opacity-60 shrink-0">{count}</span>
+    </button>
+  )
+})
+
 /** Memo: App selectedStyles updates must not re-run Reorder (profile P). */
 export const Sidebar = memo(function Sidebar() {
   const {
-    activeCategory, setCategory, categories, favorites, recentNames,
+    activeCategory, setCategory, categories, favorites,
     setCategoryOrder, presets, styles, activeSource, search,
     clearFavorites, clearRecent,
   } = useStylesStore(
@@ -33,7 +78,6 @@ export const Sidebar = memo(function Sidebar() {
       setCategory: s.setCategory,
       categories: s.categories,
       favorites: s.favorites,
-      recentNames: s.recentNames,
       setCategoryOrder: s.setCategoryOrder,
       presets: s.presets,
       clearFavorites: s.clearFavorites,
@@ -57,22 +101,7 @@ export const Sidebar = memo(function Sidebar() {
   const [dragOrder, setDragOrder] = useState<string[] | null>(null)
   const dragOrderRef = useRef<string[] | null>(null)
   const cats = dragOrder ?? categories()
-  const specialCategories = [
-    {
-      id: FAVORITES_VIEW,
-      label: 'Favorites',
-      Icon: Star,
-      count: filterFavoriteStyles(styles, search, activeSource, favorites).length,
-    },
-    {
-      id: RECENT_VIEW,
-      label: 'Recent',
-      Icon: Clock,
-      count: selectFilteredStyles(
-        styles, search, RECENT_VIEW, activeSource, favorites, recentNames, presets,
-      ).length,
-    },
-  ]
+  const favCount = filterFavoriteStyles(styles, search, activeSource, favorites).length
 
   useEffect(() => {
     void useStylesStore.getState().fetchPresets()
@@ -112,38 +141,35 @@ export const Sidebar = memo(function Sidebar() {
           {count(null)}
         </span>
       </button>
-      {specialCategories.map(({ id, label, Icon, count }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => startTransition(() => setCategory(activeCategory === id ? null : id))}
-          onContextMenu={
-            id === FAVORITES_VIEW ? (e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setFavMenu({ x: e.clientX, y: e.clientY })
-            }
-            : id === RECENT_VIEW ? (e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setRecentMenu({ x: e.clientX, y: e.clientY })
-            }
-            : undefined
-          }
-          className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors
-      ${activeCategory === id
+      <button
+        type="button"
+        onClick={() => startTransition(() => setCategory(activeCategory === FAVORITES_VIEW ? null : FAVORITES_VIEW))}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setFavMenu({ x: e.clientX, y: e.clientY })
+        }}
+        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu
+      ${activeCategory === FAVORITES_VIEW
         ? 'bg-sg-accent text-white'
         : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
-      ${id === FAVORITES_VIEW || id === RECENT_VIEW ? 'cursor-context-menu' : ''}
-      ${count === 0 ? 'opacity-40' : ''}`}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <Icon className="h-4 w-4 shrink-0" aria-hidden />
-            <span className="truncate">{label}</span>
-          </span>
-          <span className="text-xs opacity-60 shrink-0">{count}</span>
-        </button>
-      ))}
+      ${favCount === 0 ? 'opacity-40' : ''}`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <Star className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="truncate">Favorites</span>
+        </span>
+        <span className="text-xs opacity-60 shrink-0">{favCount}</span>
+      </button>
+      <RecentNavButton
+        active={activeCategory === RECENT_VIEW}
+        onActivate={() => startTransition(() => setCategory(activeCategory === RECENT_VIEW ? null : RECENT_VIEW))}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setRecentMenu({ x: e.clientX, y: e.clientY })
+        }}
+      />
       <button
         type="button"
         onClick={() => startTransition(() => setCategory(activeCategory === 'presets' ? null : 'presets'))}
