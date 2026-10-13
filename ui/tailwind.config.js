@@ -62,7 +62,9 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
+        // Stack ends on system sans only — no serif fallback.
         sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        heading: ['var(--font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
     },
   },
