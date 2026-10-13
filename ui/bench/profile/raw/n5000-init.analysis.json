@@ -1,0 +1,2101 @@
+{
+  "wallMs": 697.2000000178814,
+  "analysis": {
+    "totalSampleMs": 1437.899,
+    "sampleCount": 2363,
+    "top": [
+      {
+        "rank": 1,
+        "functionName": "(program)",
+        "fileLine": "(unknown):0",
+        "selfMs": 679.281,
+        "selfPct": 47.24121791586196,
+        "mapped": false
+      },
+      {
+        "rank": 2,
+        "functionName": "(idle)",
+        "fileLine": "(unknown):0",
+        "selfMs": 179.32,
+        "selfPct": 12.47097327420076,
+        "mapped": false
+      },
+      {
+        "rank": 3,
+        "functionName": "measureScroll",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/DocumentProjectionNode.mjs:6",
+        "selfMs": 57.767,
+        "selfPct": 4.01745880621657,
+        "mapped": true
+      },
+      {
+        "rank": 4,
+        "functionName": "nameSearchText",
+        "fileLine": "src/store/stylesStore.ts:261",
+        "selfMs": 31.811,
+        "selfPct": 2.2123250659469127,
+        "mapped": true
+      },
+      {
+        "rank": 5,
+        "functionName": "measureElement",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:128",
+        "selfMs": 28.753,
+        "selfPct": 1.9996536613489542,
+        "mapped": true
+      },
+      {
+        "rank": 6,
+        "functionName": "(garbage collector)",
+        "fileLine": "(unknown):0",
+        "selfMs": 18.656,
+        "selfPct": 1.2974485690580493,
+        "mapped": false
+      },
+      {
+        "rank": 7,
+        "functionName": "renderWithHooks",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4333",
+        "selfMs": 15.103,
+        "selfPct": 1.0503519370971117,
+        "mapped": true
+      },
+      {
+        "rank": 8,
+        "functionName": "initInput",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1147",
+        "selfMs": 14.195,
+        "selfPct": 0.9872042473080516,
+        "mapped": true
+      },
+      {
+        "rank": 9,
+        "functionName": "buildSearchTextByKey",
+        "fileLine": "src/store/stylesStore.ts:277",
+        "selfMs": 14.077,
+        "selfPct": 0.9789978294720283,
+        "mapped": true
+      },
+      {
+        "rank": 10,
+        "functionName": "(anonymous)",
+        "fileLine": "(unknown):1",
+        "selfMs": 13.605,
+        "selfPct": 0.9461721581279353,
+        "mapped": false
+      },
+      {
+        "rank": 11,
+        "functionName": "matchesSearchKey",
+        "fileLine": "src/store/stylesStore.ts:301",
+        "selfMs": 13.235,
+        "selfPct": 0.9204401699980318,
+        "mapped": true
+      },
+      {
+        "rank": 12,
+        "functionName": "StyleCard",
+        "fileLine": "src/components/StyleCard.tsx:50",
+        "selfMs": 10.931,
+        "selfPct": 0.7602063844539846,
+        "mapped": true
+      },
+      {
+        "rank": 13,
+        "functionName": "setStyles",
+        "fileLine": "src/store/stylesStore.ts:631",
+        "selfMs": 9.262,
+        "selfPct": 0.6441342542139608,
+        "mapped": true
+      },
+      {
+        "rank": 14,
+        "functionName": "parseEvaluationResultValue",
+        "fileLine": "(unknown):120",
+        "selfMs": 8.733,
+        "selfPct": 0.6073444657795853,
+        "mapped": false
+      },
+      {
+        "rank": 15,
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:1474",
+        "selfMs": 8.241,
+        "selfPct": 0.5731278761582003,
+        "mapped": true
+      }
+    ],
+    "all": [
+      {
+        "functionName": "(program)",
+        "fileLine": "(unknown):0",
+        "selfMs": 679.281,
+        "selfPct": 47.24121791586196,
+        "mapped": false
+      },
+      {
+        "functionName": "(idle)",
+        "fileLine": "(unknown):0",
+        "selfMs": 179.32,
+        "selfPct": 12.47097327420076,
+        "mapped": false
+      },
+      {
+        "functionName": "measureScroll",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/DocumentProjectionNode.mjs:6",
+        "selfMs": 57.767,
+        "selfPct": 4.01745880621657,
+        "mapped": true
+      },
+      {
+        "functionName": "nameSearchText",
+        "fileLine": "src/store/stylesStore.ts:261",
+        "selfMs": 31.811,
+        "selfPct": 2.2123250659469127,
+        "mapped": true
+      },
+      {
+        "functionName": "measureElement",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:128",
+        "selfMs": 28.753,
+        "selfPct": 1.9996536613489542,
+        "mapped": true
+      },
+      {
+        "functionName": "(garbage collector)",
+        "fileLine": "(unknown):0",
+        "selfMs": 18.656,
+        "selfPct": 1.2974485690580493,
+        "mapped": false
+      },
+      {
+        "functionName": "renderWithHooks",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4333",
+        "selfMs": 15.103,
+        "selfPct": 1.0503519370971117,
+        "mapped": true
+      },
+      {
+        "functionName": "initInput",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1147",
+        "selfMs": 14.195,
+        "selfPct": 0.9872042473080516,
+        "mapped": true
+      },
+      {
+        "functionName": "buildSearchTextByKey",
+        "fileLine": "src/store/stylesStore.ts:277",
+        "selfMs": 14.077,
+        "selfPct": 0.9789978294720283,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "(unknown):1",
+        "selfMs": 13.605,
+        "selfPct": 0.9461721581279353,
+        "mapped": false
+      },
+      {
+        "functionName": "matchesSearchKey",
+        "fileLine": "src/store/stylesStore.ts:301",
+        "selfMs": 13.235,
+        "selfPct": 0.9204401699980318,
+        "mapped": true
+      },
+      {
+        "functionName": "StyleCard",
+        "fileLine": "src/components/StyleCard.tsx:50",
+        "selfMs": 10.931,
+        "selfPct": 0.7602063844539846,
+        "mapped": true
+      },
+      {
+        "functionName": "setStyles",
+        "fileLine": "src/store/stylesStore.ts:631",
+        "selfMs": 9.262,
+        "selfPct": 0.6441342542139608,
+        "mapped": true
+      },
+      {
+        "functionName": "parseEvaluationResultValue",
+        "fileLine": "(unknown):120",
+        "selfMs": 8.733,
+        "selfPct": 0.6073444657795853,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:1474",
+        "selfMs": 8.241,
+        "selfPct": 0.5731278761582003,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "(unknown):7",
+        "selfMs": 8.151,
+        "selfPct": 0.5668687439103859,
+        "mapped": false
+      },
+      {
+        "functionName": "setValueForStyle",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1273",
+        "selfMs": 6.133,
+        "selfPct": 0.42652508973161535,
+        "mapped": true
+      },
+      {
+        "functionName": "buildDuplicatesByName",
+        "fileLine": "src/store/stylesStore.ts:182",
+        "selfMs": 5.994,
+        "selfPct": 0.41685820770443544,
+        "mapped": true
+      },
+      {
+        "functionName": "setAttribute",
+        "fileLine": "(unknown):0",
+        "selfMs": 5.839,
+        "selfPct": 0.4060785910554218,
+        "mapped": false
+      },
+      {
+        "functionName": "commitHookEffectListUnmount",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8593",
+        "selfMs": 5.132,
+        "selfPct": 0.3569096299531469,
+        "mapped": true
+      },
+      {
+        "functionName": "updateProperties",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:13577",
+        "selfMs": 5.055,
+        "selfPct": 0.3515545945855724,
+        "mapped": true
+      },
+      {
+        "functionName": "removeChild",
+        "fileLine": "(unknown):0",
+        "selfMs": 4.982,
+        "selfPct": 0.34647774287345634,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/zustand/esm/react.mjs:8",
+        "selfMs": 4.54,
+        "selfPct": 0.31573844894530145,
+        "mapped": true
+      },
+      {
+        "functionName": "commitHookEffectListMount",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8571",
+        "selfMs": 4.454,
+        "selfPct": 0.3097575003529455,
+        "mapped": true
+      },
+      {
+        "functionName": "reconcileChildrenArray",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3622",
+        "selfMs": 4.445,
+        "selfPct": 0.3091315871281641,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:985",
+        "selfMs": 4.443,
+        "selfPct": 0.3089924953004349,
+        "mapped": true
+      },
+      {
+        "functionName": "createElement",
+        "fileLine": "(unknown):0",
+        "selfMs": 4.42,
+        "selfPct": 0.307392939281549,
+        "mapped": false
+      },
+      {
+        "functionName": "appendChild",
+        "fileLine": "(unknown):0",
+        "selfMs": 4.414,
+        "selfPct": 0.3069756637983614,
+        "mapped": false
+      },
+      {
+        "functionName": "completeWork",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:7955",
+        "selfMs": 4.389,
+        "selfPct": 0.30523701595174624,
+        "mapped": true
+      },
+      {
+        "functionName": "beginWork",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:7392",
+        "selfMs": 4.333,
+        "selfPct": 0.30134244477532846,
+        "mapped": true
+      },
+      {
+        "functionName": "walk",
+        "fileLine": "(unknown):51",
+        "selfMs": 3.961,
+        "selfPct": 0.2754713648176958,
+        "mapped": false
+      },
+      {
+        "functionName": "ThumbnailPreview",
+        "fileLine": "src/components/ThumbnailPreview.tsx:12",
+        "selfMs": 3.897,
+        "selfPct": 0.27102042633036116,
+        "mapped": true
+      },
+      {
+        "functionName": "areHookInputsEqual",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4327",
+        "selfMs": 3.888,
+        "selfPct": 0.2703945131055797,
+        "mapped": true
+      },
+      {
+        "functionName": "setProp",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12957",
+        "selfMs": 3.874,
+        "selfPct": 0.26942087031147527,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:308",
+        "selfMs": 3.855,
+        "selfPct": 0.2680994979480478,
+        "mapped": true
+      },
+      {
+        "functionName": "createWorkInProgress",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2452",
+        "selfMs": 3.849,
+        "selfPct": 0.2676822224648602,
+        "mapped": true
+      },
+      {
+        "functionName": "compareEntries",
+        "fileLine": "node_modules/zustand/esm/vanilla/shallow.mjs:6",
+        "selfMs": 3.831,
+        "selfPct": 0.26643039601529733,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "assets/index-Dsiu8ZUp.js:23",
+        "selfMs": 3.321,
+        "selfPct": 0.23096197994434936,
+        "mapped": false
+      },
+      {
+        "functionName": "memoizedFunction",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/utils.js:5",
+        "selfMs": 3.287,
+        "selfPct": 0.22859741887295282,
+        "mapped": true
+      },
+      {
+        "functionName": "setInitialProperties",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:13346",
+        "selfMs": 3.258,
+        "selfPct": 0.22658058737087933,
+        "mapped": true
+      },
+      {
+        "functionName": "RegExp: \\b(?:Combos|Conflicts):\\s*[^.]*\\.?",
+        "fileLine": "(unknown):0",
+        "selfMs": 2.853,
+        "selfPct": 0.19841449225571475,
+        "mapped": false
+      },
+      {
+        "functionName": "buildStyleSearchText",
+        "fileLine": "src/store/stylesStore.ts:269",
+        "selfMs": 2.831,
+        "selfPct": 0.19688448215069349,
+        "mapped": true
+      },
+      {
+        "functionName": "VirtualStyleGrid",
+        "fileLine": "src/components/grid/VirtualStyleGrid.tsx:60",
+        "selfMs": 2.795,
+        "selfPct": 0.19438082925156774,
+        "mapped": true
+      },
+      {
+        "functionName": "useStore",
+        "fileLine": "node_modules/zustand/esm/react.mjs:5",
+        "selfMs": 2.791,
+        "selfPct": 0.19410264559610932,
+        "mapped": true
+      },
+      {
+        "functionName": "completeUnitOfWork",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11405",
+        "selfMs": 2.76,
+        "selfPct": 0.1919467222663066,
+        "mapped": true
+      },
+      {
+        "functionName": "categories",
+        "fileLine": "src/store/stylesStore.ts:1427",
+        "selfMs": 2.754,
+        "selfPct": 0.19152944678311898,
+        "mapped": true
+      },
+      {
+        "functionName": "count",
+        "fileLine": "src/components/Sidebar.tsx:82",
+        "selfMs": 2.713,
+        "selfPct": 0.1886780643146702,
+        "mapped": true
+      },
+      {
+        "functionName": "styleRowKey",
+        "fileLine": "src/store/stylesStore.ts:150",
+        "selfMs": 2.694,
+        "selfPct": 0.18735669195124274,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.useSyncExternalStore",
+        "fileLine": "node_modules/react/cjs/react.production.js:528",
+        "selfMs": 2.685,
+        "selfPct": 0.18673077872646132,
+        "mapped": true
+      },
+      {
+        "functionName": "isEnabled",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/features/definitions.mjs:34",
+        "selfMs": 2.377,
+        "selfPct": 0.16531063725616332,
+        "mapped": true
+      },
+      {
+        "functionName": "commitBeforeMutationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8842",
+        "selfMs": 2.294,
+        "selfPct": 0.15953832640540122,
+        "mapped": true
+      },
+      {
+        "functionName": "useSyncExternalStore",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5588",
+        "selfMs": 2.257,
+        "selfPct": 0.15696512759241088,
+        "mapped": true
+      },
+      {
+        "functionName": "setTextContent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1254",
+        "selfMs": 2.257,
+        "selfPct": 0.15696512759241088,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@tanstack/react-virtual/dist/esm/index.js:87",
+        "selfMs": 2.232,
+        "selfPct": 0.1552264797457958,
+        "mapped": true
+      },
+      {
+        "functionName": "updateEffectImpl",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5081",
+        "selfMs": 2.232,
+        "selfPct": 0.1552264797457958,
+        "mapped": true
+      },
+      {
+        "functionName": "updateCallback",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5153",
+        "selfMs": 2.223,
+        "selfPct": 0.15460056652101434,
+        "mapped": true
+      },
+      {
+        "functionName": "updateFunctionComponent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:6489",
+        "selfMs": 2.212,
+        "selfPct": 0.1538355614685037,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:984",
+        "selfMs": 2.207,
+        "selfPct": 0.1534878318991807,
+        "mapped": true
+      },
+      {
+        "functionName": "stripStyleReferences",
+        "fileLine": "src/store/stylesStore.ts:257",
+        "selfMs": 2.205,
+        "selfPct": 0.15334874007145147,
+        "mapped": true
+      },
+      {
+        "functionName": "trackValueOnNode",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1020",
+        "selfMs": 2.198,
+        "selfPct": 0.15286191867439924,
+        "mapped": true
+      },
+      {
+        "functionName": "setValueForStyles",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1291",
+        "selfMs": 2.185,
+        "selfPct": 0.1519578217941594,
+        "mapped": true
+      },
+      {
+        "functionName": "setValueForKnownAttribute",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:970",
+        "selfMs": 2.169,
+        "selfPct": 0.15084508717232573,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/Sidebar.tsx:88",
+        "selfMs": 2.158,
+        "selfPct": 0.15008008211981508,
+        "mapped": true
+      },
+      {
+        "functionName": "useMemo",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5515",
+        "selfMs": 2.133,
+        "selfPct": 0.14834143427319998,
+        "mapped": true
+      },
+      {
+        "functionName": "reconcileChildFibersImpl",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3793",
+        "selfMs": 2.054,
+        "selfPct": 0.14284730707789628,
+        "mapped": true
+      },
+      {
+        "functionName": "recursivelyTraverseMutationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9384",
+        "selfMs": 1.995,
+        "selfPct": 0.13874409815988467,
+        "mapped": true
+      },
+      {
+        "functionName": "recursivelyTraversePassiveUnmountEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:10458",
+        "selfMs": 1.988,
+        "selfPct": 0.13825727676283245,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/StyleGrid.tsx:169",
+        "selfMs": 1.801,
+        "selfPct": 0.12525219087015152,
+        "mapped": true
+      },
+      {
+        "functionName": "checkIfSnapshotChanged",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4751",
+        "selfMs": 1.739,
+        "selfPct": 0.12094034421054609,
+        "mapped": true
+      },
+      {
+        "functionName": "entries",
+        "fileLine": "node_modules/zustand/esm/vanilla/shallow.mjs:51",
+        "selfMs": 1.688,
+        "selfPct": 0.11739350260345129,
+        "mapped": true
+      },
+      {
+        "functionName": "listenToNonDelegatedEvent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12327",
+        "selfMs": 1.683,
+        "selfPct": 0.11704577303412826,
+        "mapped": true
+      },
+      {
+        "functionName": "commitMutationEffectsOnFiber",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9427",
+        "selfMs": 1.68,
+        "selfPct": 0.11683713529253445,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:1527",
+        "selfMs": 1.677,
+        "selfPct": 0.11662849755094064,
+        "mapped": true
+      },
+      {
+        "functionName": "SourceFilter",
+        "fileLine": "src/components/SourceFilter.tsx:3",
+        "selfMs": 1.664,
+        "selfPct": 0.11572440067070079,
+        "mapped": true
+      },
+      {
+        "functionName": "updateWorkInProgressHook",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4455",
+        "selfMs": 1.662,
+        "selfPct": 0.11558530884297158,
+        "mapped": true
+      },
+      {
+        "functionName": "CardsRow",
+        "fileLine": "src/components/grid/CardsRow.tsx:15",
+        "selfMs": 1.66,
+        "selfPct": 0.11544621701524238,
+        "mapped": true
+      },
+      {
+        "functionName": "fetch",
+        "fileLine": "(unknown):0",
+        "selfMs": 1.655,
+        "selfPct": 0.11509848744591936,
+        "mapped": false
+      },
+      {
+        "functionName": "updateForwardRef",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:6126",
+        "selfMs": 1.652,
+        "selfPct": 0.11488984970432554,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "(unknown):0",
+        "selfMs": 1.65,
+        "selfPct": 0.11475075787659635,
+        "mapped": false
+      },
+      {
+        "functionName": "updateSimpleMemoComponent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:6212",
+        "selfMs": 1.645,
+        "selfPct": 0.11440302830727332,
+        "mapped": true
+      },
+      {
+        "functionName": "evaluate",
+        "fileLine": "(unknown):364",
+        "selfMs": 1.638,
+        "selfPct": 0.1139162069102211,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:1539",
+        "selfMs": 1.632,
+        "selfPct": 0.11349893142703348,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/lucide-react/dist/esm/Icon.js:13",
+        "selfMs": 1.615,
+        "selfPct": 0.1123166508913352,
+        "mapped": true
+      },
+      {
+        "functionName": "setState",
+        "fileLine": "node_modules/zustand/esm/vanilla.mjs:4",
+        "selfMs": 1.609,
+        "selfPct": 0.11189937540814758,
+        "mapped": true
+      },
+      {
+        "functionName": "matchSearchTokens",
+        "fileLine": "src/store/stylesStore.ts:287",
+        "selfMs": 1.559,
+        "selfPct": 0.1084220797149174,
+        "mapped": true
+      },
+      {
+        "functionName": "commitPassiveUnmountEffectsInsideOfDeletedTree_begin",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:10540",
+        "selfMs": 1.272,
+        "selfPct": 0.08846240243577609,
+        "mapped": true
+      },
+      {
+        "functionName": "jsxProd",
+        "fileLine": "node_modules/react/cjs/react-jsx-runtime.production.js:14",
+        "selfMs": 1.263,
+        "selfPct": 0.08783648921099466,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/utils/use-visual-element.mjs:111",
+        "selfMs": 1.22,
+        "selfPct": 0.08484601491481669,
+        "mapped": true
+      },
+      {
+        "functionName": "displayName",
+        "fileLine": "(unknown):36",
+        "selfMs": 1.199,
+        "selfPct": 0.08338555072366001,
+        "mapped": false
+      },
+      {
+        "functionName": "mountStateImpl",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4765",
+        "selfMs": 1.188,
+        "selfPct": 0.08262054567114936,
+        "mapped": true
+      },
+      {
+        "functionName": "serialize",
+        "fileLine": "(unknown):203",
+        "selfMs": 1.17,
+        "selfPct": 0.08136871922158649,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/StyleCard.tsx:87",
+        "selfMs": 1.15,
+        "selfPct": 0.07997780094429442,
+        "mapped": true
+      },
+      {
+        "functionName": "getClosestProjectingParent",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:891",
+        "selfMs": 1.144,
+        "selfPct": 0.0795605254611068,
+        "mapped": true
+      },
+      {
+        "functionName": "useFiber",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3327",
+        "selfMs": 1.128,
+        "selfPct": 0.07844779083927314,
+        "mapped": true
+      },
+      {
+        "functionName": "createAnimationState",
+        "fileLine": "node_modules/motion-dom/dist/es/render/utils/animation-state.mjs:18",
+        "selfMs": 1.127,
+        "selfPct": 0.07837824492540853,
+        "mapped": true
+      },
+      {
+        "functionName": "useMotionValue",
+        "fileLine": "node_modules/framer-motion/dist/es/value/use-motion-value.mjs:24",
+        "selfMs": 1.123,
+        "selfPct": 0.07810006126995012,
+        "mapped": true
+      },
+      {
+        "functionName": "commitPassiveUnmountOnFiber",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:10477",
+        "selfMs": 1.123,
+        "selfPct": 0.07810006126995012,
+        "mapped": true
+      },
+      {
+        "functionName": "commitHostUpdate",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8725",
+        "selfMs": 1.116,
+        "selfPct": 0.0776132398728979,
+        "mapped": true
+      },
+      {
+        "functionName": "useBoundStore",
+        "fileLine": "node_modules/zustand/esm/react.mjs:16",
+        "selfMs": 1.108,
+        "selfPct": 0.07705687256198106,
+        "mapped": true
+      },
+      {
+        "functionName": "add",
+        "fileLine": "node_modules/motion-utils/dist/es/subscription-manager.mjs:7",
+        "selfMs": 1.108,
+        "selfPct": 0.07705687256198106,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:227",
+        "selfMs": 1.105,
+        "selfPct": 0.07684823482038725,
+        "mapped": true
+      },
+      {
+        "functionName": "updateOptions",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1195",
+        "selfMs": 1.104,
+        "selfPct": 0.07677868890652265,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.measureElement",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:873",
+        "selfMs": 1.103,
+        "selfPct": 0.07670914299265803,
+        "mapped": true
+      },
+      {
+        "functionName": "updateAnimationControlsSubscription",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/features/animation/index.mjs:13",
+        "selfMs": 1.101,
+        "selfPct": 0.07657005116492883,
+        "mapped": true
+      },
+      {
+        "functionName": "ReorderItemComponent",
+        "fileLine": "node_modules/framer-motion/dist/es/components/Reorder/Item.mjs:16",
+        "selfMs": 1.1,
+        "selfPct": 0.07650050525106422,
+        "mapped": true
+      },
+      {
+        "functionName": "workLoopSync",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11181",
+        "selfMs": 1.099,
+        "selfPct": 0.07643095933719962,
+        "mapped": true
+      },
+      {
+        "functionName": "useCallback",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5491",
+        "selfMs": 1.099,
+        "selfPct": 0.07643095933719962,
+        "mapped": true
+      },
+      {
+        "functionName": "update",
+        "fileLine": "node_modules/motion-dom/dist/es/render/VisualElement.mjs:370",
+        "selfMs": 1.099,
+        "selfPct": 0.07643095933719962,
+        "mapped": true
+      },
+      {
+        "functionName": "performWorkOnRoot",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:10681",
+        "selfMs": 1.096,
+        "selfPct": 0.07622232159560581,
+        "mapped": true
+      },
+      {
+        "functionName": "Sidebar",
+        "fileLine": "src/components/Sidebar.tsx:26",
+        "selfMs": 1.096,
+        "selfPct": 0.07622232159560581,
+        "mapped": true
+      },
+      {
+        "functionName": "getOwnerDocumentFromRootContainer",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:13968",
+        "selfMs": 1.094,
+        "selfPct": 0.0760832297678766,
+        "mapped": true
+      },
+      {
+        "functionName": "shouldForward",
+        "fileLine": "node_modules/framer-motion/dist/es/render/dom/utils/filter-props.mjs:4",
+        "selfMs": 1.09,
+        "selfPct": 0.07580504611241819,
+        "mapped": true
+      },
+      {
+        "functionName": "updateInput",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1103",
+        "selfMs": 1.09,
+        "selfPct": 0.07580504611241819,
+        "mapped": true
+      },
+      {
+        "functionName": "mapRemainingChildren",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3319",
+        "selfMs": 1.089,
+        "selfPct": 0.07573550019855359,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.setOptions",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:271",
+        "selfMs": 1.089,
+        "selfPct": 0.07573550019855359,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/App.tsx:118",
+        "selfMs": 1.087,
+        "selfPct": 0.07559640837082438,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/grid/VirtualStyleGrid.tsx:86",
+        "selfMs": 1.087,
+        "selfPct": 0.07559640837082438,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/zustand/esm/react/shallow.mjs:6",
+        "selfMs": 1.083,
+        "selfPct": 0.07531822471536596,
+        "mapped": true
+      },
+      {
+        "functionName": "updateStoreInstance",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4741",
+        "selfMs": 1.081,
+        "selfPct": 0.07517913288763675,
+        "mapped": true
+      },
+      {
+        "functionName": "updateSlot",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3503",
+        "selfMs": 1.08,
+        "selfPct": 0.07510958697377215,
+        "mapped": true
+      },
+      {
+        "functionName": "bubbleProperties",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:7931",
+        "selfMs": 1.08,
+        "selfPct": 0.07510958697377215,
+        "mapped": true
+      },
+      {
+        "functionName": "ProjectionNode",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:73",
+        "selfMs": 1.079,
+        "selfPct": 0.07504004105990754,
+        "mapped": true
+      },
+      {
+        "functionName": "dedupeStylesByNameForAllSources",
+        "fileLine": "src/store/stylesStore.ts:306",
+        "selfMs": 1.079,
+        "selfPct": 0.07504004105990754,
+        "mapped": true
+      },
+      {
+        "functionName": "processBatch",
+        "fileLine": "node_modules/motion-dom/dist/es/frameloop/batcher.mjs:20",
+        "selfMs": 1.078,
+        "selfPct": 0.07497049514604294,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:632",
+        "selfMs": 1.076,
+        "selfPct": 0.07483140331831373,
+        "mapped": true
+      },
+      {
+        "functionName": "useVirtualizer",
+        "fileLine": "node_modules/@tanstack/react-virtual/dist/esm/index.js:127",
+        "selfMs": 1.071,
+        "selfPct": 0.07448367374899072,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:187",
+        "selfMs": 1.065,
+        "selfPct": 0.0740663982658031,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.resizeItem",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:898",
+        "selfMs": 1.064,
+        "selfPct": 0.0739968523519385,
+        "mapped": true
+      },
+      {
+        "functionName": "updateReducerImpl",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4557",
+        "selfMs": 1.058,
+        "selfPct": 0.07357957686875087,
+        "mapped": true
+      },
+      {
+        "functionName": "Provider",
+        "fileLine": "node_modules/@radix-ui/react-context/dist/index.mjs:26",
+        "selfMs": 1.051,
+        "selfPct": 0.07309275547169863,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/StyleGrid.tsx:170",
+        "selfMs": 1.047,
+        "selfPct": 0.07281457181624022,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/lucide-react/dist/esm/createLucideIcon.js:15",
+        "selfMs": 1.041,
+        "selfPct": 0.0723972963330526,
+        "mapped": true
+      },
+      {
+        "functionName": "processUpdateQueue",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4086",
+        "selfMs": 1.032,
+        "selfPct": 0.07177138310827116,
+        "mapped": true
+      },
+      {
+        "functionName": "postMessage",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.994,
+        "selfPct": 0.06912863838141622,
+        "mapped": false
+      },
+      {
+        "functionName": "detachDeletedInstance",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:852",
+        "selfMs": 0.95,
+        "selfPct": 0.06606861817137365,
+        "mapped": true
+      },
+      {
+        "functionName": "deleteRemainingChildren",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3312",
+        "selfMs": 0.747,
+        "selfPct": 0.05195079765685907,
+        "mapped": true
+      },
+      {
+        "functionName": "commitRoot",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11457",
+        "selfMs": 0.713,
+        "selfPct": 0.04958623658546254,
+        "mapped": true
+      },
+      {
+        "functionName": "willUpdate",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:396",
+        "selfMs": 0.712,
+        "selfPct": 0.04951669067159793,
+        "mapped": true
+      },
+      {
+        "functionName": "subscribe",
+        "fileLine": "node_modules/zustand/esm/vanilla.mjs:14",
+        "selfMs": 0.637,
+        "selfPct": 0.044300747131752645,
+        "mapped": true
+      },
+      {
+        "functionName": "buildHTMLStyles",
+        "fileLine": "node_modules/motion-dom/dist/es/render/html/utils/build-styles.mjs:7",
+        "selfMs": 0.622,
+        "selfPct": 0.04325755842378359,
+        "mapped": true
+      },
+      {
+        "functionName": "predicate",
+        "fileLine": "(unknown):3",
+        "selfMs": 0.62,
+        "selfPct": 0.04311846659605438,
+        "mapped": false
+      },
+      {
+        "functionName": "json",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.614,
+        "selfPct": 0.04270119111286676,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:1535",
+        "selfMs": 0.609,
+        "selfPct": 0.04235346154354374,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4747",
+        "selfMs": 0.609,
+        "selfPct": 0.04235346154354374,
+        "mapped": true
+      },
+      {
+        "functionName": "FiberNode",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2421",
+        "selfMs": 0.601,
+        "selfPct": 0.04179709423262691,
+        "mapped": true
+      },
+      {
+        "functionName": "useVirtualizerBase",
+        "fileLine": "node_modules/@tanstack/react-virtual/dist/esm/index.js:6",
+        "selfMs": 0.6,
+        "selfPct": 0.041727548318762304,
+        "mapped": true
+      },
+      {
+        "functionName": "onCommitFiberRoot",
+        "fileLine": "(unknown):72",
+        "selfMs": 0.599,
+        "selfPct": 0.0416580024048977,
+        "mapped": false
+      },
+      {
+        "functionName": "getElementRef$1",
+        "fileLine": "node_modules/@radix-ui/react-slot/dist/index.mjs:85",
+        "selfMs": 0.597,
+        "selfPct": 0.04151891057716849,
+        "mapped": true
+      },
+      {
+        "functionName": "animateChanges",
+        "fileLine": "node_modules/motion-dom/dist/es/render/utils/animation-state.mjs:61",
+        "selfMs": 0.592,
+        "selfPct": 0.041171181007845475,
+        "mapped": true
+      },
+      {
+        "functionName": "buildGridRows",
+        "fileLine": "src/components/grid/buildGridRows.ts:19",
+        "selfMs": 0.591,
+        "selfPct": 0.04110163509398087,
+        "mapped": true
+      },
+      {
+        "functionName": "onLayoutMeasure",
+        "fileLine": "node_modules/framer-motion/dist/es/components/Reorder/Item.mjs:36",
+        "selfMs": 0.591,
+        "selfPct": 0.04110163509398087,
+        "mapped": true
+      },
+      {
+        "functionName": "resetTransform",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:613",
+        "selfMs": 0.587,
+        "selfPct": 0.04082345143852246,
+        "mapped": true
+      },
+      {
+        "functionName": "addValue",
+        "fileLine": "node_modules/motion-dom/dist/es/render/VisualElement.mjs:437",
+        "selfMs": 0.585,
+        "selfPct": 0.040684359610793246,
+        "mapped": true
+      },
+      {
+        "functionName": "getCategoryColor",
+        "fileLine": "src/store/stylesStore.ts:130",
+        "selfMs": 0.585,
+        "selfPct": 0.040684359610793246,
+        "mapped": true
+      },
+      {
+        "functionName": "setRef",
+        "fileLine": "node_modules/@radix-ui/react-compose-refs/dist/index.mjs:3",
+        "selfMs": 0.583,
+        "selfPct": 0.04054526778306404,
+        "mapped": true
+      },
+      {
+        "functionName": "querySelectorAll",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.582,
+        "selfPct": 0.040475721869199434,
+        "mapped": false
+      },
+      {
+        "functionName": "applyProjectionStyles",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:1307",
+        "selfMs": 0.575,
+        "selfPct": 0.03998890047214721,
+        "mapped": true
+      },
+      {
+        "functionName": "get",
+        "fileLine": "node_modules/framer-motion/dist/es/render/components/create-proxy.mjs:31",
+        "selfMs": 0.574,
+        "selfPct": 0.039919354558282605,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/grid/VirtualStyleGrid.tsx:91",
+        "selfMs": 0.574,
+        "selfPct": 0.039919354558282605,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:146",
+        "selfMs": 0.573,
+        "selfPct": 0.039849808644418,
+        "mapped": true
+      },
+      {
+        "functionName": "forEach",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/utils/flat-tree.mjs:17",
+        "selfMs": 0.573,
+        "selfPct": 0.039849808644418,
+        "mapped": true
+      },
+      {
+        "functionName": "measureViewportBox",
+        "fileLine": "node_modules/motion-dom/dist/es/render/VisualElement.mjs:355",
+        "selfMs": 0.573,
+        "selfPct": 0.039849808644418,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.getVirtualItems.memo$1.key",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:970",
+        "selfMs": 0.572,
+        "selfPct": 0.0397802627305534,
+        "mapped": true
+      },
+      {
+        "functionName": "scrapeMotionValuesFromProps$1",
+        "fileLine": "node_modules/motion-dom/dist/es/render/html/utils/scrape-motion-values.mjs:4",
+        "selfMs": 0.571,
+        "selfPct": 0.03971071681668879,
+        "mapped": true
+      },
+      {
+        "functionName": "getBoundingClientRect",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.571,
+        "selfPct": 0.03971071681668879,
+        "mapped": false
+      },
+      {
+        "functionName": "exports.cloneElement",
+        "fileLine": "node_modules/react/cjs/react.production.js:369",
+        "selfMs": 0.569,
+        "selfPct": 0.03957162498895959,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.unstable_scheduleCallback",
+        "fileLine": "node_modules/scheduler/cjs/scheduler.production.js:272",
+        "selfMs": 0.569,
+        "selfPct": 0.03957162498895959,
+        "mapped": true
+      },
+      {
+        "functionName": "useThumbVersion",
+        "fileLine": "src/store/stylesStore.ts:1538",
+        "selfMs": 0.568,
+        "selfPct": 0.03950207907509498,
+        "mapped": true
+      },
+      {
+        "functionName": "cancel",
+        "fileLine": "node_modules/motion-dom/dist/es/frameloop/batcher.mjs:64",
+        "selfMs": 0.566,
+        "selfPct": 0.039362987247365776,
+        "mapped": true
+      },
+      {
+        "functionName": "commitDeletionEffectsOnFiber",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9159",
+        "selfMs": 0.566,
+        "selfPct": 0.039362987247365776,
+        "mapped": true
+      },
+      {
+        "functionName": "updateFeatures",
+        "fileLine": "node_modules/motion-dom/dist/es/render/VisualElement.mjs:317",
+        "selfMs": 0.566,
+        "selfPct": 0.039362987247365776,
+        "mapped": true
+      },
+      {
+        "functionName": "scrollTo",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.565,
+        "selfPct": 0.03929344133350117,
+        "mapped": false
+      },
+      {
+        "functionName": "exports.createElement",
+        "fileLine": "node_modules/react/cjs/react.production.js:409",
+        "selfMs": 0.564,
+        "selfPct": 0.03922389541963657,
+        "mapped": true
+      },
+      {
+        "functionName": "selectFilteredStyles",
+        "fileLine": "src/store/stylesStore.ts:497",
+        "selfMs": 0.564,
+        "selfPct": 0.03922389541963657,
+        "mapped": true
+      },
+      {
+        "functionName": "scheduleUpdateOnFiber",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:10653",
+        "selfMs": 0.564,
+        "selfPct": 0.03922389541963657,
+        "mapped": true
+      },
+      {
+        "functionName": "markRootFinished",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:704",
+        "selfMs": 0.56,
+        "selfPct": 0.03894571176417815,
+        "mapped": true
+      },
+      {
+        "functionName": "triggerCallback",
+        "fileLine": "node_modules/motion-dom/dist/es/frameloop/render-step.mjs:26",
+        "selfMs": 0.56,
+        "selfPct": 0.03894571176417815,
+        "mapped": true
+      },
+      {
+        "functionName": "pop",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:252",
+        "selfMs": 0.56,
+        "selfPct": 0.03894571176417815,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/framer-motion/dist/es/value/use-combine-values.mjs:30",
+        "selfMs": 0.559,
+        "selfPct": 0.038876165850313546,
+        "mapped": true
+      },
+      {
+        "functionName": "renderHTML",
+        "fileLine": "node_modules/motion-dom/dist/es/render/html/utils/render.mjs:1",
+        "selfMs": 0.559,
+        "selfPct": 0.038876165850313546,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.getMeasurements.memo$1.key",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:634",
+        "selfMs": 0.558,
+        "selfPct": 0.03880661993644895,
+        "mapped": true
+      },
+      {
+        "functionName": "finishRenderingHooks",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4363",
+        "selfMs": 0.558,
+        "selfPct": 0.03880661993644895,
+        "mapped": true
+      },
+      {
+        "functionName": "shouldSetTextContent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:13997",
+        "selfMs": 0.558,
+        "selfPct": 0.03880661993644895,
+        "mapped": true
+      },
+      {
+        "functionName": "flushLayoutEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11646",
+        "selfMs": 0.557,
+        "selfPct": 0.03873707402258434,
+        "mapped": true
+      },
+      {
+        "functionName": "update",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/features/animation/index.mjs:25",
+        "selfMs": 0.557,
+        "selfPct": 0.03873707402258434,
+        "mapped": true
+      },
+      {
+        "functionName": "v.measureElement",
+        "fileLine": "node_modules/@tanstack/react-virtual/dist/esm/index.js:90",
+        "selfMs": 0.557,
+        "selfPct": 0.03873707402258434,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.shouldMeasureDuringScroll",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:853",
+        "selfMs": 0.557,
+        "selfPct": 0.03873707402258434,
+        "mapped": true
+      },
+      {
+        "functionName": "commitReconciliationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9843",
+        "selfMs": 0.555,
+        "selfPct": 0.038597982194855135,
+        "mapped": true
+      },
+      {
+        "functionName": "CategoryHeaderRow",
+        "fileLine": "src/components/grid/CategoryHeaderRow.tsx:26",
+        "selfMs": 0.555,
+        "selfPct": 0.038597982194855135,
+        "mapped": true
+      },
+      {
+        "functionName": "updateSyncExternalStore",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4685",
+        "selfMs": 0.554,
+        "selfPct": 0.03852843628099053,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.useCallback",
+        "fileLine": "node_modules/react/cjs/react.production.js:485",
+        "selfMs": 0.554,
+        "selfPct": 0.03852843628099053,
+        "mapped": true
+      },
+      {
+        "functionName": "useVisualElement",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/utils/use-visual-element.mjs:12",
+        "selfMs": 0.553,
+        "selfPct": 0.03845889036712592,
+        "mapped": true
+      },
+      {
+        "functionName": "registerItem",
+        "fileLine": "node_modules/framer-motion/dist/es/components/Reorder/Group.mjs:19",
+        "selfMs": 0.553,
+        "selfPct": 0.03845889036712592,
+        "mapped": true
+      },
+      {
+        "functionName": "motionValue",
+        "fileLine": "node_modules/motion-dom/dist/es/value/index.mjs:319",
+        "selfMs": 0.552,
+        "selfPct": 0.03838934445326132,
+        "mapped": true
+      },
+      {
+        "functionName": "pushHostContext",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:305",
+        "selfMs": 0.552,
+        "selfPct": 0.03838934445326132,
+        "mapped": true
+      },
+      {
+        "functionName": "schedule",
+        "fileLine": "node_modules/motion-dom/dist/es/frameloop/render-step.mjs:38",
+        "selfMs": 0.552,
+        "selfPct": 0.03838934445326132,
+        "mapped": true
+      },
+      {
+        "functionName": "getAttribute",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.552,
+        "selfPct": 0.03838934445326132,
+        "mapped": false
+      },
+      {
+        "functionName": "acc.<computed>",
+        "fileLine": "node_modules/motion-dom/dist/es/frameloop/batcher.mjs:57",
+        "selfMs": 0.551,
+        "selfPct": 0.03831979853939672,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@tanstack/react-virtual/dist/esm/index.js:118",
+        "selfMs": 0.551,
+        "selfPct": 0.03831979853939672,
+        "mapped": true
+      },
+      {
+        "functionName": "Toast",
+        "fileLine": "src/components/Toast.tsx:15",
+        "selfMs": 0.55,
+        "selfPct": 0.03825025262553211,
+        "mapped": true
+      },
+      {
+        "functionName": "measureDragConstraints",
+        "fileLine": "node_modules/framer-motion/dist/es/gestures/drag/VisualElementDragControls.mjs:461",
+        "selfMs": 0.55,
+        "selfPct": 0.03825025262553211,
+        "mapped": true
+      },
+      {
+        "functionName": "notifyLayoutUpdate",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:1443",
+        "selfMs": 0.55,
+        "selfPct": 0.03825025262553211,
+        "mapped": true
+      },
+      {
+        "functionName": "serializeAsCallArgument",
+        "fileLine": "(unknown):200",
+        "selfMs": 0.549,
+        "selfPct": 0.03818070671166751,
+        "mapped": false
+      },
+      {
+        "functionName": "Virtualizer.cleanup",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:403",
+        "selfMs": 0.549,
+        "selfPct": 0.03818070671166751,
+        "mapped": true
+      },
+      {
+        "functionName": "pushDispatcher",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11093",
+        "selfMs": 0.548,
+        "selfPct": 0.038111160797802905,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:538",
+        "selfMs": 0.548,
+        "selfPct": 0.038111160797802905,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.getOffsetForAlignment",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:1022",
+        "selfMs": 0.548,
+        "selfPct": 0.038111160797802905,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/App.tsx:145",
+        "selfMs": 0.547,
+        "selfPct": 0.0380416148839383,
+        "mapped": true
+      },
+      {
+        "functionName": "track",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1060",
+        "selfMs": 0.547,
+        "selfPct": 0.0380416148839383,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:1247",
+        "selfMs": 0.547,
+        "selfPct": 0.0380416148839383,
+        "mapped": true
+      },
+      {
+        "functionName": "estimateSize",
+        "fileLine": "src/components/grid/VirtualStyleGrid.tsx:135",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "reconcileChildren",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:6115",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3961",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.useMemo",
+        "fileLine": "node_modules/react/cjs/react.production.js:513",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "on",
+        "fileLine": "node_modules/motion-dom/dist/es/render/VisualElement.mjs:543",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/grid/VirtualStyleGrid.tsx:145",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "shouldYieldToHost",
+        "fileLine": "node_modules/scheduler/cjs/scheduler.production.js:114",
+        "selfMs": 0.546,
+        "selfPct": 0.0379720689700737,
+        "mapped": true
+      },
+      {
+        "functionName": "useConstant",
+        "fileLine": "node_modules/framer-motion/dist/es/utils/use-constant.mjs:11",
+        "selfMs": 0.545,
+        "selfPct": 0.03790252305620909,
+        "mapped": true
+      },
+      {
+        "functionName": "useMotionRef",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/utils/use-motion-ref.mjs:8",
+        "selfMs": 0.545,
+        "selfPct": 0.03790252305620909,
+        "mapped": true
+      },
+      {
+        "functionName": "useState",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5564",
+        "selfMs": 0.545,
+        "selfPct": 0.03790252305620909,
+        "mapped": true
+      },
+      {
+        "functionName": "addPointerEvent",
+        "fileLine": "node_modules/framer-motion/dist/es/events/add-pointer-event.mjs:4",
+        "selfMs": 0.544,
+        "selfPct": 0.03783297714234449,
+        "mapped": true
+      },
+      {
+        "functionName": "measureInstanceViewportBox",
+        "fileLine": "node_modules/motion-dom/dist/es/render/html/HTMLVisualElement.mjs:33",
+        "selfMs": 0.544,
+        "selfPct": 0.03783297714234449,
+        "mapped": true
+      },
+      {
+        "functionName": "isHostParent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8734",
+        "selfMs": 0.542,
+        "selfPct": 0.03769388531461528,
+        "mapped": true
+      },
+      {
+        "functionName": "addUniqueItem",
+        "fileLine": "node_modules/motion-utils/dist/es/array.mjs:1",
+        "selfMs": 0.542,
+        "selfPct": 0.03769388531461528,
+        "mapped": true
+      },
+      {
+        "functionName": "safelyAttachRef",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8658",
+        "selfMs": 0.542,
+        "selfPct": 0.03769388531461528,
+        "mapped": true
+      },
+      {
+        "functionName": "scheduleTaskForRootDuringMicrotask",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11993",
+        "selfMs": 0.542,
+        "selfPct": 0.03769388531461528,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.useRef",
+        "fileLine": "node_modules/react/cjs/react.production.js:522",
+        "selfMs": 0.542,
+        "selfPct": 0.03769388531461528,
+        "mapped": true
+      },
+      {
+        "functionName": "mergeProps",
+        "fileLine": "node_modules/@radix-ui/react-slot/dist/index.mjs:61",
+        "selfMs": 0.541,
+        "selfPct": 0.037624339400750675,
+        "mapped": true
+      },
+      {
+        "functionName": "getSnapshotBeforeUpdate",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/features/layout/MeasureLayout.mjs:47",
+        "selfMs": 0.541,
+        "selfPct": 0.037624339400750675,
+        "mapped": true
+      },
+      {
+        "functionName": "getRect",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:14",
+        "selfMs": 0.541,
+        "selfPct": 0.037624339400750675,
+        "mapped": true
+      },
+      {
+        "functionName": "useStyle",
+        "fileLine": "node_modules/framer-motion/dist/es/render/html/use-props.mjs:20",
+        "selfMs": 0.54,
+        "selfPct": 0.037554793486886076,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-popover/dist/index.mjs:65",
+        "selfMs": 0.54,
+        "selfPct": 0.037554793486886076,
+        "mapped": true
+      },
+      {
+        "functionName": "activeStickyHeaderIndex",
+        "fileLine": "src/components/grid/buildGridRows.ts:76",
+        "selfMs": 0.54,
+        "selfPct": 0.037554793486886076,
+        "mapped": true
+      },
+      {
+        "functionName": "observe",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:260",
+        "selfMs": 0.54,
+        "selfPct": 0.037554793486886076,
+        "mapped": true
+      },
+      {
+        "functionName": "set",
+        "fileLine": "node_modules/motion-dom/dist/es/value/index.mjs:172",
+        "selfMs": 0.539,
+        "selfPct": 0.03748524757302147,
+        "mapped": true
+      },
+      {
+        "functionName": "hasSelectionCapabilities",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2197",
+        "selfMs": 0.539,
+        "selfPct": 0.03748524757302147,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-tooltip/dist/index.mjs:163",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "shallowEqual",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2109",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.useState",
+        "fileLine": "node_modules/react/cjs/react.production.js:525",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "isCheckable",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1012",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "observeElementOffset",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:119",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "performWorkUntilDeadline",
+        "fileLine": "node_modules/scheduler/cjs/scheduler.production.js:121",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "prepareToReadContext",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3039",
+        "selfMs": 0.538,
+        "selfPct": 0.037415701659156864,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/framer-motion/dist/es/value/use-transform.mjs:48",
+        "selfMs": 0.537,
+        "selfPct": 0.037346155745292264,
+        "mapped": true
+      },
+      {
+        "functionName": "makeState",
+        "fileLine": "node_modules/framer-motion/dist/es/motion/utils/use-visual-state.mjs:8",
+        "selfMs": 0.537,
+        "selfPct": 0.037346155745292264,
+        "mapped": true
+      },
+      {
+        "functionName": "addEventListener",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.536,
+        "selfPct": 0.03727660983142766,
+        "mapped": false
+      },
+      {
+        "functionName": "pushHostContainer",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:265",
+        "selfMs": 0.536,
+        "selfPct": 0.03727660983142766,
+        "mapped": true
+      },
+      {
+        "functionName": "isHostHoistableType",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:14911",
+        "selfMs": 0.536,
+        "selfPct": 0.03727660983142766,
+        "mapped": true
+      },
+      {
+        "functionName": "dispatchSetStateInternal",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5373",
+        "selfMs": 0.534,
+        "selfPct": 0.03713751800369845,
+        "mapped": true
+      },
+      {
+        "functionName": "clearSnapshot",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:1429",
+        "selfMs": 0.533,
+        "selfPct": 0.037067972089833846,
+        "mapped": true
+      },
+      {
+        "functionName": "processRootScheduleInMicrotask",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11966",
+        "selfMs": 0.532,
+        "selfPct": 0.03699842617596925,
+        "mapped": true
+      },
+      {
+        "functionName": "addTrappedEventListener",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12367",
+        "selfMs": 0.532,
+        "selfPct": 0.03699842617596925,
+        "mapped": true
+      },
+      {
+        "functionName": "notify",
+        "fileLine": "node_modules/motion-utils/dist/es/subscription-manager.mjs:11",
+        "selfMs": 0.529,
+        "selfPct": 0.036789788434375435,
+        "mapped": true
+      },
+      {
+        "functionName": "propagateParentContextChanges",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2978",
+        "selfMs": 0.527,
+        "selfPct": 0.03665069660664622,
+        "mapped": true
+      },
+      {
+        "functionName": "MotionValue.updateAndNotify",
+        "fileLine": "node_modules/motion-dom/dist/es/value/index.mjs:41",
+        "selfMs": 0.518,
+        "selfPct": 0.03602478338186479,
+        "mapped": true
+      },
+      {
+        "functionName": "setValueForAttribute",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:950",
+        "selfMs": 0.515,
+        "selfPct": 0.035816145640270976,
+        "mapped": true
+      },
+      {
+        "functionName": "updateMemo",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5162",
+        "selfMs": 0.51,
+        "selfPct": 0.03546841607094796,
+        "mapped": true
+      },
+      {
+        "functionName": "flushMutationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11524",
+        "selfMs": 0.506,
+        "selfPct": 0.03519023241548955,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-compose-refs/dist/index.mjs:11",
+        "selfMs": 0.506,
+        "selfPct": 0.03519023241548955,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.getVirtualIndexes.memo$1.key",
+        "fileLine": "assets/index-Dsiu8ZUp.js:31811",
+        "selfMs": 0.491,
+        "selfPct": 0.03414704370752049,
+        "mapped": false
+      },
+      {
+        "functionName": "readContext",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3045",
+        "selfMs": 0.488,
+        "selfPct": 0.03393840596592668,
+        "mapped": true
+      },
+      {
+        "functionName": "filterFavoriteStyles",
+        "fileLine": "src/store/stylesStore.ts:483",
+        "selfMs": 0.468,
+        "selfPct": 0.0325474876886346,
+        "mapped": true
+      },
+      {
+        "functionName": "entries",
+        "fileLine": "node_modules/zustand/esm/vanilla/shallow.mjs:50",
+        "selfMs": 0.367,
+        "selfPct": 0.02552335038830961,
+        "mapped": true
+      },
+      {
+        "functionName": "shouldConstruct",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2448",
+        "selfMs": 0.36,
+        "selfPct": 0.025036528991257384,
+        "mapped": true
+      },
+      {
+        "functionName": "AnimatePresence",
+        "fileLine": "node_modules/framer-motion/dist/es/components/AnimatePresence/index.mjs:44",
+        "selfMs": 0.166,
+        "selfPct": 0.011544621701524238,
+        "mapped": true
+      },
+      {
+        "functionName": "detachFiberAfterEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9129",
+        "selfMs": 0.141,
+        "selfPct": 0.009805973854909143,
+        "mapped": true
+      }
+    ]
+  },
+  "renderSnap": {
+    "commits": 11,
+    "byName": [
+      {
+        "name": "ThumbnailPreview",
+        "count": 2022
+      },
+      {
+        "name": "StyleCard",
+        "count": 557
+      },
+      {
+        "name": "motion.div",
+        "count": 132
+      },
+      {
+        "name": "MeasureLayout",
+        "count": 121
+      },
+      {
+        "name": "CategoryName",
+        "count": 110
+      },
+      {
+        "name": "SearchBar",
+        "count": 11
+      },
+      {
+        "name": "Sidebar",
+        "count": 11
+      },
+      {
+        "name": "CategoryTitle",
+        "count": 11
+      },
+      {
+        "name": "BottomPanel",
+        "count": 11
+      },
+      {
+        "name": "AnimatePresence",
+        "count": 11
+      },
+      {
+        "name": "SourceFilter",
+        "count": 4
+      },
+      {
+        "name": "StyleGrid",
+        "count": 3
+      },
+      {
+        "name": "App",
+        "count": 2
+      },
+      {
+        "name": "Toast",
+        "count": 2
+      }
+    ],
+    "lastCommit": {
+      "at": 1618.7000000178814,
+      "byName": [
+        {
+          "name": "ThumbnailPreview",
+          "count": 153
+        },
+        {
+          "name": "motion.div",
+          "count": 12
+        },
+        {
+          "name": "MeasureLayout",
+          "count": 11
+        },
+        {
+          "name": "CategoryName",
+          "count": 10
+        },
+        {
+          "name": "SourceFilter",
+          "count": 1
+        },
+        {
+          "name": "SearchBar",
+          "count": 1
+        },
+        {
+          "name": "Sidebar",
+          "count": 1
+        },
+        {
+          "name": "CategoryTitle",
+          "count": 1
+        },
+        {
+          "name": "BottomPanel",
+          "count": 1
+        },
+        {
+          "name": "AnimatePresence",
+          "count": 1
+        }
+      ]
+    },
+    "cardClassMutations": 0
+  },
+  "extras": {}
+}

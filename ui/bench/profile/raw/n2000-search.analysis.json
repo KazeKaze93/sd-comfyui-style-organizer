@@ -1,0 +1,1167 @@
+{
+  "wallMs": 214.40000000596046,
+  "analysis": {
+    "totalSampleMs": 588.339,
+    "sampleCount": 487,
+    "top": [
+      {
+        "rank": 1,
+        "functionName": "(program)",
+        "fileLine": "(unknown):0",
+        "selfMs": 404.103,
+        "selfPct": 68.68540076384534,
+        "mapped": false
+      },
+      {
+        "rank": 2,
+        "functionName": "(idle)",
+        "fileLine": "(unknown):0",
+        "selfMs": 36.746,
+        "selfPct": 6.245718879761498,
+        "mapped": false
+      },
+      {
+        "rank": 3,
+        "functionName": "scrollIntoView",
+        "fileLine": "(unknown):0",
+        "selfMs": 15.561,
+        "selfPct": 2.644903703477077,
+        "mapped": false
+      },
+      {
+        "rank": 4,
+        "functionName": "Virtualizer.getMaxScrollOffset",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:1001",
+        "selfMs": 10.027,
+        "selfPct": 1.7042895337551989,
+        "mapped": true
+      },
+      {
+        "rank": 5,
+        "functionName": "renderWithHooks",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4333",
+        "selfMs": 6.7,
+        "selfPct": 1.1387992296958047,
+        "mapped": true
+      },
+      {
+        "rank": 6,
+        "functionName": "matchesSearch",
+        "fileLine": "src/store/stylesStore.ts:293",
+        "selfMs": 6.002,
+        "selfPct": 1.0201601457663014,
+        "mapped": true
+      },
+      {
+        "rank": 7,
+        "functionName": "getCssDimensions",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:6",
+        "selfMs": 3.81,
+        "selfPct": 0.6475858306180621,
+        "mapped": true
+      },
+      {
+        "rank": 8,
+        "functionName": "walk",
+        "fileLine": "(unknown):51",
+        "selfMs": 3.712,
+        "selfPct": 0.6309287672583324,
+        "mapped": false
+      },
+      {
+        "rank": 9,
+        "functionName": "matchSearchTokens",
+        "fileLine": "src/store/stylesStore.ts:287",
+        "selfMs": 3.387,
+        "selfPct": 0.5756885061163717,
+        "mapped": true
+      },
+      {
+        "rank": 10,
+        "functionName": "getViewportRect",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:222",
+        "selfMs": 3.28,
+        "selfPct": 0.5575017124480954,
+        "mapped": true
+      },
+      {
+        "rank": 11,
+        "functionName": "getAnimationName",
+        "fileLine": "node_modules/@radix-ui/react-presence/dist/index.mjs:118",
+        "selfMs": 3.27,
+        "selfPct": 0.5558020121052658,
+        "mapped": true
+      },
+      {
+        "rank": 12,
+        "functionName": "(garbage collector)",
+        "fileLine": "(unknown):0",
+        "selfMs": 2.861,
+        "selfPct": 0.48628426808353686,
+        "mapped": false
+      },
+      {
+        "rank": 13,
+        "functionName": "computePosition$1",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:135",
+        "selfMs": 2.749,
+        "selfPct": 0.4672476242438458,
+        "mapped": true
+      },
+      {
+        "rank": 14,
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/cmdk/dist/index.mjs:1",
+        "selfMs": 2.592,
+        "selfPct": 0.4405623288614217,
+        "mapped": true
+      },
+      {
+        "rank": 15,
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-popper/dist/index.mjs:56",
+        "selfMs": 2.286,
+        "selfPct": 0.38855149837083724,
+        "mapped": true
+      }
+    ],
+    "all": [
+      {
+        "functionName": "(program)",
+        "fileLine": "(unknown):0",
+        "selfMs": 404.103,
+        "selfPct": 68.68540076384534,
+        "mapped": false
+      },
+      {
+        "functionName": "(idle)",
+        "fileLine": "(unknown):0",
+        "selfMs": 36.746,
+        "selfPct": 6.245718879761498,
+        "mapped": false
+      },
+      {
+        "functionName": "scrollIntoView",
+        "fileLine": "(unknown):0",
+        "selfMs": 15.561,
+        "selfPct": 2.644903703477077,
+        "mapped": false
+      },
+      {
+        "functionName": "Virtualizer.getMaxScrollOffset",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:1001",
+        "selfMs": 10.027,
+        "selfPct": 1.7042895337551989,
+        "mapped": true
+      },
+      {
+        "functionName": "renderWithHooks",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4333",
+        "selfMs": 6.7,
+        "selfPct": 1.1387992296958047,
+        "mapped": true
+      },
+      {
+        "functionName": "matchesSearch",
+        "fileLine": "src/store/stylesStore.ts:293",
+        "selfMs": 6.002,
+        "selfPct": 1.0201601457663014,
+        "mapped": true
+      },
+      {
+        "functionName": "getCssDimensions",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:6",
+        "selfMs": 3.81,
+        "selfPct": 0.6475858306180621,
+        "mapped": true
+      },
+      {
+        "functionName": "walk",
+        "fileLine": "(unknown):51",
+        "selfMs": 3.712,
+        "selfPct": 0.6309287672583324,
+        "mapped": false
+      },
+      {
+        "functionName": "matchSearchTokens",
+        "fileLine": "src/store/stylesStore.ts:287",
+        "selfMs": 3.387,
+        "selfPct": 0.5756885061163717,
+        "mapped": true
+      },
+      {
+        "functionName": "getViewportRect",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:222",
+        "selfMs": 3.28,
+        "selfPct": 0.5575017124480954,
+        "mapped": true
+      },
+      {
+        "functionName": "getAnimationName",
+        "fileLine": "node_modules/@radix-ui/react-presence/dist/index.mjs:118",
+        "selfMs": 3.27,
+        "selfPct": 0.5558020121052658,
+        "mapped": true
+      },
+      {
+        "functionName": "(garbage collector)",
+        "fileLine": "(unknown):0",
+        "selfMs": 2.861,
+        "selfPct": 0.48628426808353686,
+        "mapped": false
+      },
+      {
+        "functionName": "computePosition$1",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:135",
+        "selfMs": 2.749,
+        "selfPct": 0.4672476242438458,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/cmdk/dist/index.mjs:1",
+        "selfMs": 2.592,
+        "selfPct": 0.4405623288614217,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-popper/dist/index.mjs:56",
+        "selfMs": 2.286,
+        "selfPct": 0.38855149837083724,
+        "mapped": true
+      },
+      {
+        "functionName": "getBoundingClientRect",
+        "fileLine": "(unknown):0",
+        "selfMs": 2.224,
+        "selfPct": 0.378013356245294,
+        "mapped": false
+      },
+      {
+        "functionName": "commitMutationEffectsOnFiber",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9427",
+        "selfMs": 2.126,
+        "selfPct": 0.36135629288556426,
+        "mapped": true
+      },
+      {
+        "functionName": "commitHookEffectListMount",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8571",
+        "selfMs": 2.014,
+        "selfPct": 0.3423196490458732,
+        "mapped": true
+      },
+      {
+        "functionName": "setAttribute",
+        "fileLine": "(unknown):0",
+        "selfMs": 1.714,
+        "selfPct": 0.2913286387609864,
+        "mapped": false
+      },
+      {
+        "functionName": "displayName",
+        "fileLine": "(unknown):36",
+        "selfMs": 1.67,
+        "selfPct": 0.28384995725253637,
+        "mapped": false
+      },
+      {
+        "functionName": "computeSuggestions",
+        "fileLine": "src/components/SearchBar.tsx:18",
+        "selfMs": 1.641,
+        "selfPct": 0.27892082625833065,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs:21",
+        "selfMs": 1.614,
+        "selfPct": 0.27433163533269084,
+        "mapped": true
+      },
+      {
+        "functionName": "batchedUpdates$1",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1494",
+        "selfMs": 1.501,
+        "selfPct": 0.25512502145871685,
+        "mapped": true
+      },
+      {
+        "functionName": "useMemo",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5515",
+        "selfMs": 1.284,
+        "selfPct": 0.2182415240193154,
+        "mapped": true
+      },
+      {
+        "functionName": "matchesSearchKey",
+        "fileLine": "src/store/stylesStore.ts:301",
+        "selfMs": 1.271,
+        "selfPct": 0.21603191357363696,
+        "mapped": true
+      },
+      {
+        "functionName": "detectOverflow",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:68",
+        "selfMs": 1.153,
+        "selfPct": 0.19597544952824816,
+        "mapped": true
+      },
+      {
+        "functionName": "SearchBar",
+        "fileLine": "src/components/SearchBar.tsx:23",
+        "selfMs": 1.14,
+        "selfPct": 0.19376583908256975,
+        "mapped": true
+      },
+      {
+        "functionName": "addUniqueItem",
+        "fileLine": "node_modules/motion-utils/dist/es/array.mjs:1",
+        "selfMs": 1.137,
+        "selfPct": 0.19325592897972088,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4747",
+        "selfMs": 1.112,
+        "selfPct": 0.189006678122647,
+        "mapped": true
+      },
+      {
+        "functionName": "mergeClasses",
+        "fileLine": "src/utils/mergeClasses.js:8",
+        "selfMs": 1.105,
+        "selfPct": 0.1878168878826663,
+        "mapped": true
+      },
+      {
+        "functionName": "limitShift",
+        "fileLine": "node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs:310",
+        "selfMs": 1.097,
+        "selfPct": 0.18645712760840263,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:308",
+        "selfMs": 1.091,
+        "selfPct": 0.1854373074027049,
+        "mapped": true
+      },
+      {
+        "functionName": "setValueForStyles",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1291",
+        "selfMs": 1.085,
+        "selfPct": 0.18441748719700718,
+        "mapped": true
+      },
+      {
+        "functionName": "updateSyncExternalStore",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4685",
+        "selfMs": 1.078,
+        "selfPct": 0.18322769695702648,
+        "mapped": true
+      },
+      {
+        "functionName": "autoUpdate",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:609",
+        "selfMs": 1.038,
+        "selfPct": 0.17642889558570823,
+        "mapped": true
+      },
+      {
+        "functionName": "isShadowRoot",
+        "fileLine": "node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs:39",
+        "selfMs": 1.019,
+        "selfPct": 0.17319946493433208,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.createElement",
+        "fileLine": "node_modules/react/cjs/react.production.js:409",
+        "selfMs": 1.011,
+        "selfPct": 0.17183970466006843,
+        "mapped": true
+      },
+      {
+        "functionName": "reconcileChildFibersImpl",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3793",
+        "selfMs": 0.971,
+        "selfPct": 0.1650409032887502,
+        "mapped": true
+      },
+      {
+        "functionName": "updateSlot",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3503",
+        "selfMs": 0.957,
+        "selfPct": 0.1626613228087888,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.cloneElement",
+        "fileLine": "node_modules/react/cjs/react.production.js:369",
+        "selfMs": 0.948,
+        "selfPct": 0.1611315925002422,
+        "mapped": true
+      },
+      {
+        "functionName": "setProp",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12957",
+        "selfMs": 0.887,
+        "selfPct": 0.15076342040898189,
+        "mapped": true
+      },
+      {
+        "functionName": "reconcileChildrenArray",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:3622",
+        "selfMs": 0.856,
+        "selfPct": 0.14549434934621025,
+        "mapped": true
+      },
+      {
+        "functionName": "D",
+        "fileLine": "node_modules/cmdk/dist/chunk-NZJY6EH4.mjs:1",
+        "selfMs": 0.686,
+        "selfPct": 0.11659944351810776,
+        "mapped": true
+      },
+      {
+        "functionName": "getTrueOffsetParent",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:431",
+        "selfMs": 0.676,
+        "selfPct": 0.1148997431752782,
+        "mapped": true
+      },
+      {
+        "functionName": "count",
+        "fileLine": "src/components/Sidebar.tsx:82",
+        "selfMs": 0.616,
+        "selfPct": 0.10470154111830085,
+        "mapped": true
+      },
+      {
+        "functionName": "dispatchEvent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:15297",
+        "selfMs": 0.61,
+        "selfPct": 0.10368172091260311,
+        "mapped": true
+      },
+      {
+        "functionName": "getClientRectFromClippingAncestor",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:282",
+        "selfMs": 0.61,
+        "selfPct": 0.10368172091260311,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs:139",
+        "selfMs": 0.599,
+        "selfPct": 0.1018120505354906,
+        "mapped": true
+      },
+      {
+        "functionName": "addEventListener",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.597,
+        "selfPct": 0.10147211046692468,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/lucide-react/dist/esm/Icon.js:13",
+        "selfMs": 0.586,
+        "selfPct": 0.09960244008981217,
+        "mapped": true
+      },
+      {
+        "functionName": "Presence",
+        "fileLine": "node_modules/@radix-ui/react-presence/dist/index.mjs:18",
+        "selfMs": 0.582,
+        "selfPct": 0.09892255995268034,
+        "mapped": true
+      },
+      {
+        "functionName": "isWebKit",
+        "fileLine": "node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs:94",
+        "selfMs": 0.575,
+        "selfPct": 0.09773276971269965,
+        "mapped": true
+      },
+      {
+        "functionName": "updateCallback",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5153",
+        "selfMs": 0.574,
+        "selfPct": 0.09756279967841669,
+        "mapped": true
+      },
+      {
+        "functionName": "checkIfSnapshotChanged",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4751",
+        "selfMs": 0.573,
+        "selfPct": 0.09739282964413373,
+        "mapped": true
+      },
+      {
+        "functionName": "commitBeforeMutationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8842",
+        "selfMs": 0.572,
+        "selfPct": 0.09722285960985079,
+        "mapped": true
+      },
+      {
+        "functionName": "exports.unstable_scheduleCallback",
+        "fileLine": "node_modules/scheduler/cjs/scheduler.production.js:272",
+        "selfMs": 0.571,
+        "selfPct": 0.09705288957556783,
+        "mapped": true
+      },
+      {
+        "functionName": "size",
+        "fileLine": "node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs:339",
+        "selfMs": 0.569,
+        "selfPct": 0.09671294950700192,
+        "mapped": true
+      },
+      {
+        "functionName": "useLayoutEffect",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5509",
+        "selfMs": 0.568,
+        "selfPct": 0.09654297947271896,
+        "mapped": true
+      },
+      {
+        "functionName": "useRef",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5559",
+        "selfMs": 0.566,
+        "selfPct": 0.09620303940415305,
+        "mapped": true
+      },
+      {
+        "functionName": "pushSimpleEffect",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5053",
+        "selfMs": 0.566,
+        "selfPct": 0.09620303940415305,
+        "mapped": true
+      },
+      {
+        "functionName": "updateFunctionComponent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:6489",
+        "selfMs": 0.565,
+        "selfPct": 0.09603306936987009,
+        "mapped": true
+      },
+      {
+        "functionName": "ReorderItemComponent",
+        "fileLine": "node_modules/framer-motion/dist/es/components/Reorder/Item.mjs:16",
+        "selfMs": 0.565,
+        "selfPct": 0.09603306936987009,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12455",
+        "selfMs": 0.564,
+        "selfPct": 0.09586309933558713,
+        "mapped": true
+      },
+      {
+        "functionName": "flushSpawnedWork",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11670",
+        "selfMs": 0.563,
+        "selfPct": 0.09569312930130418,
+        "mapped": true
+      },
+      {
+        "functionName": "whileElementsMounted",
+        "fileLine": "node_modules/@radix-ui/react-popper/dist/index.mjs:95",
+        "selfMs": 0.562,
+        "selfPct": 0.09552315926702122,
+        "mapped": true
+      },
+      {
+        "functionName": "isFraction",
+        "fileLine": "node_modules/tailwind-merge/dist/bundle-mjs.mjs:498",
+        "selfMs": 0.561,
+        "selfPct": 0.09535318923273826,
+        "mapped": true
+      },
+      {
+        "functionName": "toKebabCase",
+        "fileLine": "src/utils/toKebabCase.js:8",
+        "selfMs": 0.56,
+        "selfPct": 0.09518321919845531,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs:230",
+        "selfMs": 0.56,
+        "selfPct": 0.09518321919845531,
+        "mapped": true
+      },
+      {
+        "functionName": "useStateMachine",
+        "fileLine": "node_modules/@radix-ui/react-presence/dist/index.mjs:10",
+        "selfMs": 0.559,
+        "selfPct": 0.09501324916417235,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/Sidebar.tsx:88",
+        "selfMs": 0.558,
+        "selfPct": 0.09484327912988941,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-compose-refs/dist/index.mjs:13",
+        "selfMs": 0.557,
+        "selfPct": 0.09467330909560645,
+        "mapped": true
+      },
+      {
+        "functionName": "getTargetInstForInputOrChangeEvent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2101",
+        "selfMs": 0.556,
+        "selfPct": 0.0945033390613235,
+        "mapped": true
+      },
+      {
+        "functionName": "now",
+        "fileLine": "node_modules/motion-dom/dist/es/frameloop/sync-time.mjs:17",
+        "selfMs": 0.556,
+        "selfPct": 0.0945033390613235,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/StyleCard.tsx:54",
+        "selfMs": 0.555,
+        "selfPct": 0.09433336902704054,
+        "mapped": true
+      },
+      {
+        "functionName": "querySelectorAll",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.555,
+        "selfPct": 0.09433336902704054,
+        "mapped": false
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:490",
+        "selfMs": 0.554,
+        "selfPct": 0.09416339899275758,
+        "mapped": true
+      },
+      {
+        "functionName": "setValueForKnownAttribute",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:970",
+        "selfMs": 0.554,
+        "selfPct": 0.09416339899275758,
+        "mapped": true
+      },
+      {
+        "functionName": "scheduleScrollReconcile",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:1241",
+        "selfMs": 0.554,
+        "selfPct": 0.09416339899275758,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-presence/dist/index.mjs:112",
+        "selfMs": 0.553,
+        "selfPct": 0.09399342895847462,
+        "mapped": true
+      },
+      {
+        "functionName": "usePresence",
+        "fileLine": "node_modules/@radix-ui/react-presence/dist/index.mjs:27",
+        "selfMs": 0.552,
+        "selfPct": 0.09382345892419167,
+        "mapped": true
+      },
+      {
+        "functionName": "getOffsetParent",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:452",
+        "selfMs": 0.552,
+        "selfPct": 0.09382345892419167,
+        "mapped": true
+      },
+      {
+        "functionName": "fn",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:421",
+        "selfMs": 0.552,
+        "selfPct": 0.09382345892419167,
+        "mapped": true
+      },
+      {
+        "functionName": "mapChildren",
+        "fileLine": "node_modules/react/cjs/react.production.js:255",
+        "selfMs": 0.551,
+        "selfPct": 0.09365348888990871,
+        "mapped": true
+      },
+      {
+        "functionName": "performSyncWorkOnRoot",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12084",
+        "selfMs": 0.551,
+        "selfPct": 0.09365348888990871,
+        "mapped": true
+      },
+      {
+        "functionName": "deepEqual",
+        "fileLine": "node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs:14",
+        "selfMs": 0.55,
+        "selfPct": 0.09348351885562575,
+        "mapped": true
+      },
+      {
+        "functionName": "getRectRelativeToOffsetParent",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:385",
+        "selfMs": 0.55,
+        "selfPct": 0.09348351885562575,
+        "mapped": true
+      },
+      {
+        "functionName": "getParentNode",
+        "fileLine": "node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs:118",
+        "selfMs": 0.549,
+        "selfPct": 0.0933135488213428,
+        "mapped": true
+      },
+      {
+        "functionName": "compareEntries",
+        "fileLine": "node_modules/zustand/esm/vanilla/shallow.mjs:6",
+        "selfMs": 0.548,
+        "selfPct": 0.09314357878705984,
+        "mapped": true
+      },
+      {
+        "functionName": "mergeProps",
+        "fileLine": "node_modules/@radix-ui/react-slot/dist/index.mjs:61",
+        "selfMs": 0.548,
+        "selfPct": 0.09314357878705984,
+        "mapped": true
+      },
+      {
+        "functionName": "pushHostContext",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:305",
+        "selfMs": 0.548,
+        "selfPct": 0.09314357878705984,
+        "mapped": true
+      },
+      {
+        "functionName": "buildTransform",
+        "fileLine": "node_modules/motion-dom/dist/es/render/html/utils/build-transform.mjs:18",
+        "selfMs": 0.548,
+        "selfPct": 0.09314357878705984,
+        "mapped": true
+      },
+      {
+        "functionName": "getNodeScroll",
+        "fileLine": "node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs:106",
+        "selfMs": 0.548,
+        "selfPct": 0.09314357878705984,
+        "mapped": true
+      },
+      {
+        "functionName": "willUpdate",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/create-projection-node.mjs:396",
+        "selfMs": 0.546,
+        "selfPct": 0.09280363871849392,
+        "mapped": true
+      },
+      {
+        "functionName": "setProperty",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.546,
+        "selfPct": 0.09280363871849392,
+        "mapped": false
+      },
+      {
+        "functionName": "accumulateTwoPhaseListeners",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:12877",
+        "selfMs": 0.545,
+        "selfPct": 0.09263366868421097,
+        "mapped": true
+      },
+      {
+        "functionName": "isLastTraversableNode",
+        "fileLine": "node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs:100",
+        "selfMs": 0.545,
+        "selfPct": 0.09263366868421097,
+        "mapped": true
+      },
+      {
+        "functionName": "fn",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:800",
+        "selfMs": 0.545,
+        "selfPct": 0.09263366868421097,
+        "mapped": true
+      },
+      {
+        "functionName": "getElementRects",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:477",
+        "selfMs": 0.544,
+        "selfPct": 0.09246369864992801,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-focus-scope/dist/index.mjs:13",
+        "selfMs": 0.543,
+        "selfPct": 0.09229372861564507,
+        "mapped": true
+      },
+      {
+        "functionName": "pe",
+        "fileLine": "node_modules/cmdk/dist/index.mjs:1",
+        "selfMs": 0.543,
+        "selfPct": 0.09229372861564507,
+        "mapped": true
+      },
+      {
+        "functionName": "fn",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:839",
+        "selfMs": 0.542,
+        "selfPct": 0.09212375858136211,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "node_modules/@radix-ui/react-focus-guards/dist/index.mjs:11",
+        "selfMs": 0.541,
+        "selfPct": 0.09195378854707915,
+        "mapped": true
+      },
+      {
+        "functionName": "fn",
+        "fileLine": "node_modules/@floating-ui/core/dist/floating-ui.core.mjs:987",
+        "selfMs": 0.541,
+        "selfPct": 0.09195378854707915,
+        "mapped": true
+      },
+      {
+        "functionName": "memoizedFunction",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/utils.js:5",
+        "selfMs": 0.54,
+        "selfPct": 0.0917838185127962,
+        "mapped": true
+      },
+      {
+        "functionName": "getClassGroupId",
+        "fileLine": "node_modules/tailwind-merge/dist/bundle-mjs.mjs:37",
+        "selfMs": 0.54,
+        "selfPct": 0.0917838185127962,
+        "mapped": true
+      },
+      {
+        "functionName": "flushMutationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:11524",
+        "selfMs": 0.54,
+        "selfPct": 0.0917838185127962,
+        "mapped": true
+      },
+      {
+        "functionName": "measureScroll",
+        "fileLine": "node_modules/motion-dom/dist/es/projection/node/DocumentProjectionNode.mjs:6",
+        "selfMs": 0.54,
+        "selfPct": 0.0917838185127962,
+        "mapped": true
+      },
+      {
+        "functionName": "getSide",
+        "fileLine": "node_modules/@floating-ui/utils/dist/floating-ui.utils.mjs:29",
+        "selfMs": 0.54,
+        "selfPct": 0.0917838185127962,
+        "mapped": true
+      },
+      {
+        "functionName": "setSearch",
+        "fileLine": "src/store/stylesStore.ts:675",
+        "selfMs": 0.539,
+        "selfPct": 0.09161384847851324,
+        "mapped": true
+      },
+      {
+        "functionName": "fn",
+        "fileLine": "node_modules/@radix-ui/react-popper/dist/index.mjs:259",
+        "selfMs": 0.539,
+        "selfPct": 0.09161384847851324,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.538,
+        "selfPct": 0.09144387844423028,
+        "mapped": false
+      },
+      {
+        "functionName": "updateWorkInProgressHook",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4455",
+        "selfMs": 0.538,
+        "selfPct": 0.09144387844423028,
+        "mapped": true
+      },
+      {
+        "functionName": "getGroupRecursive",
+        "fileLine": "node_modules/tailwind-merge/dist/bundle-mjs.mjs:68",
+        "selfMs": 0.538,
+        "selfPct": 0.09144387844423028,
+        "mapped": true
+      },
+      {
+        "functionName": "unwrapElement",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:27",
+        "selfMs": 0.538,
+        "selfPct": 0.09144387844423028,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/components/StyleGrid.tsx:169",
+        "selfMs": 0.537,
+        "selfPct": 0.09127390840994733,
+        "mapped": true
+      },
+      {
+        "functionName": "SyntheticBaseEvent",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1615",
+        "selfMs": 0.531,
+        "selfPct": 0.09025408820424959,
+        "mapped": true
+      },
+      {
+        "functionName": "dispatchUpdate",
+        "fileLine": "node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs:199",
+        "selfMs": 0.518,
+        "selfPct": 0.08804447775857116,
+        "mapped": true
+      },
+      {
+        "functionName": "Virtualizer.measure",
+        "fileLine": "node_modules/@tanstack/virtual-core/dist/esm/index.js:1203",
+        "selfMs": 0.514,
+        "selfPct": 0.08736459762143935,
+        "mapped": true
+      },
+      {
+        "functionName": "getBoundingClientRect",
+        "fileLine": "node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs:80",
+        "selfMs": 0.504,
+        "selfPct": 0.08566489727860978,
+        "mapped": true
+      },
+      {
+        "functionName": "parseClassName",
+        "fileLine": "node_modules/tailwind-merge/dist/bundle-mjs.mjs:245",
+        "selfMs": 0.471,
+        "selfPct": 0.08005588614727224,
+        "mapped": true
+      },
+      {
+        "functionName": "setValueForStyle",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:1273",
+        "selfMs": 0.436,
+        "selfPct": 0.07410693494736878,
+        "mapped": true
+      },
+      {
+        "functionName": "insertOrAppendPlacementNodeIntoContainer",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:8763",
+        "selfMs": 0.388,
+        "selfPct": 0.06594837330178689,
+        "mapped": true
+      },
+      {
+        "functionName": "B",
+        "fileLine": "node_modules/cmdk/dist/index.mjs:1",
+        "selfMs": 0.37,
+        "selfPct": 0.06288891268469368,
+        "mapped": true
+      },
+      {
+        "functionName": "performWorkOnRoot",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:10681",
+        "selfMs": 0.346,
+        "selfPct": 0.058809631861902745,
+        "mapped": true
+      },
+      {
+        "functionName": "propagateContextChanges",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:2920",
+        "selfMs": 0.218,
+        "selfPct": 0.03705346747368439,
+        "mapped": true
+      },
+      {
+        "functionName": "updateStoreInstance",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4741",
+        "selfMs": 0.204,
+        "selfPct": 0.03467388699372301,
+        "mapped": true
+      },
+      {
+        "functionName": "completeWork",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:7955",
+        "selfMs": 0.194,
+        "selfPct": 0.032974186650893446,
+        "mapped": true
+      },
+      {
+        "functionName": "useSyncExternalStore",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:5588",
+        "selfMs": 0.18,
+        "selfPct": 0.030594606170932064,
+        "mapped": true
+      },
+      {
+        "functionName": "commitReconciliationEffects",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:9843",
+        "selfMs": 0.178,
+        "selfPct": 0.030254666102366153,
+        "mapped": true
+      },
+      {
+        "functionName": "beginWork",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:7392",
+        "selfMs": 0.156,
+        "selfPct": 0.026515325348141123,
+        "mapped": true
+      },
+      {
+        "functionName": "mergeClassList",
+        "fileLine": "node_modules/tailwind-merge/dist/bundle-mjs.mjs:351",
+        "selfMs": 0.129,
+        "selfPct": 0.02192613442250131,
+        "mapped": true
+      },
+      {
+        "functionName": "(anonymous)",
+        "fileLine": "src/store/stylesStore.ts:538",
+        "selfMs": 0.108,
+        "selfPct": 0.018356763702559238,
+        "mapped": true
+      },
+      {
+        "functionName": "updateForwardRef",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:6126",
+        "selfMs": 0.09,
+        "selfPct": 0.015297303085466032,
+        "mapped": true
+      },
+      {
+        "functionName": "createElement",
+        "fileLine": "(unknown):0",
+        "selfMs": 0.044,
+        "selfPct": 0.00747868150845006,
+        "mapped": false
+      },
+      {
+        "functionName": "subscribeToStore",
+        "fileLine": "node_modules/react-dom/cjs/react-dom-client.production.js:4746",
+        "selfMs": 0.028,
+        "selfPct": 0.0047591609599227655,
+        "mapped": true
+      }
+    ]
+  },
+  "renderSnap": {
+    "commits": 8,
+    "byName": [
+      {
+        "name": "ThumbnailPreview",
+        "count": 1224
+      },
+      {
+        "name": "motion.div",
+        "count": 96
+      },
+      {
+        "name": "MeasureLayout",
+        "count": 88
+      },
+      {
+        "name": "CategoryName",
+        "count": 80
+      },
+      {
+        "name": "Sidebar",
+        "count": 8
+      },
+      {
+        "name": "CategoryTitle",
+        "count": 8
+      },
+      {
+        "name": "BottomPanel",
+        "count": 8
+      },
+      {
+        "name": "AnimatePresence",
+        "count": 8
+      },
+      {
+        "name": "SourceFilter",
+        "count": 1
+      },
+      {
+        "name": "SearchBar",
+        "count": 1
+      },
+      {
+        "name": "StyleGrid",
+        "count": 1
+      }
+    ],
+    "lastCommit": {
+      "at": 1679.7000000178814,
+      "byName": [
+        {
+          "name": "ThumbnailPreview",
+          "count": 153
+        },
+        {
+          "name": "motion.div",
+          "count": 12
+        },
+        {
+          "name": "MeasureLayout",
+          "count": 11
+        },
+        {
+          "name": "CategoryName",
+          "count": 10
+        },
+        {
+          "name": "Sidebar",
+          "count": 1
+        },
+        {
+          "name": "CategoryTitle",
+          "count": 1
+        },
+        {
+          "name": "BottomPanel",
+          "count": 1
+        },
+        {
+          "name": "AnimatePresence",
+          "count": 1
+        }
+      ]
+    },
+    "cardClassMutations": 0
+  },
+  "extras": {
+    "initWallMs": 577.7999999821186,
+    "cardCountAfterKey": 153
+  }
+}
