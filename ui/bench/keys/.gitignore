@@ -1,0 +1,4 @@
+# Local KEYS-E2E artifacts (never commit)
+out/
+raw/
+report.md
