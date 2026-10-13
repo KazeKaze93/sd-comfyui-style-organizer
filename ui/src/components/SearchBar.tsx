@@ -27,7 +27,6 @@ export function SearchBar() {
   const activeSource = useStylesStore((s) => s.activeSource)
   const search = useStylesStore((s) => s.search)
   const setSearch = useStylesStore((s) => s.setSearch)
-  const toggleStyle = useStylesStore((s) => s.toggleStyle)
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(search)
   /** cmdk controlled highlight (Command value / onValueChange). */
