@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useId, useState, useRef } from 'react'
 import type { Style } from '../bridge'
 import {
   dedupeStylesByNameForAllSources,
@@ -6,6 +6,8 @@ import {
   styleRowKey,
   useStylesStore,
 } from '../store/stylesStore'
+import { useLayer } from '../lib/layerStack'
+import { cn } from '../lib/utils'
 import {
   Command, CommandEmpty, CommandGroup,
   CommandItem, CommandList
@@ -14,6 +16,9 @@ import { Popover, PopoverContent, PopoverAnchor } from './ui/popover'
 
 const SUGGESTION_LIMIT = 8
 const EMPTY_SELECTED: Style[] = []
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 /** Pure: top name matches for a query against an already-scoped style list. */
 function computeSuggestions(styles: Style[], query: string): Style[] {
@@ -32,6 +37,7 @@ export function SearchBar() {
   /** cmdk controlled highlight (Command value / onValueChange). */
   const [highlight, setHighlight] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const listboxId = useId()
   // When closed, return a stable empty ref so selection toggles skip this subtree.
   const selectedStyles = useStylesStore((s) => (open ? s.selectedStyles : EMPTY_SELECTED))
 
@@ -43,6 +49,8 @@ export function SearchBar() {
     : dedupeStylesByNameForAllSources(styles)
 
   const suggestions = computeSuggestions(searchableStyles, inputValue)
+
+  useLayer(open, () => setOpen(false))
 
   const handleInput = (val: string) => {
     const nextSuggestions = computeSuggestions(searchableStyles, val)
@@ -66,14 +74,24 @@ export function SearchBar() {
         <div className="relative flex-1">
           <input
             ref={inputRef}
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-label="Search styles"
             value={inputValue}
             onChange={e => handleInput(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Escape') {
-                setOpen(false)
-                setInputValue('')
-                setSearch('')
-                setHighlight('')
+                if (open) {
+                  // Layer stack owns Escape while suggestions are open:
+                  // close the list only; leave query for the next Escape (App).
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setOpen(false)
+                  setHighlight('')
+                  return
+                }
                 return
               }
               if (!open || suggestions.length === 0) return
@@ -100,29 +118,37 @@ export function SearchBar() {
               }
             }}
             placeholder="Search styles..."
-            className="w-full h-9 px-3 pr-8 rounded border border-sg-border 
-                       bg-sg-surface text-sg-text text-sm
-                       placeholder:text-sg-muted focus:border-sg-accent 
-                       focus:outline-none transition-colors"
+            className={cn(
+              'w-full h-9 px-3 pr-8 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors',
+              FOCUS_RING,
+            )}
           />
           {inputValue && (
             <button
+              type="button"
+              aria-label="Clear search"
               onClick={() => {
                 setInputValue('')
                 setSearch('')
                 setOpen(false)
                 setHighlight('')
+                inputRef.current?.focus()
               }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 
-                         text-sg-muted hover:text-sg-text text-xs"
+              className={cn(
+                'absolute right-2 top-1/2 -translate-y-1/2 text-sg-muted hover:text-sg-text text-xs rounded',
+                FOCUS_RING,
+              )}
             >✕</button>
           )}
         </div>
       </PopoverAnchor>
       <PopoverContent
+        id={listboxId}
+        role="listbox"
         className="p-0 w-72 bg-sg-popover border border-sg-border"
         align="start"
         onOpenAutoFocus={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
       >
         <Command
           shouldFilter={false}

@@ -1,4 +1,10 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { useLayer } from '../lib/layerStack'
+import { useFocusTrap } from '../lib/useFocusTrap'
+import { cn } from '../lib/utils'
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 export interface EditStyleDialogProps {
   open: boolean
@@ -23,16 +29,22 @@ export interface EditStyleDialogProps {
   onCancel: () => void
 }
 
-const inputClassName =
-  'w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors disabled:opacity-45'
+const inputClassName = cn(
+  'w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors disabled:opacity-45',
+  FOCUS_RING,
+)
 
-const textareaClassName =
-  'w-full min-h-20 px-3 py-2 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors resize-y disabled:opacity-45'
+const textareaClassName = cn(
+  'w-full min-h-20 px-3 py-2 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors resize-y disabled:opacity-45',
+  FOCUS_RING,
+)
 
 const labelClassName = 'block text-xs text-sg-muted mb-1'
 
-const chipClassName =
-  'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
+const chipClassName = cn(
+  'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+  FOCUS_RING,
+)
 
 function splitDescriptionAndCombos(raw: string): { text: string; combos: string } {
   const m = /^([\s\S]*?)\s*Combos?:\s*([^.]+)\.?\s*$/i.exec(raw || '')
@@ -61,6 +73,8 @@ export function EditStyleDialog({
   const [prompt, setPrompt] = useState(style.prompt)
   const [negativePrompt, setNegativePrompt] = useState(style.negative_prompt)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const initialRef = useRef<HTMLInputElement>(null)
   const titleId = useId()
   const nameId = useId()
   const descriptionId = useId()
@@ -68,6 +82,12 @@ export function EditStyleDialog({
   const categoryId = useId()
   const promptId = useId()
   const negativeId = useId()
+
+  useLayer(open, () => {
+    if (!isSubmitting) onCancel()
+  })
+
+  useFocusTrap(panelRef, open, { initialFocus: initialRef })
 
   useEffect(() => {
     if (!open) {
@@ -87,18 +107,6 @@ export function EditStyleDialog({
     // while the dialog is open would wipe in-progress edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: omit field deps so refetch cannot clobber edits
   }, [open, style.name, style.source_file])
-
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        if (!isSubmitting) onCancel()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [open, onCancel, isSubmitting])
 
   if (!open) return null
 
@@ -130,6 +138,7 @@ export function EditStyleDialog({
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div
+          ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
@@ -141,13 +150,13 @@ export function EditStyleDialog({
               <label id={titleId} htmlFor={nameId} className={labelClassName}>Name</label>
               <input
                 id={nameId}
+                ref={initialRef}
                 type="text"
                 value={name}
                 disabled={isSubmitting}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Style name"
                 className={inputClassName}
-                autoFocus
               />
             </div>
           ) : (
@@ -160,6 +169,7 @@ export function EditStyleDialog({
             <label htmlFor={descriptionId} className={labelClassName}>Description</label>
             <input
               id={descriptionId}
+              ref={nameEditable ? undefined : initialRef}
               type="text"
               value={descriptionText}
               disabled={isSubmitting}
@@ -235,7 +245,10 @@ export function EditStyleDialog({
               type="button"
               disabled={isSubmitting}
               onClick={onCancel}
-              className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+              className={cn(
+                'px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+                FOCUS_RING,
+              )}
             >
               Cancel
             </button>
@@ -243,7 +256,10 @@ export function EditStyleDialog({
               type="button"
               disabled={!canSave}
               onClick={() => void submit()}
-              className="px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+              className={cn(
+                'px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+                FOCUS_RING,
+              )}
             >
               Save
             </button>

@@ -1,4 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { useLayer } from '../lib/layerStack'
+import { useFocusTrap } from '../lib/useFocusTrap'
+import { cn } from '../lib/utils'
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 export interface ConfirmInputDialogProps {
   open: boolean
@@ -23,9 +29,16 @@ export function ConfirmInputDialog({
 }: ConfirmInputDialogProps) {
   const [value, setValue] = useState(initialValue)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const titleId = useId()
   const inputId = useId()
+
+  useLayer(open, () => {
+    if (!isSubmitting) onCancel()
+  })
+
+  useFocusTrap(panelRef, open, { initialFocus: inputRef })
 
   useEffect(() => {
     if (!open) {
@@ -34,22 +47,7 @@ export function ConfirmInputDialog({
     }
     setValue(initialValue)
     setIsSubmitting(false)
-    // Defer focus until after paint so the input is mounted.
-    const id = requestAnimationFrame(() => inputRef.current?.focus())
-    return () => cancelAnimationFrame(id)
   }, [open, initialValue])
-
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        if (!isSubmitting) onCancel()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [open, onCancel, isSubmitting])
 
   if (!open) return null
 
@@ -74,6 +72,7 @@ export function ConfirmInputDialog({
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div
+          ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
@@ -97,10 +96,10 @@ export function ConfirmInputDialog({
                 void submit()
               }
             }}
-            className="w-full h-9 px-3 rounded border border-sg-border
-                       bg-sg-surface text-sg-text text-sm
-                       placeholder:text-sg-muted focus:border-sg-accent
-                       focus:outline-none transition-colors disabled:opacity-45"
+            className={cn(
+              'w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors disabled:opacity-45',
+              FOCUS_RING,
+            )}
           />
           {suggestions && suggestions.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
@@ -110,7 +109,10 @@ export function ConfirmInputDialog({
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => setValue(s)}
-                  className="px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                  className={cn(
+                    'px-2 py-0.5 text-xs rounded-full border border-sg-border text-sg-muted hover:bg-sg-accent/20 hover:text-sg-text transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+                    FOCUS_RING,
+                  )}
                 >
                   {s}
                 </button>
@@ -122,7 +124,10 @@ export function ConfirmInputDialog({
               type="button"
               disabled={isSubmitting}
               onClick={onCancel}
-              className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+              className={cn(
+                'px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+                FOCUS_RING,
+              )}
             >
               Cancel
             </button>
@@ -130,7 +135,10 @@ export function ConfirmInputDialog({
               type="button"
               disabled={!canConfirm}
               onClick={() => void submit()}
-              className="px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+              className={cn(
+                'px-3 py-1.5 text-sm rounded bg-sg-accent text-white hover:bg-sg-accent/90 transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+                FOCUS_RING,
+              )}
             >
               {confirmLabel}
             </button>

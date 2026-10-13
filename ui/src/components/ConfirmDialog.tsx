@@ -1,4 +1,10 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { useLayer } from '../lib/layerStack'
+import { useFocusTrap } from '../lib/useFocusTrap'
+import { cn } from '../lib/utils'
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 export interface ConfirmDialogProps {
   open: boolean
@@ -22,6 +28,17 @@ export function ConfirmDialog({
   const titleId = useId()
   const descId = useId()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+
+  useLayer(open, () => {
+    if (!isSubmitting) onCancel()
+  })
+
+  useFocusTrap(panelRef, open, {
+    initialFocus: destructive ? cancelRef : confirmRef,
+  })
 
   useEffect(() => {
     if (!open) {
@@ -53,6 +70,7 @@ export function ConfirmDialog({
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div
+          ref={panelRef}
           role="alertdialog"
           aria-modal="true"
           aria-labelledby={titleId}
@@ -68,22 +86,29 @@ export function ConfirmDialog({
           </p>
           <div className="flex justify-end gap-2 mt-3">
             <button
+              ref={cancelRef}
               type="button"
               disabled={isSubmitting}
               onClick={onCancel}
-              className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+              className={cn(
+                'px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20 transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+                FOCUS_RING,
+              )}
             >
               Cancel
             </button>
             <button
+              ref={confirmRef}
               type="button"
               disabled={!canConfirm}
               onClick={() => void submit()}
-              className={`px-3 py-1.5 text-sm rounded text-white transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
+              className={cn(
+                'px-3 py-1.5 text-sm rounded text-white transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
                 destructive
                   ? 'bg-sg-danger hover:bg-sg-danger/90'
-                  : 'bg-sg-accent hover:bg-sg-accent/90'
-              }`}
+                  : 'bg-sg-accent hover:bg-sg-accent/90',
+                FOCUS_RING,
+              )}
             >
               {confirmLabel}
             </button>

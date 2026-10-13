@@ -7,6 +7,12 @@ import {
   type PresetRecord,
   type ResolvedPresetMember,
 } from '../store/stylesStore'
+import { useLayer } from '../lib/layerStack'
+import { useFocusTrap } from '../lib/useFocusTrap'
+import { cn } from '../lib/utils'
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 type Props = {
   name: string
@@ -29,7 +35,10 @@ export function PresetRow({ name, preset }: Props) {
   const [renameValue, setRenameValue] = useState(name)
   const [renameExists, setRenameExists] = useState(false)
   const [busy, setBusy] = useState(false)
+  const renamePanelRef = useRef<HTMLDivElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
+  const deletePanelRef = useRef<HTMLDivElement>(null)
+  const deleteCancelRef = useRef<HTMLButtonElement>(null)
   const renameTitleId = useId()
   const renameInputId = useId()
   const deleteTitleId = useId()
@@ -51,12 +60,19 @@ export function PresetRow({ name, preset }: Props) {
     foundMembers.every((m) => selectedStyles.some((s) => s.name === m.style.name)) &&
     [...presetWcKeys].every((k) => activeWcKeys.has(k))
 
+  useLayer(renameOpen, () => {
+    if (!busy) setRenameOpen(false)
+  })
+  useLayer(deleteOpen, () => {
+    if (!busy) setDeleteOpen(false)
+  })
+  useFocusTrap(renamePanelRef, renameOpen, { initialFocus: renameRef })
+  useFocusTrap(deletePanelRef, deleteOpen, { initialFocus: deleteCancelRef })
+
   useEffect(() => {
     if (!renameOpen) return
     setRenameValue(name)
     setRenameExists(false)
-    const id = requestAnimationFrame(() => renameRef.current?.focus())
-    return () => cancelAnimationFrame(id)
   }, [renameOpen, name])
 
   const metaParts = [
@@ -132,8 +148,12 @@ export function PresetRow({ name, preset }: Props) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="mt-0.5 w-5 h-5 shrink-0 flex items-center justify-center text-sg-muted hover:text-sg-text transition-colors"
+          className={cn(
+            'mt-0.5 w-5 h-5 shrink-0 flex items-center justify-center text-sg-muted hover:text-sg-text transition-colors rounded',
+            FOCUS_RING,
+          )}
           aria-expanded={expanded}
+          aria-label={expanded ? 'Collapse set' : 'Expand set'}
           title={expanded ? 'Collapse' : 'Expand'}
         >
           <span className={`text-xs transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
@@ -152,7 +172,10 @@ export function PresetRow({ name, preset }: Props) {
           <button
             type="button"
             onClick={() => isActive ? unapplyPreset(name) : loadPreset(name)}
-            className="px-2 py-1 text-xs rounded border border-sg-border text-sg-text hover:bg-sg-accent/20 transition-colors"
+            className={cn(
+              'px-2 py-1 text-xs rounded border border-sg-border text-sg-text hover:bg-sg-accent/20 transition-colors',
+              FOCUS_RING,
+            )}
             title={isActive ? 'Remove this set from the current selection' : 'Apply this set to the current selection'}
           >
             {isActive ? 'Unapply' : 'Apply'}
@@ -160,7 +183,10 @@ export function PresetRow({ name, preset }: Props) {
           <button
             type="button"
             onClick={() => setRenameOpen(true)}
-            className="px-2 py-1 text-xs rounded border border-sg-border text-sg-text hover:bg-sg-accent/20 transition-colors"
+            className={cn(
+              'px-2 py-1 text-xs rounded border border-sg-border text-sg-text hover:bg-sg-accent/20 transition-colors',
+              FOCUS_RING,
+            )}
             title="Rename this set"
           >
             Rename
@@ -168,7 +194,10 @@ export function PresetRow({ name, preset }: Props) {
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
-            className="px-2 py-1 text-xs rounded border border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20 transition-colors"
+            className={cn(
+              'px-2 py-1 text-xs rounded border border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20 transition-colors',
+              FOCUS_RING,
+            )}
             title="Delete this set"
           >
             Delete
@@ -226,6 +255,7 @@ export function PresetRow({ name, preset }: Props) {
           <div className="absolute inset-0 bg-black/50" onClick={() => { if (!busy) setRenameOpen(false) }} />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div
+              ref={renamePanelRef}
               role="dialog"
               aria-modal="true"
               aria-labelledby={renameTitleId}
@@ -251,7 +281,10 @@ export function PresetRow({ name, preset }: Props) {
                     void doRename(renameExists)
                   }
                 }}
-                className="w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm focus:border-sg-accent focus:outline-none disabled:opacity-45"
+                className={cn(
+                  'w-full h-9 px-3 rounded border border-sg-border bg-sg-surface text-sg-text text-sm focus:border-sg-accent focus:outline-none disabled:opacity-45',
+                  FOCUS_RING,
+                )}
               />
               {renameExists && (
                 <div className="mt-2 text-xs text-sg-warning-text/90">
@@ -263,7 +296,10 @@ export function PresetRow({ name, preset }: Props) {
                   type="button"
                   disabled={busy}
                   onClick={() => setRenameOpen(false)}
-                  className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20"
+                  className={cn(
+                    'px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20',
+                    FOCUS_RING,
+                  )}
                 >
                   Cancel
                 </button>
@@ -272,7 +308,10 @@ export function PresetRow({ name, preset }: Props) {
                     type="button"
                     disabled={busy || !renameValue.trim()}
                     onClick={() => void doRename(true)}
-                    className="px-3 py-1.5 text-sm rounded bg-sg-warning-text/90 text-sg-text"
+                    className={cn(
+                      'px-3 py-1.5 text-sm rounded bg-sg-warning-text/90 text-sg-text',
+                      FOCUS_RING,
+                    )}
                   >
                     Overwrite
                   </button>
@@ -281,7 +320,10 @@ export function PresetRow({ name, preset }: Props) {
                     type="button"
                     disabled={busy || !renameValue.trim()}
                     onClick={() => void doRename(false)}
-                    className="px-3 py-1.5 text-sm rounded bg-sg-accent text-white"
+                    className={cn(
+                      'px-3 py-1.5 text-sm rounded bg-sg-accent text-white',
+                      FOCUS_RING,
+                    )}
                   >
                     Rename
                   </button>
@@ -297,6 +339,7 @@ export function PresetRow({ name, preset }: Props) {
           <div className="absolute inset-0 bg-black/50" onClick={() => { if (!busy) setDeleteOpen(false) }} />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div
+              ref={deletePanelRef}
               role="dialog"
               aria-modal="true"
               aria-labelledby={deleteTitleId}
@@ -309,10 +352,14 @@ export function PresetRow({ name, preset }: Props) {
               </p>
               <div className="flex justify-end gap-2 mt-3">
                 <button
+                  ref={deleteCancelRef}
                   type="button"
                   disabled={busy}
                   onClick={() => setDeleteOpen(false)}
-                  className="px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20"
+                  className={cn(
+                    'px-3 py-1.5 text-sm text-sg-text border border-sg-border rounded hover:bg-sg-accent/20',
+                    FOCUS_RING,
+                  )}
                 >
                   Cancel
                 </button>
@@ -320,7 +367,10 @@ export function PresetRow({ name, preset }: Props) {
                   type="button"
                   disabled={busy}
                   onClick={() => void doDelete()}
-                  className="px-3 py-1.5 text-sm rounded bg-sg-danger/90 text-white hover:bg-sg-danger"
+                  className={cn(
+                    'px-3 py-1.5 text-sm rounded bg-sg-danger/90 text-white hover:bg-sg-danger',
+                    FOCUS_RING,
+                  )}
                 >
                   Delete
                 </button>

@@ -1,13 +1,14 @@
 import { Dices } from 'lucide-react'
 import { sendToHost } from '../bridge'
 import { useStylesStore } from '../store/stylesStore'
-import { ViewportFixedMenu } from './ViewportFixedMenu'
+import { MenuItem, ViewportFixedMenu } from './ViewportFixedMenu'
 
 type WildcardCategoryMenuProps = {
   category: string
   x: number
   y: number
   onClose: () => void
+  restoreFocusTo?: HTMLElement | null
 }
 
 /** Shared right-click menu: insert `{sg:category}` wildcard into the host. */
@@ -16,13 +17,12 @@ export function WildcardCategoryMenu({
   x,
   y,
   onClose,
+  restoreFocusTo,
 }: WildcardCategoryMenuProps) {
   return (
-    <ViewportFixedMenu x={x} y={y} onDismiss={onClose}>
-      <button
-        type="button"
-        className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-        onClick={() => {
+    <ViewportFixedMenu x={x} y={y} onClose={onClose} restoreFocusTo={restoreFocusTo}>
+      <MenuItem
+        onSelect={() => {
           sendToHost({ type: 'SG_WILDCARD_CATEGORY', category })
           onClose()
         }}
@@ -31,11 +31,9 @@ export function WildcardCategoryMenu({
           <Dices className="h-3.5 w-3.5 shrink-0" aria-hidden />
           Add category as wildcard
         </span>
-      </button>
-      <button
-        type="button"
-        className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-        onClick={() => {
+      </MenuItem>
+      <MenuItem
+        onSelect={() => {
           useStylesStore.getState().startSliceMode(category)
           onClose()
         }}
@@ -44,7 +42,7 @@ export function WildcardCategoryMenu({
           <Dices className="h-3.5 w-3.5 shrink-0" aria-hidden />
           Select styles for wildcard...
         </span>
-      </button>
+      </MenuItem>
     </ViewportFixedMenu>
   )
 }
