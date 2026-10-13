@@ -160,14 +160,15 @@ export const StyleCard = memo(function StyleCard({ style, windowed = false }: Pr
             {displayName}
           </div>
 
-          {/* Selected indicator */}
+          {/* Selected indicator: accent border/tint + corner dot (0.0.7) */}
           {isSelected && (
-            <span
-              aria-hidden="true"
-              className="absolute bottom-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-sg-accent text-white"
-            >
-              <Check size={12} strokeWidth={3} />
-            </span>
+            <>
+              <span
+                aria-hidden="true"
+                className="absolute bottom-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-sg-accent"
+              />
+              <span className="sr-only">Selected</span>
+            </>
           )}
           {usageCount > 0 && (
             <span className="absolute bottom-1.5 left-2 text-[10px] text-sg-muted font-mono">
