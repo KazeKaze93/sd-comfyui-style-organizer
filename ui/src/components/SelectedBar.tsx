@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStylesStore } from '../store/stylesStore'
 import { describeSpec } from '../lib/wildcardSlice'
@@ -6,6 +6,9 @@ import { SaveSetDialog } from './SaveSetDialog'
 
 const chipBase =
   'flex items-center gap-1 px-2 py-1 rounded-full text-xs select-none transition-colors'
+
+const CHIP_FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 export function SelectedBar() {
   const {
@@ -42,6 +45,16 @@ export function SelectedBar() {
       .map((s) => s.name)
   }
 
+  const onChipKeyDown = (
+    e: KeyboardEvent,
+    remove: () => void,
+  ) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    e.preventDefault()
+    e.stopPropagation()
+    remove()
+  }
+
   return (
     <>
       <div className="flex items-start gap-2 px-4 py-2">
@@ -51,7 +64,11 @@ export function SelectedBar() {
               {selectedStyles.map(s => (
                 <span
                   key={s.name}
-                  className={`${chipBase}
+                  tabIndex={0}
+                  role="group"
+                  aria-label={displayName(s.name)}
+                  onKeyDown={(e) => onChipKeyDown(e, () => toggleStyle(s))}
+                  className={`${chipBase} ${CHIP_FOCUS_RING}
                              bg-sg-accent/20 border border-sg-accent/40
                              text-sg-text hover:bg-sg-accent/30`}
                 >
@@ -60,8 +77,9 @@ export function SelectedBar() {
                     type="button"
                     aria-label={`Remove ${s.name}`}
                     onClick={() => toggleStyle(s)}
-                    className="text-sg-muted hover:text-sg-text ml-1
-                               transition-colors leading-none"
+                    className={`text-sg-muted hover:text-sg-text ml-1
+                               transition-colors leading-none rounded-sm
+                               ${CHIP_FOCUS_RING}`}
                   >✕</button>
                 </span>
               ))}
@@ -72,8 +90,9 @@ export function SelectedBar() {
           <button
             type="button"
             onClick={() => setSaveOpen(true)}
-            className="shrink-0 px-2.5 py-1 text-xs rounded border border-sg-accent/50
-                       bg-sg-accent/15 text-sg-text hover:bg-sg-accent/25 transition-colors"
+            className={`shrink-0 px-2.5 py-1 text-xs rounded border border-sg-accent/50
+                       bg-sg-accent/15 text-sg-text hover:bg-sg-accent/25 transition-colors
+                       ${CHIP_FOCUS_RING}`}
             title="Save current selection as a set"
           >
             Save set ({selectedStyles.length})
@@ -102,8 +121,12 @@ export function SelectedBar() {
             return (
               <span
                 key={`${category}:${spec}`}
+                tabIndex={0}
+                role="group"
+                aria-label={label}
                 title={title}
-                className={`${chipBase}
+                onKeyDown={(e) => onChipKeyDown(e, () => removeWildcard(ref))}
+                className={`${chipBase} ${CHIP_FOCUS_RING}
                            ${isEmptyFallback
                              ? 'bg-sg-warning/20 border border-sg-warning/50 text-sg-warning-text'
                              : 'bg-sg-wildcard/20 border border-sg-wildcard/40 text-sg-text'}
@@ -115,7 +138,8 @@ export function SelectedBar() {
                   type="button"
                   aria-label={`Remove ${label}`}
                   onClick={() => removeWildcard(ref)}
-                  className="text-sg-muted hover:text-sg-text ml-1 transition-colors leading-none"
+                  className={`text-sg-muted hover:text-sg-text ml-1 transition-colors leading-none rounded-sm
+                             ${CHIP_FOCUS_RING}`}
                 >✕</button>
               </span>
             )

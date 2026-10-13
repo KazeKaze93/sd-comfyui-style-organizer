@@ -10,7 +10,12 @@ import {
   useStylesStore,
 } from '../store/stylesStore'
 import { useShallow } from 'zustand/react/shallow'
+import { cn } from '../lib/utils'
+import { MenuItem, ViewportFixedMenu } from './ViewportFixedMenu'
 import { WildcardCategoryMenu } from './WildcardCategoryMenu'
+
+const NAV_FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 function CategoryName({ category }: { category: string }) {
   const color = useCategoryColor(category)
@@ -29,7 +34,7 @@ const RecentNavButton = memo(function RecentNavButton({
 }: {
   active: boolean
   onActivate: () => void
-  onContextMenu: (e: MouseEvent) => void
+  onContextMenu: (e: MouseEvent<HTMLButtonElement>) => void
 }) {
   const {
     styles, search, activeSource, favorites, recentNames, presets,
@@ -51,11 +56,15 @@ const RecentNavButton = memo(function RecentNavButton({
       type="button"
       onClick={onActivate}
       onContextMenu={onContextMenu}
-      className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu
-      ${active
-        ? 'bg-sg-accent text-white'
-        : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
-      ${count === 0 ? 'opacity-40' : ''}`}
+      aria-current={active ? 'true' : undefined}
+      className={cn(
+        'w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu',
+        NAV_FOCUS_RING,
+        active
+          ? 'bg-sg-accent text-white'
+          : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface',
+        count === 0 ? 'opacity-40' : '',
+      )}
     >
       <span className="flex min-w-0 items-center gap-2">
         <Clock className="h-4 w-4 shrink-0" aria-hidden />
@@ -94,9 +103,18 @@ export const Sidebar = memo(function Sidebar() {
     x: number
     y: number
     cat: string
+    restore: HTMLElement
   } | null>(null)
-  const [favMenu, setFavMenu] = useState<{ x: number; y: number } | null>(null)
-  const [recentMenu, setRecentMenu] = useState<{ x: number; y: number } | null>(null)
+  const [favMenu, setFavMenu] = useState<{
+    x: number
+    y: number
+    restore: HTMLElement
+  } | null>(null)
+  const [recentMenu, setRecentMenu] = useState<{
+    x: number
+    y: number
+    restore: HTMLElement
+  } | null>(null)
   // Local order while dragging; persist only on Reorder.Item onDragEnd.
   const [dragOrder, setDragOrder] = useState<string[] | null>(null)
   const dragOrderRef = useRef<string[] | null>(null)
@@ -129,10 +147,14 @@ export const Sidebar = memo(function Sidebar() {
       <button
         type="button"
         onClick={() => startTransition(() => setCategory(null))}
-        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors
-          ${!activeCategory
+        aria-current={!activeCategory ? 'true' : undefined}
+        className={cn(
+          'w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors',
+          NAV_FOCUS_RING,
+          !activeCategory
             ? 'bg-sg-accent text-white'
-            : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
+            : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface',
+        )}
       >
         <span className="flex items-center gap-2 min-w-0">
           <span className="truncate" style={{ color: allColor }}>All</span>
@@ -147,13 +169,21 @@ export const Sidebar = memo(function Sidebar() {
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          setFavMenu({ x: e.clientX, y: e.clientY })
+          setFavMenu({
+            x: e.clientX,
+            y: e.clientY,
+            restore: e.currentTarget,
+          })
         }}
-        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu
-      ${activeCategory === FAVORITES_VIEW
-        ? 'bg-sg-accent text-white'
-        : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}
-      ${favCount === 0 ? 'opacity-40' : ''}`}
+        aria-current={activeCategory === FAVORITES_VIEW ? 'true' : undefined}
+        className={cn(
+          'w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu',
+          NAV_FOCUS_RING,
+          activeCategory === FAVORITES_VIEW
+            ? 'bg-sg-accent text-white'
+            : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface',
+          favCount === 0 ? 'opacity-40' : '',
+        )}
       >
         <span className="flex min-w-0 items-center gap-2">
           <Star className="h-4 w-4 shrink-0" aria-hidden />
@@ -167,16 +197,24 @@ export const Sidebar = memo(function Sidebar() {
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          setRecentMenu({ x: e.clientX, y: e.clientY })
+          setRecentMenu({
+            x: e.clientX,
+            y: e.clientY,
+            restore: e.currentTarget,
+          })
         }}
       />
       <button
         type="button"
         onClick={() => startTransition(() => setCategory(activeCategory === 'presets' ? null : 'presets'))}
-        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors
-          ${activeCategory === 'presets'
+        aria-current={activeCategory === 'presets' ? 'true' : undefined}
+        className={cn(
+          'w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors',
+          NAV_FOCUS_RING,
+          activeCategory === 'presets'
             ? 'bg-sg-accent text-white'
-            : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
+            : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface',
+        )}
       >
         <span className="flex min-w-0 items-center gap-2">
           <BookMarked className="h-4 w-4 shrink-0" aria-hidden />
@@ -214,13 +252,21 @@ export const Sidebar = memo(function Sidebar() {
                 onContextMenu={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  setCatMenu({ x: e.clientX, y: e.clientY, cat })
+                  setCatMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    cat,
+                    restore: e.currentTarget,
+                  })
                 }}
-                className={`w-full text-left px-3 py-2 rounded-md text-sm 
-                    transition-colors cursor-context-menu
-                  ${isActive
+                aria-current={isActive ? 'true' : undefined}
+                className={cn(
+                  'w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-context-menu',
+                  NAV_FOCUS_RING,
+                  isActive
                     ? 'bg-sg-accent text-white'
-                    : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface'}`}
+                    : 'text-sg-muted hover:text-sg-text hover:bg-sg-surface',
+                )}
               >
                 <span className="flex items-center gap-2">
                   <CategoryName category={cat} />
@@ -232,44 +278,38 @@ export const Sidebar = memo(function Sidebar() {
         })}
       </Reorder.Group>
       {favMenu && (
-        <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setFavMenu(null)} />
-          <div
-            className="fixed z-[9999] bg-sg-popover border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
-            style={{ left: favMenu.x, top: favMenu.y }}
+        <ViewportFixedMenu
+          x={favMenu.x}
+          y={favMenu.y}
+          onClose={() => setFavMenu(null)}
+          restoreFocusTo={favMenu.restore}
+        >
+          <MenuItem
+            onSelect={() => {
+              clearFavorites()
+              setFavMenu(null)
+            }}
           >
-            <button
-              type="button"
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                clearFavorites()
-                setFavMenu(null)
-              }}
-            >
-              Clear Favorites
-            </button>
-          </div>
-        </>
+            Clear Favorites
+          </MenuItem>
+        </ViewportFixedMenu>
       )}
       {recentMenu && (
-        <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setRecentMenu(null)} />
-          <div
-            className="fixed z-[9999] bg-sg-popover border border-sg-border rounded-lg shadow-xl py-1 min-w-52"
-            style={{ left: recentMenu.x, top: recentMenu.y }}
+        <ViewportFixedMenu
+          x={recentMenu.x}
+          y={recentMenu.y}
+          onClose={() => setRecentMenu(null)}
+          restoreFocusTo={recentMenu.restore}
+        >
+          <MenuItem
+            onSelect={() => {
+              clearRecent()
+              setRecentMenu(null)
+            }}
           >
-            <button
-              type="button"
-              className="w-full text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-              onClick={() => {
-                clearRecent()
-                setRecentMenu(null)
-              }}
-            >
-              Clear Recent
-            </button>
-          </div>
-        </>
+            Clear Recent
+          </MenuItem>
+        </ViewportFixedMenu>
       )}
       {catMenu && (
         <WildcardCategoryMenu
@@ -277,6 +317,7 @@ export const Sidebar = memo(function Sidebar() {
           x={catMenu.x}
           y={catMenu.y}
           onClose={() => setCatMenu(null)}
+          restoreFocusTo={catMenu.restore}
         />
       )}
     </div>

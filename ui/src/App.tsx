@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { onHostMessage, sendToHost, type Style } from './bridge'
 import { appliedThemeMode, applyThemeMode, parseThemeMode } from './lib/themeMode'
+import { closeTopLayer, useLayer } from './lib/layerStack'
 import { styleRowKey, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
@@ -15,13 +16,7 @@ import { StyleGrid } from './components/StyleGrid'
 import { BottomPanel } from './components/BottomPanel'
 import { Toast } from './components/Toast'
 import { EditStyleDialog } from './components/EditStyleDialog'
-import { ViewportFixedMenu } from './components/ViewportFixedMenu'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './components/ui/tooltip'
+import { MenuItem, ViewportFixedMenu } from './components/ViewportFixedMenu'
 import {
   Popover,
   PopoverContent,
@@ -31,9 +26,43 @@ import { cn } from './lib/utils'
 
 const WINDOWED_SIZE_KEY = 'sg_windowed_size'
 
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  return target.isContentEditable
+}
+
+function clearSearchField(searchRoot: HTMLElement | null): boolean {
+  const { search, setSearch } = useStylesStore.getState()
+  const input = searchRoot?.querySelector('input')
+  const hasText =
+    (typeof search === 'string' && search.length > 0) ||
+    (!!input && input.value.length > 0)
+  if (!hasText) return false
+  setSearch('')
+  if (input) {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set
+    setter?.call(input, '')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  return true
+}
+
 /** Response shape for `GET /style_grid/styles`. */
 type StylesResponse = { categories?: Record<string, Style[]> }
 
+/**
+ * Native title only — Radix Tooltip + Floating UI getOverflowAncestors stack-overflows
+ * when bench/host installs a fake `window.frameElement` that is an ancestor of #root
+ * (body → frameElement → host → body). Focus/Tab into toolbar must not open Floating UI.
+ */
 const ToolBtn = ({
   icon: Icon,
   label,
@@ -50,45 +79,30 @@ const ToolBtn = ({
   disabled?: boolean
   colorClassName?: string
   active?: boolean
-}) => {
-  const button = (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={label}
-      aria-pressed={active !== undefined ? active : undefined}
-      className={cn(
-        'w-8 h-8 flex items-center justify-center rounded transition-colors border',
-        disabled
-          ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
-          : active
-            ? 'bg-sg-accent/15 border-sg-accent/40 text-sg-text'
-            : cn(
-                colorClassName ?? 'text-sg-muted',
-                'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
-              ),
-      )}
-    >
-      <Icon size={16} aria-hidden />
-    </button>
-  )
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {disabled ? (
-          <span className="inline-flex rounded">{button}</span>
-        ) : (
-          button
-        )}
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        <p className="text-xs max-w-[240px] whitespace-pre-line">{label}</p>
-      </TooltipContent>
-    </Tooltip>
-  )
-}
+}) => (
+  <button
+    type="button"
+    onClick={disabled ? undefined : onClick}
+    disabled={disabled}
+    title={title ?? label}
+    aria-label={label}
+    aria-pressed={active !== undefined ? active : undefined}
+    className={cn(
+      'w-8 h-8 flex items-center justify-center rounded transition-colors border',
+      FOCUS_RING,
+      disabled
+        ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
+        : active
+          ? 'bg-sg-accent/15 border-sg-accent/40 text-sg-text'
+          : cn(
+              colorClassName ?? 'text-sg-muted',
+              'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
+            ),
+    )}
+  >
+    <Icon size={16} aria-hidden />
+  </button>
+)
 
 function SelectedCountBadge() {
   const selectedCount = useStylesStore((s) => s.selectedStyles.length)
@@ -105,6 +119,7 @@ function ConflictsChip() {
   const [conflictsOpen, setConflictsOpen] = useState(false)
   const conflicts = useStylesStore((s) => s.conflicts)
   const toggleStyle = useStylesStore((s) => s.toggleStyle)
+  useLayer(conflictsOpen, () => setConflictsOpen(false))
   if (conflicts.length === 0) return null
 
   return (
@@ -113,10 +128,13 @@ function ConflictsChip() {
         <button
           type="button"
           aria-label={`${conflicts.length} style conflicts`}
-          className="flex items-center gap-1 px-2 py-1 rounded
-             bg-sg-danger/20 border border-sg-danger/40
-             text-sg-danger-text text-xs
-             motion-safe:animate-pulse"
+          className={cn(
+            'flex items-center gap-1 px-2 py-1 rounded',
+            'bg-sg-danger/20 border border-sg-danger/40',
+            'text-sg-danger-text text-xs',
+            'motion-safe:animate-pulse',
+            FOCUS_RING,
+          )}
         >
           <AlertTriangle size={14} aria-hidden />
           {conflicts.length}
@@ -124,6 +142,7 @@ function ConflictsChip() {
       </PopoverTrigger>
       <PopoverContent
         align="end"
+        onEscapeKeyDown={(e) => e.preventDefault()}
         className="w-auto min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))] p-3 bg-sg-popover border border-sg-border rounded-lg shadow-xl"
       >
         <div className="text-xs font-semibold text-sg-text mb-2">
@@ -145,10 +164,14 @@ function ConflictsChip() {
                     toggleStyle(conflictingStyle)
                     setConflictsOpen(false)
                   }}
-                  className="text-xs px-1.5 py-0.5 rounded border
-                    border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20
-                    transition-colors shrink-0"
+                  className={cn(
+                    'text-xs px-1.5 py-0.5 rounded border',
+                    'border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20',
+                    'transition-colors shrink-0',
+                    FOCUS_RING,
+                  )}
                   title={`Remove "${c.styleB}"`}
+                  aria-label={`Remove "${c.styleB}"`}
                 >
                   ✕
                 </button>
@@ -164,8 +187,13 @@ function ConflictsChip() {
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [newStyleOpen, setNewStyleOpen] = useState(false)
-  const [ieMenuPos, setIeMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const [ieMenu, setIeMenu] = useState<{
+    x: number
+    y: number
+    restore: HTMLElement
+  } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
+  const searchRootRef = useRef<HTMLDivElement>(null)
   // Narrow slice — avoid selectedStyles/conflicts fan-out on every toggle (profile P).
   const {
     setStyles,
@@ -254,11 +282,50 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (closeTopLayer()) {
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
+        if (clearSearchField(searchRootRef.current)) {
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
+        return
+      }
+
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (isEditableTarget(e.target)) return
+        e.preventDefault()
+        searchRootRef.current?.querySelector('input')?.focus()
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let attempts = 0
+    const focusFirstCell = () => {
+      if (cancelled) return
+      const cell = document.querySelector<HTMLElement>('[data-sg-card]')
+      if (cell) {
+        cell.focus()
+        return
+      }
+      attempts += 1
+      if (attempts < 30) {
+        window.setTimeout(focusFirstCell, 50)
+      }
+    }
+    const raf = requestAnimationFrame(focusFirstCell)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
   }, [])
 
   const toggleFullscreen = () => {
@@ -329,107 +396,106 @@ export default function App() {
           Style Grid
         </span>
         <SourceFilter />
-        <div className="flex-1">
+        <div className="flex-1" ref={searchRootRef}>
           <SearchBar />
         </div>
-        <TooltipProvider>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <ToolBtn
-              icon={Save}
-              label="Backup (CSVs + presets)"
-              onClick={async () => {
-                try {
-                  const res = await fetch('/style_grid/backup', { method: 'POST' })
-                  const data = await res.json().catch(() => ({}))
-                  if (data.empty === true) {
-                    showToast('Nothing to back up', 'info')
-                    return
-                  }
-                  if (!res.ok || data.ok === false || data.error) {
-                    showToast(
-                      typeof data.error === 'string' && data.error
-                        ? data.error
-                        : 'Backup failed',
-                      'error',
-                    )
-                    return
-                  }
-                  const file =
-                    typeof data.file === 'string' && data.file ? data.file : ''
-                  showToast(
-                    file ? `Backup created: ${file}` : 'Backup created',
-                    'success',
-                  )
-                } catch {
-                  showToast('Backup failed', 'error')
+        <div className="flex items-center gap-1.5 shrink-0">
+          <ToolBtn
+            icon={Save}
+            label="Backup (CSVs + presets)"
+            onClick={async () => {
+              try {
+                const res = await fetch('/style_grid/backup', { method: 'POST' })
+                const data = await res.json().catch(() => ({}))
+                if (data.empty === true) {
+                  showToast('Nothing to back up', 'info')
+                  return
                 }
-              }}
-            />
-            <ToolBtn
-              icon={Import}
-              label="Import/Export"
-              onClick={(e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                setIeMenuPos({ x: rect.left, y: rect.bottom + 4 })
-              }}
-            />
-            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
-            <ToolBtn
-              icon={Eraser}
-              label="Clear all selected styles"
-              colorClassName="text-sg-danger-text"
-              onClick={() => {
-                sendToHost({ type: 'SG_CLEAR_ALL' })
-              }}
-            />
-            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
-            <ToolBtn
-              icon={Rows3}
-              label="Compact mode"
-              active={compactMode}
-              onClick={() => toggleCompact()}
-            />
-            <ToolBtn
-              icon={collapsedCategories.size > 0 ? ChevronsUpDown : ChevronsDownUp}
-              label={collapsedCategories.size > 0 ? 'Expand all' : 'Collapse all'}
-              onClick={() =>
-                collapsedCategories.size > 0 ? expandAll() : collapseAll()
+                if (!res.ok || data.ok === false || data.error) {
+                  showToast(
+                    typeof data.error === 'string' && data.error
+                      ? data.error
+                      : 'Backup failed',
+                    'error',
+                  )
+                  return
+                }
+                const file =
+                  typeof data.file === 'string' && data.file ? data.file : ''
+                showToast(
+                  file ? `Backup created: ${file}` : 'Backup created',
+                  'success',
+                )
+              } catch {
+                showToast('Backup failed', 'error')
               }
-            />
-            <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
+            }}
+          />
+          <ToolBtn
+            icon={Import}
+            label="Import/Export"
+            onClick={(e) => {
+              const opener = e.currentTarget
+              const rect = opener.getBoundingClientRect()
+              setIeMenu({ x: rect.left, y: rect.bottom + 4, restore: opener })
+            }}
+          />
+          <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
+          <ToolBtn
+            icon={Eraser}
+            label="Clear all selected styles"
+            colorClassName="text-sg-danger-text"
+            onClick={() => {
+              sendToHost({ type: 'SG_CLEAR_ALL' })
+            }}
+          />
+          <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
+          <ToolBtn
+            icon={Rows3}
+            label="Compact mode"
+            active={compactMode}
+            onClick={() => toggleCompact()}
+          />
+          <ToolBtn
+            icon={collapsedCategories.size > 0 ? ChevronsUpDown : ChevronsDownUp}
+            label={collapsedCategories.size > 0 ? 'Expand all' : 'Collapse all'}
+            onClick={() =>
+              collapsedCategories.size > 0 ? expandAll() : collapseAll()
+            }
+          />
+          <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
+          <ToolBtn
+            icon={Plus}
+            label={
+              !activeSource
+                ? 'Select a specific CSV source before creating a style'
+                : activeSourceIsReadOnly
+                  ? 'This source is read-only (bundled samples). Pick or import another CSV to add styles.'
+                  : 'New style'
+            }
+            colorClassName="text-sg-accent-text"
+            disabled={!activeSource || activeSourceIsReadOnly}
+            onClick={() => {
+              // samples/ is write-protected — style/save rematerializes to
+              // data/<basename>.csv. Tell the user before they fill the form.
+              setNewStyleOpen(true)
+            }}
+          />
+          <SelectedCountBadge />
+          <ConflictsChip />
+          <ToolBtn
+            icon={isFullscreen ? Minimize2 : Maximize2}
+            label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            onClick={toggleFullscreen}
+          />
+          <span className="ml-3 inline-flex">
             <ToolBtn
-              icon={Plus}
-              label={
-                !activeSource
-                  ? 'Select a specific CSV source before creating a style'
-                  : activeSourceIsReadOnly
-                    ? 'This source is read-only (bundled samples). Pick or import another CSV to add styles.'
-                    : 'New style'
-              }
-              colorClassName="text-sg-accent-text"
-              disabled={!activeSource || activeSourceIsReadOnly}
-              onClick={() => {
-                // samples/ is write-protected — style/save rematerializes to
-                // data/<basename>.csv. Tell the user before they fill the form.
-                setNewStyleOpen(true)
-              }}
+              icon={X}
+              label="Close Style Grid"
+              onClick={() => sendToHost({ type: 'SG_CLOSE_REQUEST' })}
             />
-            <SelectedCountBadge />
-            <ConflictsChip />
-            <ToolBtn
-              icon={isFullscreen ? Minimize2 : Maximize2}
-              label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-              onClick={toggleFullscreen}
-            />
-            <span className="ml-3 inline-flex">
-              <ToolBtn
-                icon={X}
-                label="Close Style Grid"
-                onClick={() => sendToHost({ type: 'SG_CLOSE_REQUEST' })}
-              />
-            </span>
-          </div>
-        </TooltipProvider>
+          </span>
+        </div>
       </div>
 
       {presetsCorrupt && (
@@ -519,56 +585,59 @@ export default function App() {
           }}
         />
       )}
-      {ieMenuPos && (
+      {ieMenu && (
         <ViewportFixedMenu
-          x={ieMenuPos.x}
-          y={ieMenuPos.y}
-          onDismiss={() => setIeMenuPos(null)}
+          x={ieMenu.x}
+          y={ieMenu.y}
+          onClose={() => setIeMenu(null)}
+          restoreFocusTo={ieMenu.restore}
         >
-          <button
-            type="button"
-            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-            onClick={async () => {
-              setIeMenuPos(null)
-              try {
-                const res = await fetch('/style_grid/export')
-                const data = await res.json().catch(() => ({}))
-                if (!res.ok || data.error) {
-                  showToast(
-                    typeof data.error === 'string' && data.error ? data.error : 'Export failed',
-                    'error',
-                  )
-                  return
+          <MenuItem
+            onSelect={() => {
+              setIeMenu(null)
+              void (async () => {
+                try {
+                  const res = await fetch('/style_grid/export')
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || data.error) {
+                    showToast(
+                      typeof data.error === 'string' && data.error ? data.error : 'Export failed',
+                      'error',
+                    )
+                    return
+                  }
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `style_grid_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+                  document.body.appendChild(a)
+                  a.click()
+                  a.remove()
+                  URL.revokeObjectURL(url)
+                  showToast('Exported styles', 'success')
+                } catch {
+                  showToast('Export failed', 'error')
                 }
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `style_grid_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-                document.body.appendChild(a)
-                a.click()
-                a.remove()
-                URL.revokeObjectURL(url)
-                showToast('Exported styles', 'success')
-              } catch {
-                showToast('Export failed', 'error')
-              }
+              })()
             }}
           >
-            <Download size={14} aria-hidden />
-            Export
-          </button>
-          <button
-            type="button"
-            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-sg-text hover:bg-sg-accent/20 transition-colors"
-            onClick={() => {
-              setIeMenuPos(null)
+            <span className="inline-flex items-center gap-2">
+              <Download size={14} aria-hidden />
+              Export
+            </span>
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setIeMenu(null)
               importFileInputRef.current?.click()
             }}
           >
-            <Upload size={14} aria-hidden />
-            Import from file...
-          </button>
+            <span className="inline-flex items-center gap-2">
+              <Upload size={14} aria-hidden />
+              Import from file...
+            </span>
+          </MenuItem>
         </ViewportFixedMenu>
       )}
       <input
