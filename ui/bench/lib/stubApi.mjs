@@ -1,8 +1,10 @@
 /**
  * Stub all /style_grid/** so the grid runs without ComfyUI backend.
  * @param {import('playwright').Page} page
+ * @param {{ usage?: Record<string, { count: number }> }} [opts]
  */
-export async function stubStyleGridApi(page) {
+export async function stubStyleGridApi(page, opts = {}) {
+  const usageBody = opts.usage ?? {}
   await page.route('**/style_grid/**', async (route) => {
     const req = route.request()
     const url = new URL(req.url())
@@ -13,7 +15,7 @@ export async function stubStyleGridApi(page) {
     let res = { body: {} }
 
     if (path.endsWith('/style_grid/usage') && method === 'GET') {
-      res = { body: {} }
+      res = { body: usageBody }
     } else if (path.endsWith('/style_grid/usage/increment') && method === 'POST') {
       res = { body: { ok: true } }
     } else if (path.endsWith('/style_grid/thumbnails/list') && method === 'GET') {

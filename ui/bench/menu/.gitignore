@@ -1,0 +1,3 @@
+# Local probe artifacts (never commit)
+out/
+raw/

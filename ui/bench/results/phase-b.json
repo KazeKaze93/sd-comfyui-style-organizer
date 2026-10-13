@@ -1,0 +1,108 @@
+{
+  "label": "phase-b",
+  "host": "comfy",
+  "phase": "B",
+  "commit": "682e9fcc18e1945ad707762a201af0e984cd1b76",
+  "timestamp": "2026-10-13T16:10:29.493Z",
+  "cpuThrottle": 4,
+  "runsPerSize": 3,
+  "browser": "chromium",
+  "sizes": {
+    "500": {
+      "runs": [
+        {
+          "initMs": 294.7999999523163,
+          "toggleP50Ms": 90,
+          "searchKeyP50Ms": 51.299999952316284,
+          "scrollTbtMs": 0,
+          "longTasks": 2
+        },
+        {
+          "initMs": 266.69999998807907,
+          "toggleP50Ms": 82.79999995231628,
+          "searchKeyP50Ms": 64.89999997615814,
+          "scrollTbtMs": 4,
+          "longTasks": 1
+        },
+        {
+          "initMs": 302.4000000357628,
+          "toggleP50Ms": 103.69999998807907,
+          "searchKeyP50Ms": 65.80000001192093,
+          "scrollTbtMs": 0,
+          "longTasks": 2
+        }
+      ],
+      "median": {
+        "initMs": 294.7999999523163,
+        "toggleP50Ms": 90,
+        "searchKeyP50Ms": 64.89999997615814,
+        "scrollTbtMs": 0,
+        "longTasks": 2
+      }
+    },
+    "2000": {
+      "runs": [
+        {
+          "initMs": 363,
+          "toggleP50Ms": 102.10000002384186,
+          "searchKeyP50Ms": 66.30000001192093,
+          "scrollTbtMs": 377,
+          "longTasks": 2
+        },
+        {
+          "initMs": 395,
+          "toggleP50Ms": 98.10000002384186,
+          "searchKeyP50Ms": 65.79999995231628,
+          "scrollTbtMs": 298,
+          "longTasks": 2
+        },
+        {
+          "initMs": 327.4000000357628,
+          "toggleP50Ms": 99.5,
+          "searchKeyP50Ms": 66.90000003576279,
+          "scrollTbtMs": 241,
+          "longTasks": 2
+        }
+      ],
+      "median": {
+        "initMs": 363,
+        "toggleP50Ms": 99.5,
+        "searchKeyP50Ms": 66.30000001192093,
+        "scrollTbtMs": 298,
+        "longTasks": 2
+      }
+    },
+    "5000": {
+      "runs": [
+        {
+          "initMs": 449.80000001192093,
+          "toggleP50Ms": 94.30000001192093,
+          "searchKeyP50Ms": 81.70000004768372,
+          "scrollTbtMs": 502,
+          "longTasks": 2
+        },
+        {
+          "initMs": 585.8999999761581,
+          "toggleP50Ms": 107.69999998807907,
+          "searchKeyP50Ms": 82.19999998807907,
+          "scrollTbtMs": 426,
+          "longTasks": 3
+        },
+        {
+          "initMs": 464.10000002384186,
+          "toggleP50Ms": 100.10000002384186,
+          "searchKeyP50Ms": 91.5,
+          "scrollTbtMs": 470,
+          "longTasks": 2
+        }
+      ],
+      "median": {
+        "initMs": 464.10000002384186,
+        "toggleP50Ms": 100.10000002384186,
+        "searchKeyP50Ms": 82.19999998807907,
+        "scrollTbtMs": 470,
+        "longTasks": 2
+      }
+    }
+  }
+}

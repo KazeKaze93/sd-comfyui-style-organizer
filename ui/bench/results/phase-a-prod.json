@@ -1,0 +1,112 @@
+{
+    "label":  "phase-a-prod",
+    "host":  "comfy",
+    "phase":  "A",
+    "commit":  "60e6edb7a1439c01531768ee1cf6f12c0fc2a3bd",
+    "timestamp":  "2026-10-13T16:41:41.813Z",
+    "cpuThrottle":  4,
+    "runsPerSize":  3,
+    "browser":  "chromium",
+    "sizes":  {
+                  "500":  {
+                              "runs":  [
+                                           {
+                                               "initMs":  619.6999999880791,
+                                               "toggleP50Ms":  107.30000001192093,
+                                               "searchKeyP50Ms":  66.80000001192093,
+                                               "scrollTbtMs":  0,
+                                               "longTasks":  3
+                                           },
+                                           {
+                                               "initMs":  618.1000000238419,
+                                               "toggleP50Ms":  101.09999996423721,
+                                               "searchKeyP50Ms":  66.40000003576279,
+                                               "scrollTbtMs":  0,
+                                               "longTasks":  3
+                                           },
+                                           {
+                                               "initMs":  815.1999999880791,
+                                               "toggleP50Ms":  126,
+                                               "searchKeyP50Ms":  66.30000001192093,
+                                               "scrollTbtMs":  0,
+                                               "longTasks":  3
+                                           }
+                                       ],
+                              "median":  {
+                                             "initMs":  619.6999999880791,
+                                             "toggleP50Ms":  107.30000001192093,
+                                             "searchKeyP50Ms":  66.40000003576279,
+                                             "scrollTbtMs":  0,
+                                             "longTasks":  3
+                                         }
+                          },
+                  "2000":  {
+                               "runs":  [
+                                            {
+                                                "initMs":  3096.099999964237,
+                                                "toggleP50Ms":  162.89999997615814,
+                                                "searchKeyP50Ms":  100.30000001192093,
+                                                "scrollTbtMs":  0,
+                                                "longTasks":  4
+                                            },
+                                            {
+                                                "initMs":  2834.600000023842,
+                                                "toggleP50Ms":  182.70000004768372,
+                                                "searchKeyP50Ms":  115.69999998807907,
+                                                "scrollTbtMs":  0,
+                                                "longTasks":  4
+                                            },
+                                            {
+                                                "initMs":  2730.2000000476837,
+                                                "toggleP50Ms":  178.10000002384186,
+                                                "searchKeyP50Ms":  132.30000001192093,
+                                                "scrollTbtMs":  0,
+                                                "longTasks":  4
+                                            }
+                                        ],
+                               "median":  {
+                                              "initMs":  2834.600000023842,
+                                              "toggleP50Ms":  178.10000002384186,
+                                              "searchKeyP50Ms":  115.69999998807907,
+                                              "scrollTbtMs":  0,
+                                              "longTasks":  4
+                                          }
+                           },
+                  "5000":  {
+                               "runs":  [
+                                            {
+                                                "initMs":  13677.800000011921,
+                                                "toggleP50Ms":  372.30000001192093,
+                                                "searchKeyP50Ms":  199.4000000357628,
+                                                "scrollTbtMs":  0,
+                                                "longTasks":  4
+                                            },
+                                            {
+                                                "initMs":  13186.399999976158,
+                                                "toggleP50Ms":  388.80000001192093,
+                                                "searchKeyP50Ms":  197.80000001192093,
+                                                "scrollTbtMs":  0,
+                                                "longTasks":  4
+                                            },
+                                            {
+                                                "initMs":  14440.699999988079,
+                                                "toggleP50Ms":  368.2000000476837,
+                                                "searchKeyP50Ms":  200.5999999642372,
+                                                "scrollTbtMs":  0,
+                                                "longTasks":  4
+                                            }
+                                        ],
+                               "median":  {
+                                              "initMs":  13677.800000011921,
+                                              "toggleP50Ms":  372.30000001192093,
+                                              "searchKeyP50Ms":  199.4000000357628,
+                                              "scrollTbtMs":  0,
+                                              "longTasks":  4
+                                          }
+                           }
+              },
+    "measuredAt":  "2026-10-13T16:42:01.3579738Z",
+    "serverMode":  "prod",
+    "serve":  "vite-build+static-4179",
+    "codeTip":  "60e6edb (Phase A tip = origin/master)"
+}

@@ -1,0 +1,108 @@
+{
+  "label": "baseline",
+  "host": "comfy",
+  "phase": "A",
+  "commit": "4fb37bdf10ffb4ee5623f76f007767bb36c5c9cc",
+  "timestamp": "2026-10-10T21:46:58.182Z",
+  "cpuThrottle": 4,
+  "runsPerSize": 3,
+  "browser": "chromium",
+  "sizes": {
+    "500": {
+      "runs": [
+        {
+          "initMs": 2418.4000000059605,
+          "toggleP50Ms": 360.19999998807907,
+          "searchKeyP50Ms": 214.90000000596046,
+          "scrollTbtMs": 0,
+          "longTasks": 5
+        },
+        {
+          "initMs": 2153.300000011921,
+          "toggleP50Ms": 354.69999998807907,
+          "searchKeyP50Ms": 229.90000000596046,
+          "scrollTbtMs": 0,
+          "longTasks": 5
+        },
+        {
+          "initMs": 2849.199999988079,
+          "toggleP50Ms": 412.5,
+          "searchKeyP50Ms": 247,
+          "scrollTbtMs": 6,
+          "longTasks": 5
+        }
+      ],
+      "median": {
+        "initMs": 2418.4000000059605,
+        "toggleP50Ms": 360.19999998807907,
+        "searchKeyP50Ms": 229.90000000596046,
+        "scrollTbtMs": 0,
+        "longTasks": 5
+      }
+    },
+    "2000": {
+      "runs": [
+        {
+          "initMs": 9253.800000011921,
+          "toggleP50Ms": 815.6000000238419,
+          "searchKeyP50Ms": 580.7999999821186,
+          "scrollTbtMs": 404,
+          "longTasks": 5
+        },
+        {
+          "initMs": 8008.9000000059605,
+          "toggleP50Ms": 699.4000000059605,
+          "searchKeyP50Ms": 612.6999999880791,
+          "scrollTbtMs": 300,
+          "longTasks": 5
+        },
+        {
+          "initMs": 8379.40000000596,
+          "toggleP50Ms": 741.2999999821186,
+          "searchKeyP50Ms": 561,
+          "scrollTbtMs": 251,
+          "longTasks": 5
+        }
+      ],
+      "median": {
+        "initMs": 8379.40000000596,
+        "toggleP50Ms": 741.2999999821186,
+        "searchKeyP50Ms": 580.7999999821186,
+        "scrollTbtMs": 300,
+        "longTasks": 5
+      }
+    },
+    "5000": {
+      "runs": [
+        {
+          "initMs": 28585.19999998808,
+          "toggleP50Ms": 1136.0999999940395,
+          "searchKeyP50Ms": 843.4000000059605,
+          "scrollTbtMs": 816,
+          "longTasks": 5
+        },
+        {
+          "initMs": 29701.40000000596,
+          "toggleP50Ms": 1184.5999999940395,
+          "searchKeyP50Ms": 899,
+          "scrollTbtMs": 1036,
+          "longTasks": 5
+        },
+        {
+          "initMs": 34738,
+          "toggleP50Ms": 1231.2000000178814,
+          "searchKeyP50Ms": 783.0999999940395,
+          "scrollTbtMs": 644,
+          "longTasks": 5
+        }
+      ],
+      "median": {
+        "initMs": 29701.40000000596,
+        "toggleP50Ms": 1184.5999999940395,
+        "searchKeyP50Ms": 843.4000000059605,
+        "scrollTbtMs": 816,
+        "longTasks": 5
+      }
+    }
+  }
+}

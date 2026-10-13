@@ -1,0 +1,117 @@
+{
+  "label": "wave3-pass",
+  "host": "comfy",
+  "phase": "A",
+  "commit": "ea2fd575541c81683259a04ed8a7bc6ce4935d80",
+  "timestamp": "2026-10-13T17:44:16.344Z",
+  "cpuThrottle": 4,
+  "runsPerSize": 3,
+  "browser": "chromium",
+  "sizes": {
+    "500": {
+      "runs": [
+        {
+          "initMs": 285.0999999642372,
+          "toggleP50Ms": 61,
+          "searchKeyP50Ms": 48.19999998807907,
+          "scrollTbtMs": 0,
+          "longTasks": 1,
+          "layoutOk": true
+        },
+        {
+          "initMs": 265.39999997615814,
+          "toggleP50Ms": 60.80000001192093,
+          "searchKeyP50Ms": 46.59999996423721,
+          "scrollTbtMs": 0,
+          "longTasks": 1,
+          "layoutOk": true
+        },
+        {
+          "initMs": 268.5,
+          "toggleP50Ms": 60.09999996423721,
+          "searchKeyP50Ms": 46,
+          "scrollTbtMs": 0,
+          "longTasks": 1,
+          "layoutOk": true
+        }
+      ],
+      "median": {
+        "initMs": 268.5,
+        "toggleP50Ms": 60.80000001192093,
+        "searchKeyP50Ms": 46.59999996423721,
+        "scrollTbtMs": 0,
+        "longTasks": 1
+      }
+    },
+    "2000": {
+      "runs": [
+        {
+          "initMs": 335.39999997615814,
+          "toggleP50Ms": 77.5,
+          "searchKeyP50Ms": 49.19999998807907,
+          "scrollTbtMs": 0,
+          "longTasks": 2,
+          "layoutOk": true
+        },
+        {
+          "initMs": 328,
+          "toggleP50Ms": 75.69999998807907,
+          "searchKeyP50Ms": 49.40000003576279,
+          "scrollTbtMs": 0,
+          "longTasks": 2,
+          "layoutOk": true
+        },
+        {
+          "initMs": 311.5,
+          "toggleP50Ms": 76.5,
+          "searchKeyP50Ms": 49.39999997615814,
+          "scrollTbtMs": 0,
+          "longTasks": 2,
+          "layoutOk": true
+        }
+      ],
+      "median": {
+        "initMs": 328,
+        "toggleP50Ms": 76.5,
+        "searchKeyP50Ms": 49.39999997615814,
+        "scrollTbtMs": 0,
+        "longTasks": 2
+      }
+    },
+    "5000": {
+      "runs": [
+        {
+          "initMs": 482.10000002384186,
+          "toggleP50Ms": 87.40000003576279,
+          "searchKeyP50Ms": 66.80000001192093,
+          "scrollTbtMs": 23,
+          "longTasks": 2,
+          "layoutOk": true
+        },
+        {
+          "initMs": 449.19999998807907,
+          "toggleP50Ms": 85.19999998807907,
+          "searchKeyP50Ms": 67.10000002384186,
+          "scrollTbtMs": 20,
+          "longTasks": 2,
+          "layoutOk": true
+        },
+        {
+          "initMs": 430.80000001192093,
+          "toggleP50Ms": 85,
+          "searchKeyP50Ms": 65.19999998807907,
+          "scrollTbtMs": 18,
+          "longTasks": 2,
+          "layoutOk": true
+        }
+      ],
+      "median": {
+        "initMs": 449.19999998807907,
+        "toggleP50Ms": 85.19999998807907,
+        "searchKeyP50Ms": 66.80000001192093,
+        "scrollTbtMs": 20,
+        "longTasks": 2
+      }
+    }
+  }
+}

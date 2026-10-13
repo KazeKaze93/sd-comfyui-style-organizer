@@ -211,12 +211,17 @@ async function main() {
           searchKeyP50Ms: result.searchKeyP50Ms,
           scrollTbtMs: result.scrollTbtMs,
           longTasks: result.longTasks,
+          layoutOk: result.layoutOk !== false,
         })
         console.log(
           `init=${result.initMs.toFixed(1)} toggleP50=${result.toggleP50Ms.toFixed(1)} ` +
             `searchP50=${result.searchKeyP50Ms.toFixed(1)} scrollTbt=${result.scrollTbtMs.toFixed(1)} ` +
-            `longTasks=${result.longTasks}`,
+            `longTasks=${result.longTasks}` +
+            (result.layoutOk === false ? ' layout=FAIL' : ''),
         )
+        if (result.layoutOk === false) {
+          throw new Error(`layout invariants failed for N=${n}`)
+        }
       }
 
       sizesOut[String(n)] = {
