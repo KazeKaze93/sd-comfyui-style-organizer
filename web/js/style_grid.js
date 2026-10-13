@@ -15,6 +15,8 @@ let currentNode = null;
 let currentTheme = "dark";
 let themeTimer = null;
 let allStylesCache = [];
+/** Element that had focus when the browser was opened (restore on close). */
+let openerEl = null;
 /** node → Map<styleName, { prompt, negative_prompt }> written at apply time. */
 const appliedByNode = new Map();
 
@@ -61,6 +63,11 @@ function scheduleThemeCheck() {
 function closeStyleBrowser() {
     if (backdrop) backdrop.style.display = "none";
     if (overlay) overlay.style.display = "none";
+    const restore = openerEl;
+    openerEl = null;
+    if (restore && document.contains(restore) && typeof restore.focus === "function") {
+        restore.focus();
+    }
 }
 
 function parseTags(str) {
@@ -556,9 +563,10 @@ function ensureOverlay() {
     document.body.appendChild(overlay);
 
     document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && overlay.style.display !== "none") {
-            closeStyleBrowser();
-        }
+        if (e.key !== "Escape" || overlay.style.display === "none") return;
+        // Focus inside iframe: app closes via SG_CLOSE_REQUEST; do not double-close.
+        if (document.activeElement === iframe || e.target === iframe) return;
+        closeStyleBrowser();
     }, true);
 
     window.addEventListener("message", (e) => {
@@ -645,15 +653,17 @@ function openStyleBrowser(node) {
         appliedByNode.clear();
     }
     currentNode = node;
+    openerEl = document.activeElement;
     ensureOverlay();
-    if (ready) {
-        rehydrate().then(() => {
-            backdrop.style.display = "block";
-            overlay.style.display = "block";
-        });
-    } else {
+    const reveal = () => {
         backdrop.style.display = "block";
         overlay.style.display = "block";
+        iframe.focus();
+    };
+    if (ready) {
+        rehydrate().then(reveal);
+    } else {
+        reveal();
     }
 }
 
