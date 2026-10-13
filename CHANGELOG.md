@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.0.9 — 2026-10-13
+
+### Changed
+- **Much faster with big libraries:** 5,000 styles open in about 0.4 s instead of 24.7 s, select/search respond in about 90 ms, only visible rows are rendered.
+- **Smooth scrolling** with sticky category headers.
+- **Intended font restored** (sans instead of serif fallback).
+- **Selection dot is back** (instead of the check badge).
+- **Cleaner cards:** the small usage counter under style names is gone; card rows keep an even gap.
+- **Context menus stay on screen:** card menus and the source picker no longer get cut off at the panel edge.
+
+Compatibility: current ComfyUI frontend; node inputs/outputs unchanged, existing workflows load as before.
+
 ## 0.0.8 — 2026-10-11
 
 ### Changed
