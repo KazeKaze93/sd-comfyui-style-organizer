@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- **tests/docs:** wildcard golden parity with WebUI; unknown tokens remain stripped with warning.
+
 ## 0.0.10 — 2026-10-14
 
 ### Changed
