@@ -14,7 +14,7 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Move styles between categories
 - Thumbnail previews with manual upload
 - Import and export styles, presets, and usage as JSON
-- Manual Backup: zip snapshot of `data/` + `imports/` CSVs and presets under `data/backups/`
+- Manual Backup: zip snapshot of user-dir CSVs + presets under `user/style_grid/backups/`
 - Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob)
 - Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
 - Combos: styles can list related names in their description (`Combos: …`); the card shows clickable “Works with” chips to select those styles or jump to a category
@@ -130,9 +130,9 @@ and usage as JSON. Import accepts that JSON, or a Backup zip
 **overwrites** the existing preset with the imported definition.
 
 **Backup** (toolbar save icon) writes a manual zip snapshot of your
-`data/` and `data/imports/` CSVs plus `presets.json` into
-`data/backups/` (bundled `samples/` is excluded). It is not automatic,
-and it is separate from Export.
+user-dir CSVs (`style_grid/` and `style_grid/imports/`) plus `presets.json`
+into `style_grid/backups/` (bundled `samples/` is excluded). It is not
+automatic, and it is separate from Export.
 
 ![Import/Export menu](docs/screenshots/import-export-menu.png)
 
@@ -150,7 +150,7 @@ The panel supports fullscreen for browsing large packs:
 
 ## Style packs
 
-Style Grid ships with one small sample pack (`demo.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2409619/sfw-prompt-pack). Drop CSV files into the node's `data/` folder to add more.
+Style Grid ships with one small sample pack (`demo.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2409619/sfw-prompt-pack). Drop CSV files into ComfyUI's `user/style_grid/` folder to add more.
 
 ## BREAK and prompt chunking
 
@@ -158,28 +158,36 @@ Style Grid does not insert or manage `BREAK` tokens itself. If your styles or pr
 
 ## Generated files and cleanup
 
-> **Warning — uninstall / reinstall wipes local data.** Removing or
-> reinstalling this node via ComfyUI-Manager deletes the **entire**
-> extension folder — including your CSVs, presets, thumbnails, and
-> `data/backups/`. Copy `data/` somewhere else before you uninstall or
-> reinstall if you want to keep anything.
+> **Data survives reinstall since this version.** User CSVs, presets,
+> thumbnails, and backups live under ComfyUI's user directory
+> (`user/style_grid/`), not inside the extension folder. Uninstalling or
+> reinstalling the node via ComfyUI-Manager no longer wipes that data.
 
-Style Grid writes runtime data under `data/` inside the extension
-folder:
+Style Grid writes runtime data under ComfyUI's
+`folder_paths.get_user_directory()/style_grid`
+(typically `ComfyUI/user/style_grid/`):
 
 | Path | What it is | Safe to delete? |
 |------|-----------|------------------|
-| `data/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
-| `data/imports/*.csv` | Style packs created by the Import feature (including restore from a Backup zip) | Yes, anytime |
-| `data/backups/` | Manual Backup `.zip` archives (`data/` + `imports/` CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
-| `data/presets.json` | Saved presets. Corrupt/unreadable JSON returns HTTP **409** and is not overwritten — restore from sibling `.bak` (atomic writes keep `.bak` / `.bak.2` / `.bak.3`). | Only if you don't need them |
-| `data/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
-| `data/category_order.json` | Persisted sidebar category order | Yes — order falls back to defaults |
-| `data/thumbnails/` | Uploaded preview images | Yes, previews just won't show until re-uploaded |
+| `user/style_grid/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
+| `user/style_grid/imports/*.csv` | Style packs created by the Import feature (including restore from a Backup zip) | Yes, anytime |
+| `user/style_grid/backups/` | Manual Backup `.zip` archives (CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
+| `user/style_grid/presets.json` | Saved presets. Corrupt/unreadable JSON returns HTTP **409** and is not overwritten — restore from sibling `.bak` (atomic writes keep `.bak` / `.bak.2` / `.bak.3`). | Only if you don't need them |
+| `user/style_grid/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
+| `user/style_grid/category_order.json` | Persisted sidebar category order | Yes — order falls back to defaults |
+| `user/style_grid/thumbnails/` | Uploaded preview images | Yes, previews just won't show until re-uploaded |
 
-`samples/demo.csv` (the bundled demo pack) is read-only by
-design — Edit, Move, and Delete are blocked on styles from this file.
-Use Duplicate to create an editable copy in `data/` first.
+**Migration from older installs:** On first startup, if `user/style_grid/`
+is empty and the extension still has files under its legacy `data/`
+folder, Style Grid **copies** (never moves) that content into the new
+location and writes a marker file. The old `data/` folder inside the
+extension is **not** auto-deleted — remove it yourself once you confirm
+the copy looks right.
+
+`samples/demo.csv` (the bundled demo pack) stays inside the extension and
+is read-only by design — Edit, Move, and Delete are blocked on styles from
+this file. Use Duplicate to create an editable copy in `user/style_grid/`
+first.
 
 ## Security note
 
