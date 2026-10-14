@@ -250,6 +250,37 @@ function hookDeckWidgetCallbacks(node) {
     }
 }
 
+const DECK_CONTROL_DEFAULTS = { [DECK_SEED_WIDGET]: "fixed", [DECK_INDEX_WIDGET]: "increment" };
+const DECK_SERIALIZER_FLAG = "__sgDeckSerializer";
+
+/** Workflows saved before the deck widgets existed keep the Browse Styles button's null in positional
+ * slot 3, which now lands on deck_seed. Whatever the widget holds, the backend must receive a clean integer. */
+function guardDeckWidgetSerialization(node) {
+    const { seed, index } = getDeckWidgets(node);
+    for (const widget of [seed, index]) {
+        if (!widget || widget[DECK_SERIALIZER_FLAG]) continue;
+        widget[DECK_SERIALIZER_FLAG] = true;
+        widget.serializeValue = async () => toDeckNumber(widget.value);
+    }
+}
+
+/** Repair values restored from an older or misaligned workflow: invalid numbers and invalid control modes. */
+function repairDeckWidgets(node) {
+    const { seed, index } = getDeckWidgets(node);
+    for (const widget of [seed, index]) {
+        if (!widget) continue;
+        const clean = toDeckNumber(widget.value);
+        if (widget.value !== clean) widget.value = clean;
+        const fallbackMode = DECK_CONTROL_DEFAULTS[widget.name];
+        for (const linked of widget.linkedWidgets || []) {
+            const allowed = linked.options?.values;
+            if (Array.isArray(allowed) && !allowed.includes(linked.value)) {
+                linked.value = fallbackMode;
+            }
+        }
+    }
+}
+
 function getActiveStyles(text, negativeText, excludeName) {
     return allStylesCache.filter((s) => {
         if (s.name === excludeName) return false;
@@ -783,6 +814,12 @@ app.registerExtension({
         hideWidget(seed);
         hideWidget(index);
         hookDeckWidgetCallbacks(node);
+        guardDeckWidgetSerialization(node);
         node.addWidget("button", "Browse Styles", null, () => openStyleBrowser(node));
+    },
+    loadedGraphNode(node) {
+        if (node.comfyClass !== "StyleGridNode") return;
+        repairDeckWidgets(node);
+        guardDeckWidgetSerialization(node);
     },
 });
