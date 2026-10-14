@@ -96,13 +96,14 @@ def resolve_sg_wildcards(prompt, styles_by_category, rng=None, field="prompt"):
     for negative-context resolution — a wildcard always pulls the matching side of the
     picked style, never the positive prompt inside a negative field.
     rng is an optional random.Random for reproducible picks; falls back to the module RNG.
-    Nested tokens resolve up to _MAX_PASSES; leftovers are stripped.
+    Nested tokens resolve up to ``_MAX_PASSES`` (3); leftovers are stripped with a warning.
 
     Optional slice: ``{sg:CATEGORY:spec}`` where ``spec`` is a comma-separated
     include/exclude/glob list (see ``select_slice``). A spec applies only to its own
     token — nested ``{sg:...}`` tokens resolve by their own specs (or none); the outer
-    slice is not inherited. Empty slices fall back to the full category. Unknown
-    categories leave the raw token unchanged.
+    slice is not inherited. Empty slices fall back to the full category. Unknown or
+    empty categories keep the raw token through nested passes, then strip with a
+    warning. An empty style field resolves to an empty string (token is not kept).
     """
     picker = rng or random
 
