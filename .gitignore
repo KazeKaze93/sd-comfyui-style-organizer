@@ -19,3 +19,7 @@ node.zip
 
 # Local Cursor config
 .cursor/
+
+# Release and scratch artifacts (safety net, files like these should never be created)
+notes-*.md
+*_tmp.py
