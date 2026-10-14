@@ -2,8 +2,15 @@
 
 ## Unreleased
 
+### Added
+- **Shuffle wildcards:** `{sgd:category}` and `{sgd:category:spec}` draw styles without repeats, one step per queue run. Insert them from the category right-click menu (shuffle group) or type them by hand; they get their own chip icon and are saved in presets.
+- **Deck controls on the Style Grid node:** two optional inputs, `deck_seed` (which shuffle order) and `deck_index` (position, advances automatically after each queue run).
+
 ### Changed
 - **tests/docs:** wildcard golden parity with WebUI; unknown tokens remain stripped with warning.
+- **Random wildcards re-roll reliably:** a wildcard typed in upper case (`{SG:…}`) is now re-rolled on every queue run like `{sg:…}`.
+
+Compatibility: node inputs are added as optional; existing workflows load as before.
 
 ## 0.0.10 — 2026-10-14
 

@@ -15,18 +15,20 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Thumbnail previews with manual upload
 - Import and export styles and presets as JSON
 - Manual Backup: zip snapshot of user-dir CSVs + presets under `user/style_grid/backups/`
-- Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob)
+- Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob). Shuffle wildcards `{sgd:category}` / `{sgd:category:spec}` draw without repeats, one step per queue run
 - Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
 - Combos: styles can list related names in their description (`Combos: …`); the card shows clickable “Works with” chips to select those styles or jump to a category
 
 ![Wildcard category](docs/screenshots/wildcards.png)
 
-Right-click a category in the **sidebar** for wildcard actions:
+Right-click a category in the **sidebar** for wildcard actions, in two groups: **random** (`{sg:…}`, can repeat) and **shuffle** (`{sgd:…}`, no repeats between queue runs):
 
 | Item | What it does |
 |---|---|
-| **Add category as wildcard** | Inserts `{sg:<category>}` into the active text field |
-| **Select styles for wildcard…** | Opens slice-selection mode: tick styles (search and source filter still apply; **Select all** covers the currently visible list). **Add as wildcard** inserts a compact `{sg:<category>:<spec>}` for that selection |
+| **Whole category** (random) | Inserts `{sg:<category>}` into the active text field |
+| **Pick styles…** (random) | Opens slice-selection mode: tick styles (search and source filter still apply; **Select all** covers the currently visible list). **Add as wildcard** inserts a compact `{sg:<category>:<spec>}` for that selection |
+| **Whole category** (shuffle) | Inserts `{sgd:<category>}` |
+| **Pick styles…** (shuffle) | Same slice selection, but **Add as shuffle wildcard** inserts `{sgd:<category>:<spec>}` |
 
 **How `{sg:…}` works**
 
@@ -41,6 +43,23 @@ Right-click a category in the **sidebar** for wildcard actions:
 - **Unknown / empty category:** the raw token is left in place through nested passes, then stripped with a warning
 
 You can also type or paste `{sg:…}` tokens by hand.
+
+**Shuffle wildcards `{sgd:…}`**
+
+A shuffle wildcard draws styles **without repeats**. Where `{sg:category}` may pick the same style on consecutive runs, `{sgd:category}` uses every style in the category once before any style comes back.
+
+- **Syntax:** `{sgd:category}` for a whole category, `{sgd:category:spec}` for a slice. The spec grammar is identical to `{sg:…}` (names, `-excludes`, `Prefix_*` globs), and the order of entries does not matter
+- **Insert:** use the *shuffle* group of the category menu, or type the token by hand. Shuffle chips have their own icon and are removed and saved in presets like any other wildcard
+- **One queue run, one draw:** the node resolves its text once per run, so every image of a single latent batch shares the same draw. To step through the deck, queue several runs (**Batch count** in the queue controls), not a larger batch size
+- **Two extra node inputs:** `deck_seed` selects which shuffle order you get, `deck_index` is the position in that order. `deck_index` advances by itself after every queue run (its *control after generate* is set to *increment*). Change `deck_seed` for a fresh order. Same seed + same index + same prompt always gives the same result
+- **Set the controls if needed:** if your ComfyUI frontend shows `deck_index` with *randomize* instead of *increment*, switch it to *increment*, otherwise draws can repeat
+- **Range:** `deck_index` goes up to 9,999; when you run out of positions, change `deck_seed` and start again from 0
+- **Several tokens:** repeating the same token in one prompt draws a different style for each occurrence
+- **Positive and negative:** the same shuffle token in both fields resolves to the same style, as long as it appears the same number of times in each
+- **Duplicates across packs:** styles with identical prompt and negative prompt count once
+- **Random wildcards are unchanged.** Mixing `{sg:…}` and `{sgd:…}` in one prompt is fine, they do not influence each other
+- **Presets:** shuffle chips are saved in presets and restored as shuffle chips
+- **Existing workflows:** the two inputs are optional and sit after the existing ones; workflows saved before load as before
 
 - Works with multiple CSV sources at once, or filtered to one
 - **Theme:** the panel follows the ComfyUI color palette (light / dark) automatically
