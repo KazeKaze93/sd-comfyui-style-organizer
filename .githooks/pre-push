@@ -80,6 +80,12 @@ echo "pre-push: rebuild UI and require web/ui match"
   cd ui
   npm run build
 )
+echo "pre-push: built CSS must not contain template residue (dynamic Tailwind class)"
+if grep -l -F '\$\{' web/ui/assets/*.css; then
+  echo "pre-push: built CSS contains a mangled dynamic class. Use literal class strings in Tailwind utilities." >&2
+  exit 1
+fi
+
 git diff --exit-code -- web/ui
 
 echo "pre-push: ok"
