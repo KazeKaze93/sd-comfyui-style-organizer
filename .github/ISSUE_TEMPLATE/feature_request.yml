@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement for Style Grid for ComfyUI
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the use case first. Feature requests that duplicate existing behavior or belong in ComfyUI core may be closed with a pointer elsewhere.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that is awkward or impossible today?
+      placeholder: I want to …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should Style Grid behave? Keep it concrete (UI, API, node I/O).
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other nodes/extensions, or why those fall short.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, workflow notes, or related issues.
+    validations:
+      required: false

@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a problem with Style Grid for ComfyUI
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Fill in the fields below so we can reproduce it.
+        Security-sensitive issues: use private reporting in [SECURITY.md](../../SECURITY.md) instead of a public issue.
+
+  - type: input
+    id: comfyui_version
+    attributes:
+      label: ComfyUI version
+      description: ComfyUI build or git commit (Help → About, or `git rev-parse HEAD` in the ComfyUI folder).
+      placeholder: e.g. v0.3.x / commit abc1234
+    validations:
+      required: true
+
+  - type: input
+    id: frontend_version
+    attributes:
+      label: Frontend version
+      description: ComfyUI frontend version if shown in About / Manager (or package version of `@comfyorg/frontend` if known).
+      placeholder: e.g. 1.x.x
+    validations:
+      required: true
+
+  - type: input
+    id: extension_version
+    attributes:
+      label: Extension version
+      description: Style Grid version from `pyproject.toml`, Comfy Manager, or git tag/commit in this repo.
+      placeholder: e.g. 0.0.10 / commit abc1234
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, expected vs actual behavior. Include whether Browse Styles, wildcards, presets, import/export, or thumbnails are involved.
+      placeholder: |
+        1. …
+        2. …
+        Expected: …
+        Actual: …
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console / server log
+      description: Relevant browser DevTools console output and/or ComfyUI server terminal traceback. Redact paths or personal data if needed.
+      render: shell
+    validations:
+      required: false
