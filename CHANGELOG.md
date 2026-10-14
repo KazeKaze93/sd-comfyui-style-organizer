@@ -4,13 +4,15 @@
 
 ### Added
 - **Shuffle wildcards:** `{sgd:category}` and `{sgd:category:spec}` draw styles without repeats, one step per queue run. Insert them from the category right-click menu (shuffle group) or type them by hand; they get their own chip icon and are saved in presets.
-- **Deck controls on the Style Grid node:** two optional inputs, `deck_seed` (which shuffle order) and `deck_index` (position, advances automatically after each queue run).
+- **Deck strip in the panel:** shows the shuffle seed and the next draw number while a shuffle chip is active, with **Restart** and **New deck** buttons. The two inputs behind it are hidden on the node and saved with the workflow.
 
 ### Changed
 - **tests/docs:** wildcard golden parity with WebUI; unknown tokens remain stripped with warning.
 - **Random wildcards re-roll reliably:** a wildcard typed in upper case (`{SG:…}`) is now re-rolled on every queue run like `{sg:…}`.
+- **Cleaner node:** technical fields (the source path and the deck inputs) are no longer shown on the node; everything is controlled from the panel.
+- **Pick styles layout:** slice selection shows the card grid again instead of a single-column list.
 
-Compatibility: node inputs are added as optional; existing workflows load as before.
+Compatibility: node inputs are added as optional and stay hidden; existing workflows load as before.
 
 ## 0.0.10 — 2026-10-14
 
