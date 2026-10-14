@@ -84,7 +84,7 @@ def test_migrate_writes_marker_only_after_copy(tmp_path):
     legacy = tmp_path / "legacy"
     dest = tmp_path / "dest"
     legacy.mkdir()
-    (legacy / "usage.json").write_text('{"n":{}}', encoding="utf-8")
+    (legacy / "presets.json").write_text("{}", encoding="utf-8")
 
     assert sg_config.migrate_legacy_user_data(str(dest), str(legacy)) is True
     assert (dest / sg_config.MIGRATION_MARKER_NAME).is_file()
@@ -98,7 +98,6 @@ def test_module_paths_use_resolver_constants():
     """Production constants are derived from DATA_DIR (single resolver)."""
     assert sg_config.IMPORTS_DIR == os.path.join(sg_config.DATA_DIR, "imports")
     assert sg_config.PRESETS_FILE == os.path.join(sg_config.DATA_DIR, "presets.json")
-    assert sg_config.USAGE_FILE == os.path.join(sg_config.DATA_DIR, "usage.json")
     assert sg_config.CATEGORY_ORDER_FILE == os.path.join(
         sg_config.DATA_DIR, "category_order.json"
     )

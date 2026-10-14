@@ -204,8 +204,8 @@ export async function checkLayoutInvariants(page, opts) {
 }
 
 /**
- * Inject a two-line "usage glue" fixture so invariants must FAIL (dev harness only).
- * Simulates HEAD StyleCard with usage counters spilling past fixed row height.
+ * Inject a "glue" fixture so invariants must FAIL (dev harness only).
+ * Adds an extra line past fixed card row height.
  * @param {import('playwright').Page} page
  */
 export async function injectGlueFixture(page) {

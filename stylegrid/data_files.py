@@ -1,4 +1,4 @@
-"""Presets, usage stats, CSV backups (JSON / filesystem under data/)."""
+"""Presets and CSV backups (JSON / filesystem under data/)."""
 
 import os
 import time
@@ -9,7 +9,6 @@ from .config import (
     DATA_DIR,
     IMPORTS_DIR,
     PRESETS_FILE,
-    USAGE_FILE,
     _csvs_in,
 )
 from .csv_io import load_all_styles
@@ -187,35 +186,9 @@ def save_presets(presets):
         return normalized
 
 
-def load_usage():
-    """Load usage.json. Missing → {}; corrupt/wrong-shape/IO → CorruptDataError."""
-    with locked_path(USAGE_FILE):
-        return load_json_object(USAGE_FILE, require_object_values=True)
-
-
-def save_usage(usage):
-    """Atomically write usage. Refuses if existing file is corrupt."""
-    if not isinstance(usage, dict):
-        raise TypeError("usage must be a dict")
-    with locked_path(USAGE_FILE):
-        write_json_atomic(USAGE_FILE, usage, require_object_values=True)
-
-
-def increment_usage(style_names):
-    with locked_path(USAGE_FILE):
-        usage = load_usage()
-        ts = time.strftime("%Y-%m-%dT%H:%M:%S")
-        for name in style_names:
-            if name not in usage:
-                usage[name] = {"count": 0, "last_used": None, "first_used": ts}
-            usage[name]["count"] = usage[name].get("count", 0) + 1
-            usage[name]["last_used"] = ts
-        save_usage(usage)
-
-
 def _backup_zip_entries():
     """(abs_path, arcname) for user CSVs + presets. samples/ excluded; one collect.
-    Scope is packs+presets only — not usage.json, category_order.json, or thumbnails/.
+    Scope is packs+presets only — not category_order.json or thumbnails/.
     """
     entries = []
     for fp in _csvs_in(DATA_DIR):

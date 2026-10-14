@@ -54,7 +54,6 @@ function resetDerivedStore() {
     duplicatesByName: new Map(),
     thumbVersions: {},
     conflicts: [],
-    usageCounts: {},
     favorites: new Set(),
     recentNames: [],
     presets: {},

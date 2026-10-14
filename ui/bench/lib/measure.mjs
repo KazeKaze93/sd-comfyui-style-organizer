@@ -1,4 +1,4 @@
-import { makeBenchScenario, usageApiBody } from './synthetic.mjs'
+import { makeBenchScenario } from './synthetic.mjs'
 import {
   checkLayoutInvariants,
   printLayoutFailure,
@@ -355,7 +355,7 @@ export async function runScenario(browser, opts) {
   }, scenario.favorites)
 
   const { stubStyleGridApi } = await import('./stubApi.mjs')
-  await stubStyleGridApi(page, { usage: usageApiBody(scenario.usageCounts) })
+  await stubStyleGridApi(page)
 
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
   await setCpuThrottle(page, cpuThrottle)

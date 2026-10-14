@@ -377,8 +377,6 @@ interface StylesStore {
   recentNames: string[]
   /** Detected conflicts among current selected styles. */
   conflicts: Conflict[]
-  /** Usage counters loaded/persisted via backend API. */
-  usageCounts: Record<string, number>
   /** User-defined category order for All Sources view. */
   categoryOrder: string[]
   /** Saved style presets from backend (`/style_grid/presets/list`). */
@@ -431,10 +429,8 @@ interface StylesStore {
   clearSliceSelection: () => void
   showToast: (message: string, variant?: 'success' | 'error' | 'info') => void
   detectConflicts: () => void
-  loadUsage: () => Promise<void>
   loadCategoryOrder: () => Promise<void>
   loadThumbnails: () => Promise<void>
-  incrementUsage: (name: string) => void
   setCategoryOrder: (order: string[]) => void
   toggleFavorite: (name: string) => void
   clearFavorites: () => void
@@ -623,7 +619,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   duplicatesByName: new Map(),
   thumbVersions: loadThumbVersionsFromLs(),
   conflicts: [],
-  usageCounts: {},
   categoryOrder: (() => {
     try {
       const parsed = JSON.parse(localStorage.getItem('sg_v2_category_order') || '[]')
@@ -775,8 +770,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       ...selectionDerived(nextSelected),
     })
     toAdd.forEach((style) => {
-      // Bulk: bump usage.last_used, but not client Recent MRU (intentional; see Recent P1/P2).
-      get().incrementUsage(style.name)
+      // Bulk select: do not bump client Recent MRU (intentional; see Recent P1/P2).
       sendToHost({
         type: 'SG_APPLY',
         styleId: style.name,
@@ -855,7 +849,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         },
       })
       get().addToRecent(style.name)
-      get().incrementUsage(style.name)
       sendToHost({
         type: 'SG_APPLY',
         styleId: style.name,
@@ -976,23 +969,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
     set({ conflicts })
   },
-  loadUsage: async () => {
-    try {
-      const r = await fetch('/style_grid/usage')
-      const data = await r.json()
-      const counts: Record<string, number> = {}
-      if (data && typeof data === 'object') {
-        for (const [name, entry] of Object.entries(data)) {
-          counts[name] = (entry && typeof entry === 'object' && 'count' in entry)
-            ? Number((entry as { count: number }).count) || 0
-            : 0
-        }
-      }
-      set({ usageCounts: counts })
-    } catch {
-      // ignore usage load errors
-    }
-  },
   loadThumbnails: async () => {
     try {
       const r = await fetch('/style_grid/thumbnails/list')
@@ -1050,18 +1026,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     } catch {
       // keep localStorage-initialized order
     }
-  },
-  incrementUsage: (name: string) => {
-    if (!name) return
-    const counts = { ...get().usageCounts }
-    counts[name] = (counts[name] || 0) + 1
-    set({ usageCounts: counts })
-    // Persist to backend
-    fetch('/style_grid/usage/increment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ styles: [name] })
-    }).catch(() => {})
   },
   fetchPresets: async () => {
     const parse = (raw: unknown): Record<string, PresetRecord> =>
@@ -1268,7 +1232,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   loadPreset: (name) => {
     const preset = get().presets[name]
     if (!preset) return
-    const { styles, showToast, incrementUsage, addToRecent, detectConflicts } = get()
+    const { styles, showToast, addToRecent, detectConflicts } = get()
 
     const members = resolvePresetMembers(preset.styles ?? [], styles)
     const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
@@ -1285,7 +1249,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       if (selectedNames.has(m.style.name)) continue
       selectedNames.add(m.style.name)
       selected.push(m.style)
-      incrementUsage(m.style.name)
       addToRecent(m.style.name)
       sendToHost({
         type: 'SG_APPLY',
@@ -1419,7 +1382,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       searchTextByKey: buildSearchTextByKey(styles),
     }
 
-    // favorites / recent / usage are name-keyed — only drop the name when no
+    // favorites / recent are name-keyed — only drop the name when no
     // sibling CSV row still carries it. presets.json orphans stay server-side;
     // load already skips missing names.
     if (!styles.some((s) => s.name === name)) {
@@ -1439,12 +1402,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         if (recentNames.length === 0 && get().activeCategory === RECENT_VIEW) {
           patch.activeCategory = null
         }
-      }
-
-      if (Object.prototype.hasOwnProperty.call(get().usageCounts, name)) {
-        const usageCounts = { ...get().usageCounts }
-        delete usageCounts[name]
-        patch.usageCounts = usageCounts
       }
     }
 

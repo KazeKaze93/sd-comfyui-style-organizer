@@ -4,7 +4,6 @@
  *
  * - 12 categories, 3 sources, ~10% duplicate names across sources
  * - names up to 40 chars, long descriptions
- * - usageCounts ~25% of styles (1..40)
  * - ~5% favorites, 10 selected
  */
 
@@ -31,9 +30,6 @@ export const SOURCES = Object.freeze([
 
 /** Fraction of unique base names that also appear under a second source. */
 export const DUPLICATE_NAME_RATIO = 0.1
-
-/** Fraction of styles that get a non-zero usage count. */
-export const USAGE_RATIO = 0.25
 
 /** Fraction of unique names marked favorite. */
 export const FAVORITE_RATIO = 0.05
@@ -93,37 +89,21 @@ export function makeSyntheticStyles(n) {
 }
 
 /**
- * Full bench scenario payload: styles + usage/favorites/selected chrome.
+ * Full bench scenario payload: styles + favorites/selected chrome.
  * @param {number} n
  */
 export function makeBenchScenario(n) {
   const styles = makeSyntheticStyles(n)
-  const usageCounts = buildUsageCounts(styles)
   const favorites = buildFavorites(styles)
   const selected = styles.slice(0, Math.min(SELECTED_COUNT, styles.length))
   const uniqueNames = new Set(styles.map((s) => s.name))
   return {
     styles,
-    usageCounts,
     favorites,
     selected,
     /** All-sources view dedupes by name — catalog item count uses this. */
     uniqueNameCount: uniqueNames.size,
   }
-}
-
-/**
- * API body for GET /style_grid/usage.
- * @param {Record<string, number>} usageCounts
- * @returns {Record<string, { count: number }>}
- */
-export function usageApiBody(usageCounts) {
-  /** @type {Record<string, { count: number }>} */
-  const body = {}
-  for (const [name, count] of Object.entries(usageCounts)) {
-    body[name] = { count }
-  }
-  return body
 }
 
 /**
@@ -157,39 +137,6 @@ function makeStyle(name, category, source_file, seed) {
     has_thumbnail: false,
     read_only: false,
   }
-}
-
-/**
- * ~25% of unique names get usage 1..40 (deterministic).
- * @param {Array<{ name: string }>} styles
- * @returns {Record<string, number>}
- */
-function buildUsageCounts(styles) {
-  const seen = new Set()
-  const unique = []
-  for (const s of styles) {
-    if (seen.has(s.name)) continue
-    seen.add(s.name)
-    unique.push(s.name)
-  }
-  const target = Math.max(1, Math.round(unique.length * USAGE_RATIO))
-  /** @type {Record<string, number>} */
-  const counts = {}
-  for (let i = 0; i < target; i += 1) {
-    // Stride through unique names so usage is spread across categories.
-    const name = unique[(i * 7) % unique.length]
-    if (counts[name]) continue
-    counts[name] = 1 + ((i * 13) % 40)
-  }
-  // Fill if collisions reduced the set.
-  let j = 0
-  while (Object.keys(counts).length < target && j < unique.length) {
-    const name = unique[j]
-    j += 1
-    if (counts[name]) continue
-    counts[name] = 1 + (j % 40)
-  }
-  return counts
 }
 
 /**

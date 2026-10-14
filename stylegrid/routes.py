@@ -30,12 +30,9 @@ from .csv_io import (
 from .data_files import (
     CorruptDataError,
     backup_csv_files,
-    increment_usage,
     load_presets,
-    load_usage,
     preset_styles_payload_ok,
     save_presets,
-    save_usage,
 )
 from .safe_persistence import locked_path, write_atomic
 from .thumbnails import (
@@ -201,7 +198,6 @@ def _register_style_routes(routes):
         categories = categorize_styles(styles)
         try:
             presets = load_presets()
-            usage = load_usage()
         except CorruptDataError as exc:
             return _corrupt_response(exc)
         # Presets are embedded in the body; include them so save/delete busts ETag.
@@ -215,7 +211,7 @@ def _register_style_routes(routes):
         if_none_match = request.headers.get("If-None-Match", "").strip().strip('"')
         if if_none_match and if_none_match == etag:
             return web.Response(status=304)
-        response = web.json_response({"categories": categories, "usage": usage, "presets": presets})
+        response = web.json_response({"categories": categories, "presets": presets})
         response.headers["ETag"] = etag
         return response
 
@@ -225,11 +221,7 @@ def _register_style_routes(routes):
         invalidate_styles_cache()
         styles = get_cached_styles()
         categories = categorize_styles(styles)
-        try:
-            usage = load_usage()
-        except CorruptDataError as exc:
-            return _corrupt_response(exc)
-        return web.json_response({"categories": categories, "usage": usage})
+        return web.json_response({"categories": categories})
 
     @routes.get("/style_grid/check_update")
     async def api_check_update(request):
@@ -250,7 +242,6 @@ def _register_style_routes(routes):
         return web.json_response({
             "styles": styles,
             "presets": load_presets(),
-            "usage": load_usage(),
             "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         })
 
@@ -304,6 +295,7 @@ def _register_style_routes(routes):
                                 _write_styles_to_new_import_csv, rows, member
                             )
 
+                    # Legacy backup zips may contain usage.json — ignore; do not restore.
                     if imported == 0 and presets_imported == 0:
                         return web.json_response(
                             {"error": "No importable data found in file"}
@@ -314,8 +306,6 @@ def _register_style_routes(routes):
                         "skipped": skipped,
                         "presets_imported": presets_imported,
                         "presets_skipped": presets_skipped,
-                        "usage_imported": 0,
-                        "usage_skipped": 0,
                     })
             except BackupZipLimitError as e:
                 return web.json_response({"error": str(e)}, status=422)
@@ -376,75 +366,16 @@ def _register_style_routes(routes):
                     imported = await asyncio.to_thread(
                         _write_styles_to_new_import_csv, valid, "import.json"
                     )
-        usage_imported = 0
-        usage_skipped = 0
-        if "usage" in data:
-            incoming_usage = data["usage"]
-            if not isinstance(incoming_usage, dict):
-                return web.json_response({"error": "usage must be an object"})
-            known_names = {s["name"] for s in load_all_styles()}
-            usage = load_usage()
-            changed = False
-            for name, entry in incoming_usage.items():
-                if not isinstance(name, str) or not name.strip():
-                    usage_skipped += 1
-                    continue
-                name = name.strip()
-                if name not in known_names:
-                    usage_skipped += 1
-                    continue
-                if not isinstance(entry, dict):
-                    usage_skipped += 1
-                    continue
-                count = entry.get("count")
-                if not isinstance(count, int) or count < 0:
-                    usage_skipped += 1
-                    continue
-                last_used = entry.get("last_used")
-                if last_used is not None and not isinstance(last_used, str):
-                    usage_skipped += 1
-                    continue
-                first_used = entry.get("first_used")
-                if first_used is not None and not isinstance(first_used, str):
-                    usage_skipped += 1
-                    continue
-                if name not in usage or not isinstance(usage.get(name), dict):
-                    usage[name] = {
-                        "count": count,
-                        "last_used": last_used,
-                        "first_used": first_used or time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    }
-                else:
-                    cur = usage[name]
-                    cur["count"] = int(cur.get("count", 0) or 0) + count
-                    cur_last = cur.get("last_used")
-                    if last_used and (
-                        not isinstance(cur_last, str) or not cur_last or last_used > cur_last
-                    ):
-                        cur["last_used"] = last_used
-                    cur_first = cur.get("first_used")
-                    if first_used and (
-                        not isinstance(cur_first, str)
-                        or not cur_first
-                        or first_used < cur_first
-                    ):
-                        cur["first_used"] = first_used
-                    elif not cur_first:
-                        cur["first_used"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-                usage_imported += 1
-                changed = True
-            if changed:
-                save_usage(usage)
+        # Legacy export JSON may include a "usage" key — ignore; do not fail or restore.
         if (
             duplicate_import
             and imported == 0
             and presets_imported == 0
-            and usage_imported == 0
         ):
             return web.json_response({
                 "error": "This looks like a duplicate of an existing import",
             })
-        if imported == 0 and presets_imported == 0 and usage_imported == 0:
+        if imported == 0 and presets_imported == 0:
             return web.json_response({"error": "No importable data found in file"})
         resp = {
             "ok": True,
@@ -452,8 +383,6 @@ def _register_style_routes(routes):
             "skipped": skipped,
             "presets_imported": presets_imported,
             "presets_skipped": presets_skipped,
-            "usage_imported": usage_imported,
-            "usage_skipped": usage_skipped,
         }
         if duplicate_import:
             resp["warning"] = "This looks like a duplicate of an existing import"
@@ -635,26 +564,6 @@ def _register_preset_routes(routes):
             return _corrupt_response(exc)
 
 
-def _register_usage_routes(routes):
-    @routes.get("/style_grid/usage")
-    async def get_usage_route(request):
-        return web.json_response(load_usage())
-
-    @routes.post("/style_grid/usage/increment")
-    async def api_increment(request):
-        data = await _read_json(request)
-        style_names = data.get("styles")
-        if style_names is None:
-            return web.json_response({"ok": True})
-        if not isinstance(style_names, list) or not all(
-            isinstance(n, str) for n in style_names
-        ):
-            return web.json_response({"error": "styles must be a list of strings"})
-        style_names = [n for n in style_names if n]
-        increment_usage(style_names)
-        return web.json_response({"ok": True})
-
-
 def _register_crud_routes(routes):
     @routes.post("/style_grid/style/save")
     async def api_save_style(request):
@@ -780,6 +689,5 @@ def register_api(routes):
     """
     _register_style_routes(routes)
     _register_preset_routes(routes)
-    _register_usage_routes(routes)
     _register_crud_routes(routes)
     _register_thumbnail_routes(routes)

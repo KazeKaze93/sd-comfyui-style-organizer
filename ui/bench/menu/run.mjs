@@ -228,14 +228,6 @@ async function stubApi(page, styles, withThumb) {
       })
       return
     }
-    if (url.includes('/style_grid/usage') && method === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: '{}',
-      })
-      return
-    }
     if (url.includes('/style_grid/presets')) {
       await route.fulfill({
         status: 200,

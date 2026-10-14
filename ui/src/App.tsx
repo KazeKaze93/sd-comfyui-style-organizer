@@ -230,7 +230,6 @@ export default function App() {
     styles.some(s => s.source_file === activeSource && s.read_only)
 
   useEffect(() => {
-    useStylesStore.getState().loadUsage()
     void useStylesStore.getState().loadCategoryOrder()
     useStylesStore.getState().setThemeMode(appliedThemeMode())
     const unsub = onHostMessage((msg) => {

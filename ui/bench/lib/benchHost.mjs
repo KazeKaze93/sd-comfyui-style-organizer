@@ -8,7 +8,7 @@ import { createReadStream } from 'node:fs'
 import { access, mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { makeBenchScenario, usageApiBody } from './synthetic.mjs'
+import { makeBenchScenario } from './synthetic.mjs'
 import { stubStyleGridApi } from './stubApi.mjs'
 import { installLongTaskObserver } from './measure.mjs'
 import { CARD_SELECTOR } from './layoutInvariants.mjs'
@@ -203,14 +203,12 @@ export async function scrollThreeScreens(page) {
  *   baseUrl: string
  *   n: number
  *   favorites?: string[]
- *   usageCounts?: Record<string, number>
  *   seedSelected?: boolean
  * }} opts
  */
 export async function openBenchPage(browser, opts) {
   const scenario = makeBenchScenario(opts.n)
   const favorites = opts.favorites ?? scenario.favorites
-  const usageCounts = opts.usageCounts ?? scenario.usageCounts
   const styles = scenario.styles
 
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
@@ -225,7 +223,7 @@ export async function openBenchPage(browser, opts) {
   }, favorites)
 
   await installLongTaskObserver(page)
-  await stubStyleGridApi(page, { usage: usageApiBody(usageCounts) })
+  await stubStyleGridApi(page)
   await page.goto(opts.baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
   await page.waitForFunction(() => Boolean(window.__sgBench?.ready), null, {
     timeout: 60_000,

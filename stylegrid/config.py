@@ -29,7 +29,7 @@ USER_DATA_DIRNAME = "style_grid"
 MIGRATION_MARKER_NAME = ".migrated_from_extension_data"
 
 _USER_JSON_NAMES = frozenset(
-    {"presets.json", "usage.json", "category_order.json"}
+    {"presets.json", "category_order.json"}
 )
 _USER_SUBDIR_NAMES = frozenset({"imports", "thumbnails", "backups"})
 
@@ -185,7 +185,6 @@ _ensure_data_dirs(DATA_DIR)
 
 IMPORTS_DIR = os.path.join(DATA_DIR, "imports")
 PRESETS_FILE = os.path.join(DATA_DIR, "presets.json")
-USAGE_FILE = os.path.join(DATA_DIR, "usage.json")
 CATEGORY_ORDER_FILE = os.path.join(DATA_DIR, "category_order.json")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 THUMBNAILS_DIR = os.path.join(DATA_DIR, "thumbnails")
