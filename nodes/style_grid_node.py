@@ -3,22 +3,19 @@ import re
 
 from ..stylegrid.cache import get_cached_styles
 from ..stylegrid.csv_io import categorize_styles
+from ..stylegrid.deck_limits import (
+    DECK_INDEX_DEFAULT,
+    DECK_INDEX_MAX,
+    DECK_SEED_DEFAULT,
+    DECK_SEED_MAX,
+    clamp_deck_index,
+    clamp_deck_seed,
+)
 from ..stylegrid.prompt_ops import build_styles_by_cat, resolve_and_pack
 from ..stylegrid.wildcards import DeckContext
 
 # Dice tokens re-roll on every queue; deck tokens are a pure function of the inputs.
 _DICE_TOKEN = re.compile(r"\{sg:", re.IGNORECASE)
-DECK_SEED_DEFAULT = 0
-DECK_SEED_MAX = 0xFFFFFFFFFFFFFFFF
-DECK_INDEX_DEFAULT = 0
-# deck_position rebuilds the seam-fixed epoch chain, so cost grows linearly with the
-# index (~0.05 s at 9_999 for a 2-card deck, ~5 s at 999_999). deck.py must stay
-# byte-identical to WebUI, so the bound lives here. Change deck_seed for a fresh deck.
-DECK_INDEX_MAX = 9_999
-
-
-def _clamp_deck_index(value) -> int:
-    return min(max(int(value), 0), DECK_INDEX_MAX)
 
 
 class StyleGridNode:
@@ -73,7 +70,13 @@ class StyleGridNode:
         if _DICE_TOKEN.search(text) or _DICE_TOKEN.search(negative_text):
             return float("nan")
         payload = "\x00".join(
-            [text, negative_text, active_source, str(deck_seed), str(_clamp_deck_index(deck_index))]
+            [
+                text,
+                negative_text,
+                active_source,
+                str(clamp_deck_seed(deck_seed)),
+                str(clamp_deck_index(deck_index)),
+            ]
         )
         return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
@@ -89,7 +92,7 @@ class StyleGridNode:
         categorize_styles(styles)
         by_cat = build_styles_by_cat(styles, active_source)
         # One queue run = one draw: every image of a latent batch shares this conditioning.
-        deck = DeckContext(int(deck_seed), _clamp_deck_index(deck_index))
+        deck = DeckContext(clamp_deck_seed(deck_seed), clamp_deck_index(deck_index))
         positive = resolve_and_pack(text, by_cat, deck=deck)
         negative = resolve_and_pack(negative_text, by_cat, field="negative_prompt", deck=deck)
         return (positive, negative)
