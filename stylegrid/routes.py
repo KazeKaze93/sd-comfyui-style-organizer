@@ -18,7 +18,7 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import DATA_DIR, IMPORTS_DIR, PRESETS_FILE
+from .config import CATEGORY_ORDER_FILE, IMPORTS_DIR, PRESETS_FILE
 from .csv_io import (
     FIELDNAMES,
     categorize_styles,
@@ -457,11 +457,10 @@ def _register_style_routes(routes):
 
     @routes.get("/style_grid/category_order")
     async def api_get_category_order(request):
-        order_file = os.path.join(DATA_DIR, "category_order.json")
-        if not os.path.isfile(order_file):
+        if not os.path.isfile(CATEGORY_ORDER_FILE):
             return web.json_response([])
         try:
-            with open(order_file, "r", encoding="utf-8") as f:
+            with open(CATEGORY_ORDER_FILE, "r", encoding="utf-8") as f:
                 order = json.load(f)
         except (OSError, json.JSONDecodeError):
             return web.json_response([])
@@ -476,9 +475,8 @@ def _register_style_routes(routes):
         order = data.get("order", [])
         if not isinstance(order, list):
             return web.json_response({"error": "order must be a list"})
-        order_file = os.path.join(DATA_DIR, "category_order.json")
         write_atomic(
-            order_file,
+            CATEGORY_ORDER_FILE,
             json.dumps(order, indent=2, ensure_ascii=False) + "\n",
         )
         return web.json_response({"ok": True})

@@ -2,9 +2,9 @@
 """Pytest bootstrap for this ComfyUI custom node.
 
 Findings:
-- ``stylegrid.config`` only uses ``logging`` + ``os`` (and creates ``data/`` dirs).
-  It does **not** import ``folder_paths``, ``server``, or ``PromptServer``.
-  No stubs are required for ``from stylegrid import ...``.
+- ``stylegrid.config`` optionally imports ``folder_paths`` to resolve the user
+  data root; when that import fails (pytest without ComfyUI), it falls back to
+  legacy ``<ext>/data``. No stubs are required for ``from stylegrid import ...``.
 - The custom-node **root** ``__init__.py`` *does* import ``PromptServer`` and
   registers routes. Pytest treats that directory as a ``Package`` (it has
   ``__init__.py`` and contains ``tests/``), then ``Package.setup`` imports it.
