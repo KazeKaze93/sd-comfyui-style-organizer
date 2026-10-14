@@ -174,6 +174,82 @@ function getTextWidgets(node) {
     };
 }
 
+const DECK_SEED_WIDGET = "deck_seed";
+const DECK_INDEX_WIDGET = "deck_index";
+const DECK_SEED_RANDOM_MASK = 0x7fffffff; // new decks stay far below 2^53 (JS numbers)
+const DECK_HOOKED_FLAG = "__sgDeckHooked";
+
+/** Hide a widget (and its linked control widget) on the node. `hidden` is the supported API in the current
+ * frontend; computeSize covers older frontends. The widget stays in node.widgets, so it still serializes,
+ * is sent to the backend and keeps running control_after_generate. */
+function hideWidget(widget) {
+    if (!widget) return;
+    widget.hidden = true;
+    widget.computeSize = () => [0, -4];
+    for (const linked of widget.linkedWidgets || []) {
+        hideWidget(linked);
+    }
+}
+
+function getDeckWidgets(node) {
+    return {
+        seed: node?.widgets?.find((w) => w.name === DECK_SEED_WIDGET),
+        index: node?.widgets?.find((w) => w.name === DECK_INDEX_WIDGET),
+    };
+}
+
+function toDeckNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+function postDeckState(node) {
+    if (!ready || !iframe?.contentWindow || node !== currentNode) return;
+    const { seed, index } = getDeckWidgets(node);
+    if (!seed || !index) return;
+    iframe.contentWindow.postMessage(
+        { type: "SG_DECK_STATE", seed: toDeckNumber(seed.value), index: toDeckNumber(index.value) },
+        "*"
+    );
+}
+
+function setDeckWidgetValue(widget, value) {
+    if (!widget) return;
+    widget.value = value;
+    widget.callback?.(value);
+}
+
+function restartDeck(node) {
+    const { index } = getDeckWidgets(node);
+    setDeckWidgetValue(index, 0);
+    node.graph?.setDirtyCanvas(true, true);
+    postDeckState(node);
+}
+
+function newDeck(node) {
+    const { seed, index } = getDeckWidgets(node);
+    const fresh = crypto.getRandomValues(new Uint32Array(1))[0] & DECK_SEED_RANDOM_MASK;
+    setDeckWidgetValue(seed, fresh);
+    setDeckWidgetValue(index, 0);
+    node.graph?.setDirtyCanvas(true, true);
+    postDeckState(node);
+}
+
+/** Re-post the deck state whenever the frontend changes a deck widget (control_after_generate calls callback). */
+function hookDeckWidgetCallbacks(node) {
+    const { seed, index } = getDeckWidgets(node);
+    for (const widget of [seed, index]) {
+        if (!widget || widget[DECK_HOOKED_FLAG]) continue;
+        widget[DECK_HOOKED_FLAG] = true;
+        const original = widget.callback;
+        widget.callback = function (...args) {
+            const result = original ? original.apply(this, args) : undefined;
+            postDeckState(node);
+            return result;
+        };
+    }
+}
+
 function getActiveStyles(text, negativeText, excludeName) {
     return allStylesCache.filter((s) => {
         if (s.name === excludeName) return false;
@@ -600,6 +676,7 @@ function ensureOverlay() {
         if (msg.type === "SG_READY") {
             ready = true;
             postTheme();
+            postDeckState(currentNode);
             rehydrate();
         }
         if (msg.type === "SG_APPLY" && currentNode) {
@@ -661,6 +738,12 @@ function ensureOverlay() {
         if (msg.type === "SG_SOURCE_CHANGE" && currentNode) {
             setActiveSource(currentNode, msg.source);
         }
+        if (msg.type === "SG_DECK_RESTART" && currentNode) {
+            restartDeck(currentNode);
+        }
+        if (msg.type === "SG_DECK_NEW" && currentNode) {
+            newDeck(currentNode);
+        }
         if (msg.type === "SG_CLOSE_REQUEST") {
             closeStyleBrowser();
         }
@@ -682,6 +765,7 @@ function openStyleBrowser(node) {
         backdrop.style.display = "block";
         overlay.style.display = "block";
         iframe.focus();
+        postDeckState(node);
     };
     if (ready) {
         rehydrate().then(reveal);
@@ -694,10 +778,11 @@ app.registerExtension({
     name: "StyleGrid.Browser",
     async nodeCreated(node) {
         if (node.comfyClass !== "StyleGridNode") return;
-        const sourceWidget = node.widgets?.find((w) => w.name === "active_source");
-        if (sourceWidget) {
-            sourceWidget.computeSize = () => [0, -4];
-        }
+        const { seed, index } = getDeckWidgets(node);
+        hideWidget(node.widgets?.find((w) => w.name === "active_source"));
+        hideWidget(seed);
+        hideWidget(index);
+        hookDeckWidgetCallbacks(node);
         node.addWidget("button", "Browse Styles", null, () => openStyleBrowser(node));
     },
 });
