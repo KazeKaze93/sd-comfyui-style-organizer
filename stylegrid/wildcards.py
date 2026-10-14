@@ -1,12 +1,27 @@
-"""{sg:...} wildcard resolution in prompts."""
+"""{sg:...} / {sgd:...} wildcard resolution in prompts."""
+
+from __future__ import annotations
 
 import random
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from .config import logger
+from .deck import deck_position
 
-_SG_TOKEN = re.compile(r"\{sg:([^}]+)\}", re.IGNORECASE)
+TOKEN_SG = "sg"
+TOKEN_SGD = "sgd"
+_SG_TOKEN = re.compile(r"\{(sgd?):([^}]+)\}", re.IGNORECASE)
+SPEC_ENTRY_SEPARATOR = ","
+DECK_ID_SEPARATOR = "|"
 _MAX_PASSES = 3
+
+
+@dataclass(frozen=True)
+class DeckContext:
+    base_seed: int
+    image_index: int
 
 
 def parse_sg_token(inner):
@@ -49,7 +64,7 @@ def select_slice(candidates, category, spec):
 
     includes = []
     excludes = []
-    for raw in spec.split(","):
+    for raw in spec.split(SPEC_ENTRY_SEPARATOR):
         entry = raw.strip()
         if not entry:
             continue
@@ -90,39 +105,108 @@ def select_slice(candidates, category, spec):
     return result
 
 
-def resolve_sg_wildcards(prompt, styles_by_category, rng=None, field="prompt"):
-    """Replace `{sg:CATEGORY}` tokens with a style's `field` value picked from that
-    category map. field is "prompt" for positive-context resolution or "negative_prompt"
-    for negative-context resolution — a wildcard always pulls the matching side of the
+def normalize_deck_spec(spec: str | None) -> str:
+    if spec is None:
+        return ""
+    parts = [p.strip() for p in spec.lower().split(SPEC_ENTRY_SEPARATOR)]
+    parts = [p for p in parts if p]
+    parts.sort()
+    return SPEC_ENTRY_SEPARATOR.join(parts)
+
+
+def build_deck_pool(pool: Sequence[dict]) -> list[dict]:
+    """Dedupe by (prompt, negative_prompt), keep first, then sort by that key."""
+    seen: set[tuple[str, str]] = set()
+    unique: list[dict] = []
+    for entry in pool:
+        key = (entry.get("prompt") or "", entry.get("negative_prompt") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(entry)
+    unique.sort(key=lambda e: (e.get("prompt") or "", e.get("negative_prompt") or ""))
+    return unique
+
+
+def _count_sgd_occurrences(prompt: str) -> dict[tuple[str, str], int]:
+    totals: dict[tuple[str, str], int] = {}
+    for m in _SG_TOKEN.finditer(prompt):
+        if m.group(1).lower() != TOKEN_SGD:
+            continue
+        category, spec = parse_sg_token(m.group(2))
+        key = (category, normalize_deck_spec(spec))
+        totals[key] = totals.get(key, 0) + 1
+    return totals
+
+
+def _field_value(style: dict, field: str) -> str:
+    # Empty field is a successful resolve to nothing; do not keep the raw token.
+    return style.get(field, "") or ""
+
+
+def resolve_sg_wildcards(
+    prompt,
+    styles_by_category,
+    rng=None,
+    field="prompt",
+    *,
+    deck: DeckContext | None = None,
+):
+    """Replace ``{sg:CATEGORY}`` / ``{sgd:CATEGORY}`` tokens with a style's ``field``.
+
+    field is "prompt" for positive-context resolution or "negative_prompt" for
+    negative-context resolution: a wildcard always pulls the matching side of the
     picked style, never the positive prompt inside a negative field.
-    rng is an optional random.Random for reproducible picks; falls back to the module RNG.
+    rng is an optional random.Random for reproducible ``{sg:...}`` picks; falls back
+    to the module RNG. ``{sgd:...}`` never touches any RNG: with ``deck`` set it draws
+    without replacement via ``deck_position``; without ``deck`` it stays unresolved.
     Nested tokens resolve up to ``_MAX_PASSES`` (3); leftovers are stripped with a warning.
 
-    Optional slice: ``{sg:CATEGORY:spec}`` where ``spec`` is a comma-separated
-    include/exclude/glob list (see ``select_slice``). A spec applies only to its own
-    token — nested ``{sg:...}`` tokens resolve by their own specs (or none); the outer
+    Optional slice: ``{sg:CATEGORY:spec}`` / ``{sgd:CATEGORY:spec}`` where ``spec`` is a
+    comma-separated include/exclude/glob list (see ``select_slice``). A spec applies only
+    to its own token; nested tokens resolve by their own specs (or none), the outer
     slice is not inherited. Empty slices fall back to the full category. Unknown or
     empty categories keep the raw token through nested passes, then strip with a
     warning. An empty style field resolves to an empty string (token is not kept).
     """
     picker = rng or random
-
-    def replacer(m):
-        category, spec = parse_sg_token(m.group(1))
-        candidates = styles_by_category.get(category)
-        if not candidates:
-            return m.group(0)
-        pool = select_slice(candidates, category, spec) if spec else candidates
-        if not pool:
-            pool = candidates
-        style = picker.choice(pool)
-        # Empty field is a successful resolve to nothing — do not keep the raw token.
-        return style.get(field, "") or ""
-
     text = prompt
     for _ in range(_MAX_PASSES):
         if not _SG_TOKEN.search(text):
             return text
+        sgd_totals = _count_sgd_occurrences(text)
+        sgd_running: dict[tuple[str, str], int] = {}
+
+        def replacer(m):
+            kind = m.group(1).lower()
+            category, spec = parse_sg_token(m.group(2))
+            candidates = styles_by_category.get(category)
+
+            if kind == TOKEN_SG:
+                if not candidates:
+                    return m.group(0)
+                pool = select_slice(candidates, category, spec) if spec else candidates
+                if not pool:
+                    pool = candidates
+                return _field_value(picker.choice(pool), field)
+
+            # Deck branch (sgd)
+            if deck is None or not candidates:
+                return m.group(0)
+            pool = select_slice(candidates, category, spec) if spec else candidates
+            if not pool:
+                pool = candidates
+            deck_pool = build_deck_pool(pool)
+            normalized_spec = normalize_deck_spec(spec)
+            deck_id = f"{category}{DECK_ID_SEPARATOR}{normalized_spec}"
+            key = (category, normalized_spec)
+            occurrences = sgd_totals[key]
+            k = sgd_running.get(key, 0)
+            sgd_running[key] = k + 1
+            counter = deck.image_index * occurrences + k
+            position = deck_position(len(deck_pool), deck.base_seed, deck_id, counter)
+            return _field_value(deck_pool[position], field)
+
         text = _SG_TOKEN.sub(replacer, text)
     if _SG_TOKEN.search(text):
         logger.warning(

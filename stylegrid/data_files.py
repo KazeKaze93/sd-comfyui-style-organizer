@@ -12,6 +12,7 @@ from .config import (
     _csvs_in,
 )
 from .csv_io import load_all_styles
+from .wildcards import TOKEN_SGD
 from .safe_persistence import (
     CorruptDataError,
     cleanup_stale_tmp,
@@ -35,7 +36,11 @@ def _coerce_weight(raw):
 
 
 def normalize_wildcard_entry(entry):
-    """Return {category, spec} or None."""
+    """Return {category, spec}[, kind] or None.
+
+    ``kind`` is present only when the raw entry declares deck mode
+    (``TOKEN_SGD``); dice / missing / invalid kinds omit the key.
+    """
     if not isinstance(entry, dict):
         return None
     raw_cat = entry.get("category", "")
@@ -46,7 +51,11 @@ def normalize_wildcard_entry(entry):
         return None
     raw_spec = entry.get("spec", "")
     spec = raw_spec if isinstance(raw_spec, str) else ""
-    return {"category": category, "spec": spec}
+    result = {"category": category, "spec": spec}
+    raw_kind = entry.get("kind")
+    if isinstance(raw_kind, str) and raw_kind.strip().lower() == TOKEN_SGD:
+        result["kind"] = TOKEN_SGD
+    return result
 
 
 def normalize_preset_entry(entry, styles_by_name_first):
