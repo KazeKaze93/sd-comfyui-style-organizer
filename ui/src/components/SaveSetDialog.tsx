@@ -6,6 +6,7 @@ import {
   type ResolvedPresetMember,
 } from '../store/stylesStore'
 import { useLayer } from '../lib/layerStack'
+import { wildcardKey } from '../lib/wildcardKey'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { cn } from '../lib/utils'
 
@@ -50,9 +51,7 @@ export function SaveSetDialog({ open, onClose }: SaveSetDialogProps) {
       setExistsWarning(false)
       return
     }
-    const wcKey = (c: string, s: string) =>
-      `${String(c || '').toLowerCase()}\0${String(s || '').toLowerCase()}`
-    const activeWcKeys = new Set(activeWildcards.map((w) => wcKey(w.category, w.spec)))
+    const activeWcKeys = new Set(activeWildcards.map((w) => wildcardKey(w.category, w.spec, w.kind)))
     const matches = Object.entries(presets).filter(([, preset]) => {
       const members = resolvePresetMembers(preset.styles ?? [], styles)
       const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
@@ -60,7 +59,9 @@ export function SaveSetDialog({ open, onClose }: SaveSetDialogProps) {
       if (found.length === 0) return false
       if (!found.every((m) => selectedStyles.some((s) => s.name === m.style.name))) return false
       const presetWcKeys = new Set(
-        (preset.wildcards ?? []).map((wc) => wcKey(String(wc.category || ''), String(wc.spec || '')))
+        (preset.wildcards ?? []).map((wc) =>
+          wildcardKey(String(wc.category || ''), String(wc.spec || ''), wc.kind),
+        ),
       )
       return [...presetWcKeys].every((k) => activeWcKeys.has(k))
     })

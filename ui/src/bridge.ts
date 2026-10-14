@@ -11,26 +11,35 @@ export type HostMessage =
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
   | { type: 'SG_THEME'; mode: ThemeMode }
+  | { type: 'SG_DECK_STATE'; seed: number; index: number }
 
 /** Messages sent from the React iframe back to ComfyUI host extension (web/js/style_grid.js). */
 export type FrameMessage =
   | { type: 'SG_READY' }
   | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; source_file?: string }
   | { type: 'SG_UNAPPLY';       styleId: string; source_file?: string }
-  | { type: 'SG_WILDCARD_CATEGORY'; category: string }
-  | { type: 'SG_WILDCARD_SLICE'; category: string; spec: string }
-  | { type: 'SG_REMOVE_WILDCARD'; category: string; spec: string }
+  | { type: 'SG_WILDCARD_CATEGORY'; category: string; kind?: WildcardKind }
+  | { type: 'SG_WILDCARD_SLICE'; category: string; spec: string; kind?: WildcardKind }
+  | { type: 'SG_REMOVE_WILDCARD'; category: string; spec: string; kind?: WildcardKind }
   | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
   | { type: 'SG_REORDER_WILDCARDS'; categories: WildcardRef[] }
   | { type: 'SG_CLOSE_REQUEST' }
   | { type: 'SG_CLEAR_ALL' }
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
+  | { type: 'SG_DECK_RESTART' }
+  | { type: 'SG_DECK_NEW' }
 
 // ── Shared types ──────────────────────────────────────────────
-/** Category + optional slice spec for `{sg:category}` / `{sg:category:spec}` tokens. */
+export type WildcardKind = 'sg' | 'sgd'
+export const WILDCARD_KIND_DICE: WildcardKind = 'sg'
+export const WILDCARD_KIND_DECK: WildcardKind = 'sgd'
+
+/** Category + optional slice spec for `{sg|sgd:category}` / `{sg|sgd:category:spec}` tokens. */
 export interface WildcardRef {
   category: string
   spec: string
+  /** Absent or `'sg'` = dice; `'sgd'` = deck (without replacement). */
+  kind?: WildcardKind
 }
 
 export interface Style {

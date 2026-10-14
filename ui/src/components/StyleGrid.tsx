@@ -1,7 +1,15 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { sendToHost, type Style } from '../bridge'
+import { sendToHost, WILDCARD_KIND_DECK, type Style } from '../bridge'
 import { buildSliceSpec } from '../lib/wildcardSlice'
+import {
+  SLICE_ADD_DICE,
+  SLICE_ADD_DICE_ARIA,
+  SLICE_ADD_SHUFFLE,
+  SLICE_ADD_SHUFFLE_ARIA,
+  SLICE_BAR_TITLE_DICE,
+  SLICE_BAR_TITLE_SHUFFLE,
+} from '../lib/wildcardLabels'
 import {
   FAVORITES_VIEW,
   RECENT_VIEW,
@@ -251,6 +259,7 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
   const renderSliceModeBar = () => {
     if (!sliceMode) return null
     const cat = sliceMode.category
+    const isDeck = sliceMode.kind === WILDCARD_KIND_DECK
     return (
       <div
         role="toolbar"
@@ -259,7 +268,7 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
                    border border-sg-wildcard/40 bg-sg-wildcard/10"
       >
         <span className="text-sm text-sg-text font-medium">
-          Slice: <span className="text-sg-wildcard-text">{cat}</span>
+          {isDeck ? SLICE_BAR_TITLE_SHUFFLE : SLICE_BAR_TITLE_DICE}<span className="text-sg-wildcard-text">{cat}</span>
         </span>
         <span className="text-xs text-sg-muted" aria-live="polite">
           {sliceSelection.length} selected
@@ -285,16 +294,21 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
         </button>
         <button
           type="button"
-          aria-label="Add selection as wildcard slice"
+          aria-label={isDeck ? SLICE_ADD_SHUFFLE_ARIA : SLICE_ADD_DICE_ARIA}
           className="text-xs px-2.5 py-1 rounded bg-sg-wildcard/30 border border-sg-wildcard/50
                      text-sg-text hover:bg-sg-wildcard/45 transition-colors font-medium"
           onClick={() => {
             const spec = buildSliceSpec(cat, sliceSelection, allNamesInCategory)
-            sendToHost({ type: 'SG_WILDCARD_SLICE', category: cat, spec })
+            sendToHost({
+              type: 'SG_WILDCARD_SLICE',
+              category: cat,
+              spec,
+              ...(isDeck ? { kind: WILDCARD_KIND_DECK } : {}),
+            })
             exitSliceMode()
           }}
         >
-          Add as wildcard
+          {isDeck ? SLICE_ADD_SHUFFLE : SLICE_ADD_DICE}
         </button>
         <button
           type="button"

@@ -7,9 +7,13 @@ import {
   type PresetRecord,
   type ResolvedPresetMember,
 } from '../store/stylesStore'
+import { WILDCARD_KIND_DECK } from '../bridge'
 import { useLayer } from '../lib/layerStack'
+import { PRESET_SHUFFLE_SUFFIX } from '../lib/wildcardLabels'
+import { wildcardKey } from '../lib/wildcardKey'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { cn } from '../lib/utils'
+import { DeckIcon } from './DeckIcon'
 
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
@@ -50,12 +54,12 @@ export function PresetRow({ name, preset }: Props) {
   const total = members.length
   const missing = total - found
   const wcCount = (preset.wildcards ?? []).length
-  const wcKey = (c: string, s: string) =>
-    `${String(c || '').toLowerCase()}\0${String(s || '').toLowerCase()}`
   const presetWcKeys = new Set(
-    (preset.wildcards ?? []).map((wc) => wcKey(String(wc.category || ''), String(wc.spec || '')))
+    (preset.wildcards ?? []).map((wc) =>
+      wildcardKey(String(wc.category || ''), String(wc.spec || ''), wc.kind),
+    ),
   )
-  const activeWcKeys = new Set(activeWildcards.map((w) => wcKey(w.category, w.spec)))
+  const activeWcKeys = new Set(activeWildcards.map((w) => wildcardKey(w.category, w.spec, w.kind)))
   const isActive = foundMembers.length > 0 &&
     foundMembers.every((m) => selectedStyles.some((s) => s.name === m.style.name)) &&
     [...presetWcKeys].every((k) => activeWcKeys.has(k))
@@ -241,8 +245,10 @@ export function PresetRow({ name, preset }: Props) {
                 )
               })}
               {(preset.wildcards ?? []).map((wc, i) => (
-                <li key={`w:${wc.category}:${wc.spec}:${i}`} className="text-xs text-sg-wildcard-text/80 truncate">
-                  🎲 {wc.category}{wc.spec ? `:${wc.spec}` : ''}
+                <li key={`w:${wildcardKey(wc.category, wc.spec, wc.kind)}:${i}`} className="text-xs text-sg-wildcard-text/80 truncate">
+                  {wc.kind === WILDCARD_KIND_DECK ? <DeckIcon /> : '🎲'}{' '}
+                  {wc.category}{wc.spec ? `:${wc.spec}` : ''}
+                  {wc.kind === WILDCARD_KIND_DECK ? ` ${PRESET_SHUFFLE_SUFFIX}` : ''}
                 </li>
               ))}
             </ul>

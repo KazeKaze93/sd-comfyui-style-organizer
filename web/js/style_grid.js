@@ -174,6 +174,113 @@ function getTextWidgets(node) {
     };
 }
 
+const DECK_SEED_WIDGET = "deck_seed";
+const DECK_INDEX_WIDGET = "deck_index";
+const DECK_SEED_RANDOM_MASK = 0x7fffffff; // new decks stay far below 2^53 (JS numbers)
+const DECK_HOOKED_FLAG = "__sgDeckHooked";
+
+/** Hide a widget (and its linked control widget) on the node. `hidden` is the supported API in the current
+ * frontend; computeSize covers older frontends. The widget stays in node.widgets, so it still serializes,
+ * is sent to the backend and keeps running control_after_generate. */
+function hideWidget(widget) {
+    if (!widget) return;
+    widget.hidden = true;
+    widget.computeSize = () => [0, -4];
+    for (const linked of widget.linkedWidgets || []) {
+        hideWidget(linked);
+    }
+}
+
+function getDeckWidgets(node) {
+    return {
+        seed: node?.widgets?.find((w) => w.name === DECK_SEED_WIDGET),
+        index: node?.widgets?.find((w) => w.name === DECK_INDEX_WIDGET),
+    };
+}
+
+function toDeckNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+function postDeckState(node) {
+    if (!ready || !iframe?.contentWindow || node !== currentNode) return;
+    const { seed, index } = getDeckWidgets(node);
+    if (!seed || !index) return;
+    iframe.contentWindow.postMessage(
+        { type: "SG_DECK_STATE", seed: toDeckNumber(seed.value), index: toDeckNumber(index.value) },
+        "*"
+    );
+}
+
+function setDeckWidgetValue(widget, value) {
+    if (!widget) return;
+    widget.value = value;
+    widget.callback?.(value);
+}
+
+function restartDeck(node) {
+    const { index } = getDeckWidgets(node);
+    setDeckWidgetValue(index, 0);
+    node.graph?.setDirtyCanvas(true, true);
+    postDeckState(node);
+}
+
+function newDeck(node) {
+    const { seed, index } = getDeckWidgets(node);
+    const fresh = crypto.getRandomValues(new Uint32Array(1))[0] & DECK_SEED_RANDOM_MASK;
+    setDeckWidgetValue(seed, fresh);
+    setDeckWidgetValue(index, 0);
+    node.graph?.setDirtyCanvas(true, true);
+    postDeckState(node);
+}
+
+/** Re-post the deck state whenever the frontend changes a deck widget (control_after_generate calls callback). */
+function hookDeckWidgetCallbacks(node) {
+    const { seed, index } = getDeckWidgets(node);
+    for (const widget of [seed, index]) {
+        if (!widget || widget[DECK_HOOKED_FLAG]) continue;
+        widget[DECK_HOOKED_FLAG] = true;
+        const original = widget.callback;
+        widget.callback = function (...args) {
+            const result = original ? original.apply(this, args) : undefined;
+            postDeckState(node);
+            return result;
+        };
+    }
+}
+
+const DECK_CONTROL_DEFAULTS = { [DECK_SEED_WIDGET]: "fixed", [DECK_INDEX_WIDGET]: "increment" };
+const DECK_SERIALIZER_FLAG = "__sgDeckSerializer";
+
+/** Workflows saved before the deck widgets existed keep the Browse Styles button's null in positional
+ * slot 3, which now lands on deck_seed. Whatever the widget holds, the backend must receive a clean integer. */
+function guardDeckWidgetSerialization(node) {
+    const { seed, index } = getDeckWidgets(node);
+    for (const widget of [seed, index]) {
+        if (!widget || widget[DECK_SERIALIZER_FLAG]) continue;
+        widget[DECK_SERIALIZER_FLAG] = true;
+        widget.serializeValue = async () => toDeckNumber(widget.value);
+    }
+}
+
+/** Repair values restored from an older or misaligned workflow: invalid numbers and invalid control modes. */
+function repairDeckWidgets(node) {
+    const { seed, index } = getDeckWidgets(node);
+    for (const widget of [seed, index]) {
+        if (!widget) continue;
+        const clean = toDeckNumber(widget.value);
+        if (widget.value !== clean) widget.value = clean;
+        const fallbackMode = DECK_CONTROL_DEFAULTS[widget.name];
+        for (const linked of widget.linkedWidgets || []) {
+            const allowed = linked.options?.values;
+            if (Array.isArray(allowed) && !allowed.includes(linked.value)) {
+                linked.value = fallbackMode;
+            }
+        }
+    }
+}
+
 function getActiveStyles(text, negativeText, excludeName) {
     return allStylesCache.filter((s) => {
         if (s.name === excludeName) return false;
@@ -299,7 +406,7 @@ function clearAllStyles(node) {
     let currentNeg = neg ? neg.value || "" : "";
 
     const stripWildcards = (s) =>
-        parseTags(s).filter((t) => !/^\{sg:[^}]+\}$/i.test(t)).join(", ");
+        parseTags(s).filter((t) => !/^\{sgd?:[^}]+\}$/i.test(t)).join(", ");
     currentText = stripWildcards(currentText);
     currentNeg = stripWildcards(currentNeg);
 
@@ -343,6 +450,15 @@ function splitTopLevelCommas(s) {
     return parts;
 }
 
+const WILDCARD_KIND_DICE = "sg";
+const WILDCARD_KIND_DECK = "sgd";
+
+function normalizeWildcardKind(kind) {
+    return String(kind || "").trim().toLowerCase() === WILDCARD_KIND_DECK
+        ? WILDCARD_KIND_DECK
+        : WILDCARD_KIND_DICE;
+}
+
 function parseSgInner(inner) {
     const s = String(inner || "");
     const idx = s.indexOf(":");
@@ -355,16 +471,16 @@ function parseSgInner(inner) {
     };
 }
 
-function buildSgToken(category, spec) {
+function buildSgToken(category, spec, kind) {
     const cat = String(category || "").toLowerCase();
     const sp = spec == null ? "" : String(spec);
-    return "{sg:" + cat + (sp ? ":" + sp : "") + "}";
+    return "{" + normalizeWildcardKind(kind) + ":" + cat + (sp ? ":" + sp : "") + "}";
 }
 
-function insertWildcardCategory(node, category, spec) {
+function insertWildcardCategory(node, category, spec, kind) {
     const { text } = getTextWidgets(node);
     if (!text) return;
-    const token = buildSgToken(category, spec || "");
+    const token = buildSgToken(category, spec || "", kind);
     const already = parseTags(text.value || "").some(
         (t) => t.toLowerCase() === token.toLowerCase()
     );
@@ -375,9 +491,14 @@ function insertWildcardCategory(node, category, spec) {
 }
 
 function extractWildcardCategories(str) {
-    return [...(str || "").matchAll(/\{sg:([^}]+)\}/gi)].map((m) => {
-        const parsed = parseSgInner(m[1]);
-        return { category: parsed.category, spec: parsed.spec, token: m[0] };
+    return [...(str || "").matchAll(/\{(sgd?):([^}]+)\}/gi)].map((m) => {
+        const parsed = parseSgInner(m[2]);
+        return {
+            category: parsed.category,
+            spec: parsed.spec,
+            kind: normalizeWildcardKind(m[1]),
+            token: m[0],
+        };
     });
 }
 
@@ -389,7 +510,9 @@ function activeWildcardCategories(text, negativeText) {
         const key =
             String(entry.category || "").toLowerCase() +
             "\0" +
-            String(entry.spec || "").toLowerCase();
+            String(entry.spec || "").toLowerCase() +
+            "\0" +
+            normalizeWildcardKind(entry.kind);
         if (!seen.has(key)) {
             seen.add(key);
             result.push(entry);
@@ -403,13 +526,13 @@ function syncWildcards(node) {
     const categories = activeWildcardCategories(
         text ? text.value || "" : "",
         neg ? neg.value || "" : ""
-    ).map((entry) => ({ category: entry.category, spec: entry.spec }));
+    ).map((entry) => ({ category: entry.category, spec: entry.spec, kind: normalizeWildcardKind(entry.kind) }));
     iframe.contentWindow.postMessage({ type: "SG_WILDCARDS_ACTIVE", categories }, "*");
 }
 
-function removeWildcardCategory(node, category, spec) {
+function removeWildcardCategory(node, category, spec, kind) {
     const { text, neg } = getTextWidgets(node);
-    const token = buildSgToken(category, spec || "").toLowerCase();
+    const token = buildSgToken(category, spec || "", kind).toLowerCase();
     const strip = (s) =>
         splitTopLevelCommas(s || "")
             .map((t) => t.trim())
@@ -424,10 +547,16 @@ function removeWildcardCategory(node, category, spec) {
 function reorderWildcardCategories(node, newOrder) {
     const { text, neg } = getTextWidgets(node);
     const order = Array.isArray(newOrder) ? newOrder : [];
-    const wcRe = /^\{sg:([^}]+)\}$/i;
+    const wcRe = /^\{(sgd?):([^}]+)\}$/i;
 
-    function orderKey(category, spec) {
-        return String(category || "").toLowerCase() + "\0" + String(spec || "").toLowerCase();
+    function orderKey(category, spec, kind) {
+        return (
+            String(category || "").toLowerCase() +
+            "\0" +
+            String(spec || "").toLowerCase() +
+            "\0" +
+            normalizeWildcardKind(kind)
+        );
     }
 
     function reorderOne(raw) {
@@ -440,8 +569,8 @@ function reorderWildcardCategories(node, newOrder) {
             const m = wcRe.exec(t);
             if (m) {
                 if (firstWcIdx === -1) firstWcIdx = i;
-                const parsed = parseSgInner(m[1]);
-                present[orderKey(parsed.category, parsed.spec)] = true;
+                const parsed = parseSgInner(m[2]);
+                present[orderKey(parsed.category, parsed.spec, m[1])] = true;
             } else {
                 nonWildcards.push(t);
             }
@@ -453,8 +582,9 @@ function reorderWildcardCategories(node, newOrder) {
             if (!item || typeof item !== "object") continue;
             const cat = String(item.category || "").trim();
             const sp = item.spec == null ? "" : String(item.spec);
-            if (cat && present[orderKey(cat, sp)]) {
-                reorderedWc.push(buildSgToken(cat, sp));
+            const kind = normalizeWildcardKind(item.kind);
+            if (cat && present[orderKey(cat, sp, kind)]) {
+                reorderedWc.push(buildSgToken(cat, sp, kind));
             }
         }
 
@@ -577,6 +707,7 @@ function ensureOverlay() {
         if (msg.type === "SG_READY") {
             ready = true;
             postTheme();
+            postDeckState(currentNode);
             rehydrate();
         }
         if (msg.type === "SG_APPLY" && currentNode) {
@@ -616,16 +747,16 @@ function ensureOverlay() {
             }
         }
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
-            insertWildcardCategory(currentNode, msg.category);
+            insertWildcardCategory(currentNode, msg.category, "", msg.kind);
         }
         if (msg.type === "SG_WILDCARD_SLICE" && currentNode) {
-            insertWildcardCategory(currentNode, msg.category, msg.spec || "");
+            insertWildcardCategory(currentNode, msg.category, msg.spec || "", msg.kind);
         }
         if (msg.type === "SG_CLEAR_ALL" && currentNode) {
             clearAllStyles(currentNode);
         }
         if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
-            removeWildcardCategory(currentNode, msg.category, msg.spec || "");
+            removeWildcardCategory(currentNode, msg.category, msg.spec || "", msg.kind);
         }
         if (msg.type === "SG_REORDER_WILDCARDS" && currentNode) {
             if (Array.isArray(msg.categories) && msg.categories.length) {
@@ -637,6 +768,12 @@ function ensureOverlay() {
         }
         if (msg.type === "SG_SOURCE_CHANGE" && currentNode) {
             setActiveSource(currentNode, msg.source);
+        }
+        if (msg.type === "SG_DECK_RESTART" && currentNode) {
+            restartDeck(currentNode);
+        }
+        if (msg.type === "SG_DECK_NEW" && currentNode) {
+            newDeck(currentNode);
         }
         if (msg.type === "SG_CLOSE_REQUEST") {
             closeStyleBrowser();
@@ -659,6 +796,7 @@ function openStyleBrowser(node) {
         backdrop.style.display = "block";
         overlay.style.display = "block";
         iframe.focus();
+        postDeckState(node);
     };
     if (ready) {
         rehydrate().then(reveal);
@@ -671,10 +809,17 @@ app.registerExtension({
     name: "StyleGrid.Browser",
     async nodeCreated(node) {
         if (node.comfyClass !== "StyleGridNode") return;
-        const sourceWidget = node.widgets?.find((w) => w.name === "active_source");
-        if (sourceWidget) {
-            sourceWidget.computeSize = () => [0, -4];
-        }
+        const { seed, index } = getDeckWidgets(node);
+        hideWidget(node.widgets?.find((w) => w.name === "active_source"));
+        hideWidget(seed);
+        hideWidget(index);
+        hookDeckWidgetCallbacks(node);
+        guardDeckWidgetSerialization(node);
         node.addWidget("button", "Browse Styles", null, () => openStyleBrowser(node));
+    },
+    loadedGraphNode(node) {
+        if (node.comfyClass !== "StyleGridNode") return;
+        repairDeckWidgets(node);
+        guardDeckWidgetSerialization(node);
     },
 });

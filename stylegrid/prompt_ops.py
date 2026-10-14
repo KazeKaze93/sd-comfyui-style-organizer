@@ -6,7 +6,7 @@ import os
 import re
 from dataclasses import dataclass
 
-from .wildcards import resolve_sg_wildcards
+from .wildcards import DeckContext, resolve_sg_wildcards
 
 BREAK_TOKEN = "BREAK"
 NEUTRAL_WEIGHT = 1.0
@@ -94,8 +94,16 @@ def build_styles_by_cat(styles, active_source=""):
     return by_cat
 
 
-def resolve_and_pack(prompt_str, styles_by_cat, rng=None, field="prompt"):
-    """Expand {sg:...} wildcards from the given category map, then dedup tags. field
-    selects which side of a picked style a wildcard pulls from (see resolve_sg_wildcards).
+def resolve_and_pack(
+    prompt_str,
+    styles_by_cat,
+    rng=None,
+    field="prompt",
+    *,
+    deck: DeckContext | None = None,
+):
+    """Expand {sg:...} / {sgd:...} wildcards from the given category map, then dedup
+    tags. field selects which side of a picked style a wildcard pulls from; deck enables
+    {sgd:...} draws (see resolve_sg_wildcards).
     """
-    return dedup_prompt(resolve_sg_wildcards(prompt_str, styles_by_cat, rng, field))
+    return dedup_prompt(resolve_sg_wildcards(prompt_str, styles_by_cat, rng, field, deck=deck))

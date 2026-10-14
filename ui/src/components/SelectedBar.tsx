@@ -1,14 +1,17 @@
 import { useState, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { WILDCARD_KIND_DECK } from '../bridge'
 import { useStylesStore } from '../store/stylesStore'
+import { CHIP_FOCUS_RING } from '../lib/chipStyles'
 import { describeSpec } from '../lib/wildcardSlice'
+import { SHUFFLE_CHIP_TITLE } from '../lib/wildcardLabels'
+import { wildcardKey } from '../lib/wildcardKey'
+import { DeckIcon } from './DeckIcon'
+import { DeckStrip } from './DeckStrip'
 import { SaveSetDialog } from './SaveSetDialog'
 
 const chipBase =
   'flex items-center gap-1 px-2 py-1 rounded-full text-xs select-none transition-colors'
-
-const CHIP_FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 export function SelectedBar() {
   const {
@@ -104,6 +107,7 @@ export function SelectedBar() {
         <div className="flex flex-wrap gap-2 px-4 py-2">
           {activeWildcards.map((ref) => {
             const { category, spec } = ref
+            const isDeck = ref.kind === WILDCARD_KIND_DECK
             const { count, names } = describeSpec(category, spec, allNamesInCategory(category))
             const isEmptyFallback = spec !== '' && count === 0
 
@@ -113,14 +117,17 @@ export function SelectedBar() {
                 ? `${category} (falls back to all)`
                 : `${category} (${count})`
 
-            const title = spec === ''
+            const sliceTitle = spec === ''
               ? undefined
               : isEmptyFallback
                 ? `No styles in this pack match the slice — resolves to a random style from all of ${category} instead.`
                 : names.join(', ')
+            const title = isDeck
+              ? (sliceTitle ? `${SHUFFLE_CHIP_TITLE}. ${sliceTitle}` : SHUFFLE_CHIP_TITLE)
+              : sliceTitle
             return (
               <span
-                key={`${category}:${spec}`}
+                key={wildcardKey(category, spec, ref.kind)}
                 tabIndex={0}
                 role="group"
                 aria-label={label}
@@ -132,7 +139,12 @@ export function SelectedBar() {
                              : 'bg-sg-wildcard/20 border border-sg-wildcard/40 text-sg-text'}
                            hover:bg-sg-wildcard/30`}
               >
-                <span className="mr-0.5">🎲</span>
+                <span className="mr-0.5">
+                  {isDeck
+                    ? <DeckIcon className="h-3 w-3 inline-block align-text-bottom shrink-0" />
+                    : '🎲'}
+                </span>
+                {isDeck && <span className="sr-only">{SHUFFLE_CHIP_TITLE}</span>}
                 {label}
                 <button
                   type="button"
@@ -144,6 +156,7 @@ export function SelectedBar() {
               </span>
             )
           })}
+          <DeckStrip />
         </div>
       )}
 
