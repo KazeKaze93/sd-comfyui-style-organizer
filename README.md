@@ -16,6 +16,8 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Import and export styles, presets, and usage as JSON
 - Manual Backup: zip snapshot of `data/` + `imports/` CSVs and presets under `data/backups/`
 - Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob)
+- Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
+- Combos: styles can list related names in their description (`Combos: …`); the card shows clickable “Works with” chips to select those styles or jump to a category
 
 ![Wildcard category](docs/screenshots/wildcards.png)
 
@@ -77,9 +79,10 @@ Add the **Style Grid** node to your workflow. It outputs two STRING values, posi
 
 ![Node wiring — Style Grid connected to CLIP Text Encode](docs/screenshots/node-wiring.png)
 
-The two STRING outputs feed directly into your text encode nodes'
-`text` inputs — right-click those nodes and choose "Convert text to
-input" if they don't already show a socket.
+The two STRING outputs feed the text encode nodes' `text` inputs.
+In current ComfyUI, drag a STRING output onto the text widget (or its
+socket) to convert that widget into an input — you no longer need a
+separate "Convert text to input" menu step.
 
 ## Working with styles
 
@@ -123,7 +126,8 @@ Clicking an already-loaded preset unloads it.
 **Import/Export** (toolbar import icon) opens a small menu with
 **Export** and **Import from file…**. Export downloads styles, presets,
 and usage as JSON. Import accepts that JSON, or a Backup zip
-(CSVs + presets).
+(CSVs + presets). Importing a preset whose name already exists
+**overwrites** the existing preset with the imported definition.
 
 **Backup** (toolbar save icon) writes a manual zip snapshot of your
 `data/` and `data/imports/` CSVs plus `presets.json` into
@@ -136,7 +140,7 @@ and it is separate from Export.
 
 ![Search autocomplete](docs/screenshots/search-autocomplete.png)
 
-**Thumbnails** show on hover once uploaded via the card menu. Preview files are keyed by **style name + source CSV**, so the same UNIVERSAL name in two packs keeps independent previews. Older name-only files migrate when the name is unique; if the name exists in multiple packs, regenerate each preview.
+**Thumbnails** show on hover once uploaded via the card menu. Preview files are keyed by **style name + source CSV**, so the same UNIVERSAL name in two packs keeps independent previews. Older name-only files migrate when the name maps to one pack, or when every pack that shares the name has **byte-identical** `prompt` and `negative_prompt`. If the same name appears in multiple packs with **diverging** content, regenerate each preview.
 
 ![Thumbnail hover preview](docs/screenshots/thumbnail-hover-preview.png)
 
@@ -154,6 +158,12 @@ Style Grid does not insert or manage `BREAK` tokens itself. If your styles or pr
 
 ## Generated files and cleanup
 
+> **Warning — uninstall / reinstall wipes local data.** Removing or
+> reinstalling this node via ComfyUI-Manager deletes the **entire**
+> extension folder — including your CSVs, presets, thumbnails, and
+> `data/backups/`. Copy `data/` somewhere else before you uninstall or
+> reinstall if you want to keep anything.
+
 Style Grid writes runtime data under `data/` inside the extension
 folder:
 
@@ -170,6 +180,13 @@ folder:
 `samples/demo.csv` (the bundled demo pack) is read-only by
 design — Edit, Move, and Delete are blocked on styles from this file.
 Use Duplicate to create an editable copy in `data/` first.
+
+## Security note
+
+Mutating `/style_grid/*` HTTP routes have **no authentication**. If you
+run ComfyUI with `--listen` (or otherwise bind it beyond localhost),
+those endpoints are reachable from the network — the same trust model
+as ComfyUI itself. Do not expose ComfyUI to untrusted networks.
 
 ## Development
 
