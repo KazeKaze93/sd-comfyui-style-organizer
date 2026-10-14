@@ -14,6 +14,33 @@ if git grep -I -l $'\r' -- web/ui ; then
   exit 1
 fi
 
+# Cross-repo SHA256 gate (same idea as csv-script safe_persistence parity):
+# when the WebUI sibling golden is present, bytes must match or push fails.
+echo "pre-push: sg_wildcard_golden.json SHA256 vs WebUI sibling"
+GOLDEN="$ROOT/tests/fixtures/sg_wildcard_golden.json"
+SIBLING_NAME="sd-webui-style-organizer"
+SIBLING_GOLDEN="/d/SD/Packages/reforge/extensions/${SIBLING_NAME}/tests/fixtures/sg_wildcard_golden.json"
+if [[ ! -f "$GOLDEN" ]]; then
+  echo "pre-push: missing $GOLDEN" >&2
+  exit 1
+fi
+_sha256() {
+  python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$1"
+}
+if [[ -f "$SIBLING_GOLDEN" ]]; then
+  LOCAL_HASH="$(_sha256 "$GOLDEN")"
+  SIBLING_HASH="$(_sha256 "$SIBLING_GOLDEN")"
+  if [[ "$LOCAL_HASH" != "$SIBLING_HASH" ]]; then
+    echo "pre-push: sg_wildcard_golden.json SHA256 drift vs ${SIBLING_NAME}" >&2
+    echo "  local:   $LOCAL_HASH" >&2
+    echo "  sibling: $SIBLING_HASH ($SIBLING_GOLDEN)" >&2
+    exit 1
+  fi
+  echo "pre-push: sg_wildcard_golden.json matches ${SIBLING_NAME}"
+else
+  echo "pre-push: sibling sg_wildcard_golden.json absent at ${SIBLING_GOLDEN}; skipping cross-repo hash check"
+fi
+
 echo "pre-push: pytest (min count enforced)"
 python scripts/run_pytest_min.py
 
