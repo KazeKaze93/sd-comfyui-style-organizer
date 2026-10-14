@@ -13,7 +13,7 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Create, edit, duplicate, and delete styles from the grid
 - Move styles between categories
 - Thumbnail previews with manual upload
-- Import and export styles, presets, and usage as JSON
+- Import and export styles and presets as JSON
 - Manual Backup: zip snapshot of user-dir CSVs + presets under `user/style_grid/backups/`
 - Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob)
 - Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
@@ -126,8 +126,8 @@ Clicking an already-loaded preset unloads it.
 ![Presets](docs/screenshots/presets.png)
 
 **Import/Export** (toolbar import icon) opens a small menu with
-**Export** and **Import from file…**. Export downloads styles, presets,
-and usage as JSON. Import accepts that JSON, or a Backup zip
+**Export** and **Import from file…**. Export downloads styles and presets
+as JSON. Import accepts that JSON, or a Backup zip
 (CSVs + presets). Importing a preset whose name already exists
 **overwrites** the existing preset with the imported definition.
 
@@ -175,7 +175,6 @@ Style Grid writes runtime data under ComfyUI's
 | `user/style_grid/imports/*.csv` | Style packs created by the Import feature (including restore from a Backup zip) | Yes, anytime |
 | `user/style_grid/backups/` | Manual Backup `.zip` archives (CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
 | `user/style_grid/presets.json` | Saved presets. Corrupt/unreadable JSON returns HTTP **409** and is not overwritten — restore from sibling `.bak` (atomic writes keep `.bak` / `.bak.2` / `.bak.3`). | Only if you don't need them |
-| `user/style_grid/usage.json` | Local usage counters (which styles you click most) | Yes, purely informational |
 | `user/style_grid/category_order.json` | Persisted sidebar category order | Yes — order falls back to defaults |
 | `user/style_grid/thumbnails/` | Uploaded preview images | Yes, previews just won't show until re-uploaded |
 

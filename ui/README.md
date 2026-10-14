@@ -19,7 +19,7 @@ npm run build
 - `src/bridge.ts`: typed SG_* postMessage contract with host.
 - `src/components/StyleGrid.tsx`: main grid; subscribes with **`useShallow`** and **`useMemo(selectFilteredStyles(...))`**; sidebar **Presets** view renders preset names with `StyleCard` (`presetName` + `SG_LOAD_PRESET`).
 - `src/components/Sidebar.tsx`: category list; **`useShallow`** subscription to limit re-renders.
-- `src/components/StyleCard.tsx` / `ThumbnailPreview.tsx`: style tiles; optional `presetName` disables context menu, usage chip, and hover thumbnail preview.
+- `src/components/StyleCard.tsx` / `ThumbnailPreview.tsx`: style tiles; optional `presetName` disables context menu and hover thumbnail preview.
 - `src/components/*`: other UI (sidebar, modals, etc.).
 
 ## Theme

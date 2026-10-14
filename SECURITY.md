@@ -22,6 +22,6 @@ You should expect an acknowledgment when the report is received. If a fix is war
 
 ## Scope
 
-This custom node registers HTTP endpoints under `/style_grid/*` on ComfyUI’s own `PromptServer`. Several of those routes **mutate** user data (styles, presets, usage, thumbnails, backups, imports).
+This custom node registers HTTP endpoints under `/style_grid/*` on ComfyUI’s own `PromptServer`. Several of those routes **mutate** user data (styles, presets, thumbnails, backups, imports).
 
 They inherit ComfyUI’s process and network exposure. **Do not expose a ComfyUI instance that loads this node to untrusted networks** (or to the public internet) without the same access controls you would apply to ComfyUI itself. Treat the Style Grid API as part of the local ComfyUI trust boundary, not as a hardened multi-user service.
