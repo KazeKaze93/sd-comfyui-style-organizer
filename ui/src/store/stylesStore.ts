@@ -8,6 +8,7 @@ import {
   type WildcardRef,
 } from '../bridge'
 import { wildcardKey } from '../lib/wildcardKey'
+import { type DeckState } from '../lib/deckState'
 import {
   parseCorruptData,
   type CorruptDataInfo,
@@ -425,6 +426,9 @@ interface StylesStore {
   activeWildcards: WildcardRef[]
   setActiveWildcards: (refs: WildcardRef[]) => void
   removeWildcard: (ref: WildcardRef) => void
+  /** Shuffle deck position reported by the host; null until the host has sent it. */
+  deckState: DeckState | null
+  setDeckState: (state: DeckState) => void
   /** When set, the grid is picking styles for a `{sg|sgd:category:spec}` slice. */
   sliceMode: { category: string; kind: WildcardKind } | null
   /** Full style names selected for the current slice. */
@@ -900,6 +904,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
   activeWildcards: [],
   setActiveWildcards: (refs) => set({ activeWildcards: refs }),
+  deckState: null,
+  setDeckState: (state) => set({ deckState: state }),
   removeWildcard: (ref) => {
     const targetKey = wildcardKey(ref.category, ref.spec, ref.kind)
     set((s) => ({

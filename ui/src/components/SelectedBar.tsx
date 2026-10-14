@@ -2,17 +2,16 @@ import { useState, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { WILDCARD_KIND_DECK } from '../bridge'
 import { useStylesStore } from '../store/stylesStore'
+import { CHIP_FOCUS_RING } from '../lib/chipStyles'
 import { describeSpec } from '../lib/wildcardSlice'
 import { SHUFFLE_CHIP_TITLE } from '../lib/wildcardLabels'
 import { wildcardKey } from '../lib/wildcardKey'
 import { DeckIcon } from './DeckIcon'
+import { DeckStrip } from './DeckStrip'
 import { SaveSetDialog } from './SaveSetDialog'
 
 const chipBase =
   'flex items-center gap-1 px-2 py-1 rounded-full text-xs select-none transition-colors'
-
-const CHIP_FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
 export function SelectedBar() {
   const {
@@ -157,6 +156,7 @@ export function SelectedBar() {
               </span>
             )
           })}
+          <DeckStrip />
         </div>
       )}
 

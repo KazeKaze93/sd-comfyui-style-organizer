@@ -11,6 +11,7 @@ export type HostMessage =
   | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
   | { type: 'SG_THEME'; mode: ThemeMode }
+  | { type: 'SG_DECK_STATE'; seed: number; index: number }
 
 /** Messages sent from the React iframe back to ComfyUI host extension (web/js/style_grid.js). */
 export type FrameMessage =
@@ -25,6 +26,8 @@ export type FrameMessage =
   | { type: 'SG_CLOSE_REQUEST' }
   | { type: 'SG_CLEAR_ALL' }
   | { type: 'SG_SOURCE_CHANGE'; source: string | null }
+  | { type: 'SG_DECK_RESTART' }
+  | { type: 'SG_DECK_NEW' }
 
 // ── Shared types ──────────────────────────────────────────────
 export type WildcardKind = 'sg' | 'sgd'
