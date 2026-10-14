@@ -46,6 +46,7 @@ from .thumbnails import (
     get_thumbnail_path,
     list_thumbnails,
 )
+from .zip_limits import BackupZipLimitError, validate_backup_zip_limits
 
 
 def _zip_csv_member_names(namelist):
@@ -264,6 +265,7 @@ def _register_style_routes(routes):
         if len(raw) >= 2 and raw[:2] == b"PK":
             try:
                 with zipfile.ZipFile(BytesIO(raw)) as zf:
+                    validate_backup_zip_limits(zf)
                     names = zf.namelist()
                     csv_members = _zip_csv_member_names(names)
                     has_presets = "presets.json" in names
@@ -315,6 +317,8 @@ def _register_style_routes(routes):
                         "usage_imported": 0,
                         "usage_skipped": 0,
                     })
+            except BackupZipLimitError as e:
+                return web.json_response({"error": str(e)}, status=422)
             except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
                 return web.json_response({"error": f"Invalid ZIP archive: {e}"}, status=422)
         try:
