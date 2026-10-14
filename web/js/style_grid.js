@@ -299,7 +299,7 @@ function clearAllStyles(node) {
     let currentNeg = neg ? neg.value || "" : "";
 
     const stripWildcards = (s) =>
-        parseTags(s).filter((t) => !/^\{sg:[^}]+\}$/i.test(t)).join(", ");
+        parseTags(s).filter((t) => !/^\{sgd?:[^}]+\}$/i.test(t)).join(", ");
     currentText = stripWildcards(currentText);
     currentNeg = stripWildcards(currentNeg);
 
@@ -343,6 +343,15 @@ function splitTopLevelCommas(s) {
     return parts;
 }
 
+const WILDCARD_KIND_DICE = "sg";
+const WILDCARD_KIND_DECK = "sgd";
+
+function normalizeWildcardKind(kind) {
+    return String(kind || "").trim().toLowerCase() === WILDCARD_KIND_DECK
+        ? WILDCARD_KIND_DECK
+        : WILDCARD_KIND_DICE;
+}
+
 function parseSgInner(inner) {
     const s = String(inner || "");
     const idx = s.indexOf(":");
@@ -355,16 +364,16 @@ function parseSgInner(inner) {
     };
 }
 
-function buildSgToken(category, spec) {
+function buildSgToken(category, spec, kind) {
     const cat = String(category || "").toLowerCase();
     const sp = spec == null ? "" : String(spec);
-    return "{sg:" + cat + (sp ? ":" + sp : "") + "}";
+    return "{" + normalizeWildcardKind(kind) + ":" + cat + (sp ? ":" + sp : "") + "}";
 }
 
-function insertWildcardCategory(node, category, spec) {
+function insertWildcardCategory(node, category, spec, kind) {
     const { text } = getTextWidgets(node);
     if (!text) return;
-    const token = buildSgToken(category, spec || "");
+    const token = buildSgToken(category, spec || "", kind);
     const already = parseTags(text.value || "").some(
         (t) => t.toLowerCase() === token.toLowerCase()
     );
@@ -375,9 +384,14 @@ function insertWildcardCategory(node, category, spec) {
 }
 
 function extractWildcardCategories(str) {
-    return [...(str || "").matchAll(/\{sg:([^}]+)\}/gi)].map((m) => {
-        const parsed = parseSgInner(m[1]);
-        return { category: parsed.category, spec: parsed.spec, token: m[0] };
+    return [...(str || "").matchAll(/\{(sgd?):([^}]+)\}/gi)].map((m) => {
+        const parsed = parseSgInner(m[2]);
+        return {
+            category: parsed.category,
+            spec: parsed.spec,
+            kind: normalizeWildcardKind(m[1]),
+            token: m[0],
+        };
     });
 }
 
@@ -389,7 +403,9 @@ function activeWildcardCategories(text, negativeText) {
         const key =
             String(entry.category || "").toLowerCase() +
             "\0" +
-            String(entry.spec || "").toLowerCase();
+            String(entry.spec || "").toLowerCase() +
+            "\0" +
+            normalizeWildcardKind(entry.kind);
         if (!seen.has(key)) {
             seen.add(key);
             result.push(entry);
@@ -403,13 +419,13 @@ function syncWildcards(node) {
     const categories = activeWildcardCategories(
         text ? text.value || "" : "",
         neg ? neg.value || "" : ""
-    ).map((entry) => ({ category: entry.category, spec: entry.spec }));
+    ).map((entry) => ({ category: entry.category, spec: entry.spec, kind: normalizeWildcardKind(entry.kind) }));
     iframe.contentWindow.postMessage({ type: "SG_WILDCARDS_ACTIVE", categories }, "*");
 }
 
-function removeWildcardCategory(node, category, spec) {
+function removeWildcardCategory(node, category, spec, kind) {
     const { text, neg } = getTextWidgets(node);
-    const token = buildSgToken(category, spec || "").toLowerCase();
+    const token = buildSgToken(category, spec || "", kind).toLowerCase();
     const strip = (s) =>
         splitTopLevelCommas(s || "")
             .map((t) => t.trim())
@@ -424,10 +440,16 @@ function removeWildcardCategory(node, category, spec) {
 function reorderWildcardCategories(node, newOrder) {
     const { text, neg } = getTextWidgets(node);
     const order = Array.isArray(newOrder) ? newOrder : [];
-    const wcRe = /^\{sg:([^}]+)\}$/i;
+    const wcRe = /^\{(sgd?):([^}]+)\}$/i;
 
-    function orderKey(category, spec) {
-        return String(category || "").toLowerCase() + "\0" + String(spec || "").toLowerCase();
+    function orderKey(category, spec, kind) {
+        return (
+            String(category || "").toLowerCase() +
+            "\0" +
+            String(spec || "").toLowerCase() +
+            "\0" +
+            normalizeWildcardKind(kind)
+        );
     }
 
     function reorderOne(raw) {
@@ -440,8 +462,8 @@ function reorderWildcardCategories(node, newOrder) {
             const m = wcRe.exec(t);
             if (m) {
                 if (firstWcIdx === -1) firstWcIdx = i;
-                const parsed = parseSgInner(m[1]);
-                present[orderKey(parsed.category, parsed.spec)] = true;
+                const parsed = parseSgInner(m[2]);
+                present[orderKey(parsed.category, parsed.spec, m[1])] = true;
             } else {
                 nonWildcards.push(t);
             }
@@ -453,8 +475,9 @@ function reorderWildcardCategories(node, newOrder) {
             if (!item || typeof item !== "object") continue;
             const cat = String(item.category || "").trim();
             const sp = item.spec == null ? "" : String(item.spec);
-            if (cat && present[orderKey(cat, sp)]) {
-                reorderedWc.push(buildSgToken(cat, sp));
+            const kind = normalizeWildcardKind(item.kind);
+            if (cat && present[orderKey(cat, sp, kind)]) {
+                reorderedWc.push(buildSgToken(cat, sp, kind));
             }
         }
 
@@ -616,16 +639,16 @@ function ensureOverlay() {
             }
         }
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
-            insertWildcardCategory(currentNode, msg.category);
+            insertWildcardCategory(currentNode, msg.category, "", msg.kind);
         }
         if (msg.type === "SG_WILDCARD_SLICE" && currentNode) {
-            insertWildcardCategory(currentNode, msg.category, msg.spec || "");
+            insertWildcardCategory(currentNode, msg.category, msg.spec || "", msg.kind);
         }
         if (msg.type === "SG_CLEAR_ALL" && currentNode) {
             clearAllStyles(currentNode);
         }
         if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
-            removeWildcardCategory(currentNode, msg.category, msg.spec || "");
+            removeWildcardCategory(currentNode, msg.category, msg.spec || "", msg.kind);
         }
         if (msg.type === "SG_REORDER_WILDCARDS" && currentNode) {
             if (Array.isArray(msg.categories) && msg.categories.length) {
