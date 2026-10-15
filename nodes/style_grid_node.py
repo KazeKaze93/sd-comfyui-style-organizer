@@ -11,7 +11,7 @@ from ..stylegrid.deck_limits import (
     clamp_deck_index,
     clamp_deck_seed,
 )
-from ..stylegrid.prompt_ops import build_styles_by_cat, resolve_and_pack
+from ..stylegrid.prompt_ops import build_styles_by_cat, resolve_pair
 from ..stylegrid.wildcards import DeckContext
 
 # Dice tokens re-roll on every queue; deck tokens are a pure function of the inputs.
@@ -49,6 +49,14 @@ class StyleGridNode:
                         "no repeats until every style in the category has been drawn.",
                     },
                 ),
+                "style_negatives": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "Add the negative prompt of each style picked by {sg:...} / {sgd:...} "
+                        "in the positive text to the negative output.",
+                    },
+                ),
             },
         }
 
@@ -65,6 +73,7 @@ class StyleGridNode:
         active_source,
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
+        style_negatives=True,
     ):
         """Force re-execution only when a dice wildcard needs re-rolling."""
         if _DICE_TOKEN.search(text) or _DICE_TOKEN.search(negative_text):
@@ -76,6 +85,7 @@ class StyleGridNode:
                 active_source,
                 str(clamp_deck_seed(deck_seed)),
                 str(clamp_deck_index(deck_index)),
+                str(style_negatives),
             ]
         )
         return hashlib.md5(payload.encode("utf-8")).hexdigest()
@@ -87,12 +97,11 @@ class StyleGridNode:
         active_source,
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
+        style_negatives=True,
     ):
         styles = list(get_cached_styles())
         categorize_styles(styles)
         by_cat = build_styles_by_cat(styles, active_source)
         # One queue run = one draw: every image of a latent batch shares this conditioning.
         deck = DeckContext(clamp_deck_seed(deck_seed), clamp_deck_index(deck_index))
-        positive = resolve_and_pack(text, by_cat, deck=deck)
-        negative = resolve_and_pack(negative_text, by_cat, field="negative_prompt", deck=deck)
-        return (positive, negative)
+        return resolve_pair(text, negative_text, by_cat, deck=deck, style_negatives=style_negatives)

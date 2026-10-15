@@ -281,6 +281,12 @@ function repairDeckWidgets(node) {
     }
 }
 
+/** Workflows saved before style_negatives existed put the Browse Styles button's null in its slot. */
+function repairStyleNegativesWidget(node) {
+    const widget = node?.widgets?.find((w) => w.name === "style_negatives");
+    if (widget && typeof widget.value !== "boolean") widget.value = true;
+}
+
 function getActiveStyles(text, negativeText, excludeName) {
     return allStylesCache.filter((s) => {
         if (s.name === excludeName) return false;
@@ -820,6 +826,7 @@ app.registerExtension({
     loadedGraphNode(node) {
         if (node.comfyClass !== "StyleGridNode") return;
         repairDeckWidgets(node);
+        repairStyleNegativesWidget(node);
         guardDeckWidgetSerialization(node);
     },
 });

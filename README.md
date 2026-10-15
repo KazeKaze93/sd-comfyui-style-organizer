@@ -37,6 +37,7 @@ Right-click a category in the **sidebar** for wildcard actions, in two groups: *
 - **Resolution:** includes are unioned, then excludes subtract. If every listed name is missing, the token **falls back to the whole category** instead of vanishing. The UI writes the shortest correct form; the resolver understands all forms
 - **Chips:** each active `{sg:…}` appears as a chip in the selected bar. A slice chip shows the **resolved pool size** (how many styles the token can pick from), with those style names in the tooltip — not the number of raw spec entries
 - **When / what:** expanded when the Style Grid node runs. A wildcard in the positive field (`pos`) pulls the style’s `prompt`; in the negative field (`neg`) it pulls `negative_prompt`
+- **The picked style’s negative comes along:** a wildcard in the positive field also adds that style’s `negative_prompt` to the negative output, after your negative text, in token order, then duplicates are merged. The same token in the negative field reuses the positive pick (the k-th occurrence pairs with the k-th one). A negative tag that also appears in the expanded positive is dropped and logged. Turn it off with the node’s **style_negatives** toggle (on by default)
 - **Nesting depth:** nested `{sg:…}` tokens resolve in up to **3** passes. Leftovers after that are stripped with a warning
 - **Empty fields:** an empty chosen field resolves to an empty string (the token is not kept), on both the positive and negative sides
 - **Source filter:** a specific CSV limits the pool to that pack; All Sources uses the merged library
@@ -54,7 +55,7 @@ A shuffle wildcard draws styles **without repeats**. Where `{sg:category}` may p
 - **Deck strip:** while a shuffle chip is active, the panel shows `seed N, next draw #M` next to the chips. **Restart** goes back to the first draw, **New deck** picks a new random seed and starts from the first draw. The position advances by itself after every queue run
 - **Range:** a deck has up to 9,999 positions per seed. When you run out, press **New deck**
 - **Several tokens:** repeating the same token in one prompt draws a different style for each occurrence
-- **Positive and negative:** the same shuffle token in both fields resolves to the same style, as long as it appears the same number of times in each
+- **Positive and negative:** the same shuffle token in both fields resolves to the same style
 - **Duplicates across packs:** styles with identical prompt and negative prompt count once
 - **Random wildcards are unchanged.** Mixing `{sg:…}` and `{sgd:…}` in one prompt is fine, they do not influence each other
 - **Presets:** shuffle chips are saved in presets and restored as shuffle chips
@@ -95,7 +96,7 @@ comfy node publish --changelog-file notes-<version>.md
 
 ## Usage
 
-Add the **Style Grid** node to your workflow. It outputs two STRING values, positive and negative, meant to feed directly into your text encode nodes. Click **Browse Styles** to open the grid, search or browse by category, and apply styles to the node's text fields directly.
+Add the **Style Grid** node to your workflow. It outputs two STRING values, positive and negative, meant to feed directly into your text encode nodes. With **style_negatives** on (default), the negative output also carries the negative prompts of styles picked by wildcards in the positive text. Click **Browse Styles** to open the grid, search or browse by category, and apply styles to the node's text fields directly.
 
 ![Node wiring — Style Grid connected to CLIP Text Encode](docs/screenshots/node-wiring.png)
 

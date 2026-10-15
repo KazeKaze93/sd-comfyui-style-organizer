@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+- **Paired negatives:** a `{sg:…}` / `{sgd:…}` wildcard in the positive text adds the picked style’s negative prompt to the negative output (after your text, in token order). The same wildcard in the negative text reuses the positive pick, and a negative tag that is also in the expanded positive is dropped. New node toggle **style_negatives** (on by default).
+
+Compatibility: the toggle is a new optional input; workflows saved before load with it on.
+
 ## 0.0.11 — 2026-10-15
 
 ### Added

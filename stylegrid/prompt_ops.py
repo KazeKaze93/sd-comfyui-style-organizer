@@ -6,7 +6,8 @@ import os
 import re
 from dataclasses import dataclass
 
-from .wildcards import DeckContext, resolve_sg_wildcards
+from .config import logger
+from .wildcards import DeckContext, resolve_sg_picks
 
 BREAK_TOKEN = "BREAK"
 NEUTRAL_WEIGHT = 1.0
@@ -38,6 +39,34 @@ def _parse(segment: str) -> tuple[str, float] | None:
     return segment, NEUTRAL_WEIGHT
 
 
+def _tag_key(segment: str, parsed: tuple[str, float] | None) -> str:
+    return segment.lower() if parsed is None else parsed[0].lower()
+
+
+def drop_shared_tags(prompt: str, other: str) -> tuple[str, list[str]]:
+    """Remove tags of ``prompt`` that also occur in ``other``.
+
+    Tag identity is the one ``dedup_prompt`` uses. BREAK is always kept.
+    Returns the kept prompt and the dropped segments.
+    """
+    other_keys = set()
+    for raw in other.split(","):
+        seg = raw.strip()
+        if seg:
+            other_keys.add(_tag_key(seg, _parse(seg)))
+    kept: list[str] = []
+    dropped: list[str] = []
+    for raw in prompt.split(","):
+        seg = raw.strip()
+        if not seg:
+            continue
+        if seg.upper() != BREAK_TOKEN and _tag_key(seg, _parse(seg)) in other_keys:
+            dropped.append(seg)
+        else:
+            kept.append(seg)
+    return ", ".join(kept), dropped
+
+
 def dedup_prompt(prompt: str) -> str:
     """Collapse duplicate comma-separated tags.
 
@@ -60,7 +89,7 @@ def dedup_prompt(prompt: str) -> str:
             slots.append(_Slot(seg, None, NEUTRAL_WEIGHT))
             continue
         parsed = _parse(seg)
-        key = seg.lower() if parsed is None else parsed[0].lower()
+        key = _tag_key(seg, parsed)
         if key not in index:
             index[key] = len(slots)
             tag, weight = (None, NEUTRAL_WEIGHT) if parsed is None else parsed
@@ -101,9 +130,30 @@ def resolve_and_pack(
     field="prompt",
     *,
     deck: DeckContext | None = None,
+    paired=(),
 ):
     """Expand {sg:...} / {sgd:...} wildcards from the given category map, then dedup
     tags. field selects which side of a picked style a wildcard pulls from; deck enables
-    {sgd:...} draws (see resolve_sg_wildcards).
+    {sgd:...} draws; paired reuses picks of the other field (see resolve_sg_picks).
     """
-    return dedup_prompt(resolve_sg_wildcards(prompt_str, styles_by_cat, rng, field, deck=deck))
+    return dedup_prompt(resolve_sg_picks(prompt_str, styles_by_cat, rng, field, deck=deck, paired=paired)[0])
+
+
+def resolve_pair(text, negative_text, styles_by_cat, *, deck: DeckContext, style_negatives=True):
+    """Resolve the node's positive and negative text; returns (positive, negative).
+
+    Negative tokens reuse the positive picks. With style_negatives, every style picked in
+    the positive also adds its negative_prompt after negative_text, in token order, and
+    negative tags that also occur in the expanded positive are dropped.
+    """
+    resolved, picks = resolve_sg_picks(text, styles_by_cat, deck=deck)
+    positive = dedup_prompt(resolved)
+    if style_negatives:
+        parts = [negative_text, *(pick.style.get("negative_prompt") or "" for pick in picks)]
+        negative_text = ", ".join(part for part in parts if part)
+    negative = resolve_and_pack(negative_text, styles_by_cat, field="negative_prompt", deck=deck, paired=picks)
+    if style_negatives and picks:
+        negative, dropped = drop_shared_tags(negative, positive)
+        if dropped:
+            logger.info("[Style Grid] dropped from negative, also in positive: %s", ", ".join(dropped))
+    return positive, negative
