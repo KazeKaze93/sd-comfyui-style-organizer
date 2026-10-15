@@ -25,7 +25,6 @@ function createWidgets(): Widget[] {
     { name: 'active_source', value: '' },
     ...intWithControl('deck_seed', 'fixed', 'fixed'),
     ...intWithControl('deck_index', 'increment', 'increment'),
-    { name: 'style_negatives', value: false },
     ...intWithControl('seed', 'control_after_generate', 'randomize'),
     { name: 'Browse Styles', value: null },
   ]
@@ -61,39 +60,41 @@ const TEXT = ['{sgd:accessory:Anklet,Armband,Backpack}', 'lowres', 'styles_nsfw_
 describe('repairRestoredWidgets on workflows saved by older versions', () => {
   it('before the deck inputs: the button null lands on deck_seed', () => {
     expect(loadPositional([...TEXT, null])).toEqual([
-      ...TEXT, 0, 'fixed', 0, 'increment', false, 0, 'randomize', null,
+      ...TEXT, 0, 'fixed', 0, 'increment', 0, 'randomize', null,
     ])
   })
 
-  it('0.0.11, before style_negatives: the button null lands on style_negatives', () => {
+  it('0.0.11, before seed: the button null lands on seed', () => {
     expect(loadPositional([...TEXT, 42, 'fixed', 3, 'increment', null])).toEqual([
-      ...TEXT, 42, 'fixed', 3, 'increment', false, 0, 'randomize', null,
+      ...TEXT, 42, 'fixed', 3, 'increment', 0, 'randomize', null,
     ])
   })
 
-  it('with style_negatives, before seed: the button null lands on seed', () => {
+  it('workflow that still had style_negatives: boolean lands on seed and is coerced', () => {
+    // Old layout had a BOOLEAN before seed; its false lands on seed, and null on the seed control
+    // (reset to the combo's first value "fixed" before repair).
     expect(loadPositional([...TEXT, 42, 'fixed', 3, 'increment', false, null])).toEqual([
-      ...TEXT, 42, 'fixed', 3, 'increment', false, 0, 'randomize', null,
+      ...TEXT, 42, 'fixed', 3, 'increment', 0, 'fixed', null,
     ])
   })
 
-  it('with style_negatives, before seed, restored by name', () => {
+  it('before seed, restored by name', () => {
     const named = {
       text: TEXT[0], negative_text: TEXT[1], active_source: TEXT[2],
-      deck_seed: 42, fixed: 'fixed', deck_index: 3, increment: 'increment', style_negatives: false,
+      deck_seed: 42, fixed: 'fixed', deck_index: 3, increment: 'increment',
       'Browse Styles': null,
     }
-    expect(loadNamed(named)).toEqual([...TEXT, 42, 'fixed', 3, 'increment', false, 0, 'randomize', null])
+    expect(loadNamed(named)).toEqual([...TEXT, 42, 'fixed', 3, 'increment', 0, 'randomize', null])
   })
 
   it('current layout keeps every value', () => {
-    const saved = [...TEXT, 42, 'fixed', 3, 'increment', false, 987654321, 'fixed', null]
+    const saved = [...TEXT, 42, 'fixed', 3, 'increment', 987654321, 'fixed', null]
     expect(loadPositional(saved)).toEqual(saved)
   })
 
   it('invalid numbers and control modes fall back to the defaults', () => {
-    expect(loadPositional([...TEXT, 42, 'nope', 3, 'increment', false, -5, 'bogus', null])).toEqual([
-      ...TEXT, 42, 'fixed', 3, 'increment', false, 0, 'randomize', null,
+    expect(loadPositional([...TEXT, 42, 'nope', 3, 'increment', -5, 'bogus', null])).toEqual([
+      ...TEXT, 42, 'fixed', 3, 'increment', 0, 'randomize', null,
     ])
   })
 })

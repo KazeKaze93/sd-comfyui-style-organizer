@@ -49,14 +49,6 @@ class StyleGridNode:
                         "no repeats until every style in the category has been drawn.",
                     },
                 ),
-                "style_negatives": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "Add the negative prompt of each style picked by {sg:...} / {sgd:...} "
-                        "in the positive text to the negative output.",
-                    },
-                ),
                 # Must stay the last input: older workflows restore widget values by position.
                 "seed": (
                     "INT",
@@ -84,7 +76,6 @@ class StyleGridNode:
         active_source,
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
-        style_negatives=False,
         seed=SEED_DEFAULT,
     ):
         payload = "\x00".join(
@@ -94,7 +85,6 @@ class StyleGridNode:
                 active_source,
                 str(clamp_deck_seed(deck_seed)),
                 str(clamp_deck_index(deck_index)),
-                str(style_negatives),
                 str(seed),
             ]
         )
@@ -107,7 +97,6 @@ class StyleGridNode:
         active_source,
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
-        style_negatives=False,
         seed=SEED_DEFAULT,
     ):
         styles = list(get_cached_styles())
@@ -115,6 +104,4 @@ class StyleGridNode:
         by_cat = build_styles_by_cat(styles, active_source)
         # One queue run = one draw: every image of a latent batch shares this conditioning.
         deck = DeckContext(clamp_deck_seed(deck_seed), clamp_deck_index(deck_index))
-        return resolve_pair(
-            text, negative_text, by_cat, rng=random.Random(seed), deck=deck, style_negatives=style_negatives
-        )
+        return resolve_pair(text, negative_text, by_cat, rng=random.Random(seed), deck=deck)

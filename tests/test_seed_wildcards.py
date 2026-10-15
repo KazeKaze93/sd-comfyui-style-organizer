@@ -45,7 +45,7 @@ def node(node_module):
 
 def test_seed_is_a_standard_seed_widget_and_the_last_input(node_module):
     optional = node_module.StyleGridNode.INPUT_TYPES()["optional"]
-    assert list(optional) == ["deck_seed", "deck_index", "style_negatives", "seed"]
+    assert list(optional) == ["deck_seed", "deck_index", "seed"]
     kind, options = optional["seed"]
     assert kind == "INT"
     assert options["control_after_generate"] is True
@@ -64,7 +64,7 @@ def test_missing_seed_uses_the_default(node):
 
 
 def test_different_seeds_give_different_picks(node):
-    results = [node.apply(TEXT, "{sg:hair}", "", style_negatives=False, seed=seed) for seed in SEEDS]
+    results = [node.apply(TEXT, "{sg:hair}", "", seed=seed) for seed in SEEDS]
     assert len({positive for positive, _ in results}) == len(SEEDS)
     assert len({negative for _, negative in results}) > 1
 
@@ -87,9 +87,9 @@ def test_sg_does_not_freeze_past_the_last_deck_position(node):
 
 def test_paired_negative_follows_the_seeded_pick(node):
     for seed in SEEDS:
-        positive, negative = node.apply("{sg:body}", "{sg:body}, lowres", "", style_negatives=False, seed=seed)
+        positive, negative = node.apply("{sg:body}", "{sg:body}, lowres", "", seed=seed)
         assert negative == f"{NEGATIVE_BY_PROMPT[positive]}, lowres"
-        positive, negative = node.apply("{sg:body}", "lowres", "", style_negatives=True, seed=seed)
+        positive, negative = node.apply("{sg:body}", "lowres", "", seed=seed)
         assert negative == f"lowres, {NEGATIVE_BY_PROMPT[positive]}"
 
 

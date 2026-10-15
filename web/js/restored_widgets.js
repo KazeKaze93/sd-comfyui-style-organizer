@@ -3,7 +3,6 @@
 export const DECK_SEED_WIDGET = "deck_seed";
 export const DECK_INDEX_WIDGET = "deck_index";
 const SEED_WIDGET = "seed";
-const STYLE_NEGATIVES_WIDGET = "style_negatives";
 
 const CONTROL_DEFAULTS = new Map([
     [DECK_SEED_WIDGET, "fixed"],
@@ -21,10 +20,6 @@ export function toWidgetInt(value) {
  * the Browse Styles button's null to the first newer widget and leaves the ones after it at their defaults. */
 export function repairRestoredWidgets(widgets) {
     for (const widget of widgets) {
-        if (widget.name === STYLE_NEGATIVES_WIDGET) {
-            if (typeof widget.value !== "boolean") widget.value = false;
-            continue;
-        }
         const fallbackMode = CONTROL_DEFAULTS.get(widget.name);
         if (!fallbackMode) continue;
         const clean = toWidgetInt(widget.value);
