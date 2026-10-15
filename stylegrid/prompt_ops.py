@@ -139,7 +139,7 @@ def resolve_and_pack(
     return dedup_prompt(resolve_sg_picks(prompt_str, styles_by_cat, rng, field, deck=deck, paired=paired)[0])
 
 
-def resolve_pair(text, negative_text, styles_by_cat, *, rng=None, deck: DeckContext, style_negatives=True):
+def resolve_pair(text, negative_text, styles_by_cat, *, rng=None, deck: DeckContext, style_negatives=False):
     """Resolve the node's positive and negative text; returns (positive, negative).
 
     rng draws the {sg:...} picks of the positive, then of negative tokens without a positive pick.

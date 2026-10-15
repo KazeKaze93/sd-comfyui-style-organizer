@@ -89,7 +89,7 @@ def test_paired_negative_follows_the_seeded_pick(node):
     for seed in SEEDS:
         positive, negative = node.apply("{sg:body}", "{sg:body}, lowres", "", style_negatives=False, seed=seed)
         assert negative == f"{NEGATIVE_BY_PROMPT[positive]}, lowres"
-        positive, negative = node.apply("{sg:body}", "lowres", "", seed=seed)
+        positive, negative = node.apply("{sg:body}", "lowres", "", style_negatives=True, seed=seed)
         assert negative == f"lowres, {NEGATIVE_BY_PROMPT[positive]}"
 
 

@@ -3,10 +3,10 @@
 ## Unreleased
 
 ### Added
-- **Paired negatives:** a `{sg:…}` / `{sgd:…}` wildcard in the positive text adds the picked style’s negative prompt to the negative output (after your text, in token order). The same wildcard in the negative text reuses the positive pick, and a negative tag that is also in the expanded positive is dropped. New node toggle **style_negatives** (on by default).
+- **Paired negatives:** a `{sg:…}` / `{sgd:…}` wildcard in the positive text adds the picked style’s negative prompt to the negative output (after your text, in token order). The same wildcard in the negative text reuses the positive pick, and a negative tag that is also in the expanded positive is dropped. New node toggle **style_negatives** (off by default).
 - **Seed for random wildcards:** `{sg:…}` picks come from the new node input **seed** (the standard seed widget with control after generate). The same seed and text give the same picks, so a `fixed` seed repeats a result and the node is no longer re-run on every queue; `randomize` re-rolls every run. Shuffle wildcards `{sgd:…}` do not use it.
 
-Compatibility: both are new optional inputs; workflows saved before load with **style_negatives** on and **seed** 0 set to randomize, so random wildcards keep re-rolling every run.
+Compatibility: both are new optional inputs; workflows saved before load with **style_negatives** off and **seed** 0 set to randomize, so random wildcards keep re-rolling every run.
 
 ## 0.0.11 — 2026-10-15
 

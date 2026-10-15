@@ -43,20 +43,22 @@ def _by_cat(styles):
 
 
 def test_positive_only_placeholder_fills_empty_negative():
-    assert resolve_pair("1girl, {sg:body:Tanned}", "", _by_cat(BODY), deck=DECK) == (
+    assert resolve_pair("1girl, {sg:body:Tanned}", "", _by_cat(BODY), deck=DECK, style_negatives=True) == (
         "1girl, tanned skin",
         "pale skin",
     )
 
 
 def test_negative_order_user_text_then_styles_in_placeholder_order():
-    _, negative = resolve_pair("{sg:pose}, {sg:body:Tanned}", "lowres", _by_cat(BODY + POSE), deck=DECK)
+    _, negative = resolve_pair(
+        "{sg:pose}, {sg:body:Tanned}", "lowres", _by_cat(BODY + POSE), deck=DECK, style_negatives=True
+    )
     assert negative == "lowres, standing straight, pale skin"
 
 
 def test_nested_placeholder_negative_is_added():
     styles = [_style("OUTFIT_Set", "dress, {sg:pose}", "pants")] + POSE
-    assert resolve_pair("{sg:outfit}", "", _by_cat(styles), deck=DECK) == (
+    assert resolve_pair("{sg:outfit}", "", _by_cat(styles), deck=DECK, style_negatives=True) == (
         "dress, leaning forward",
         "pants, standing straight",
     )
@@ -89,7 +91,9 @@ def test_pairing_holds_when_token_layout_differs():
 @pytest.mark.parametrize("kind", ["sg", "sgd"])
 def test_paired_placeholder_and_style_negative_collapse(kind):
     for i in RUNS:
-        positive, negative = resolve_pair(f"{{{kind}:body}}", f"{{{kind}:body}}", _by_cat(BODY), deck=DeckContext(i, i))
+        positive, negative = resolve_pair(
+            f"{{{kind}:body}}", f"{{{kind}:body}}", _by_cat(BODY), deck=DeckContext(i, i), style_negatives=True
+        )
         assert negative == NEGATIVE_BY_PROMPT[positive]
 
 
@@ -100,7 +104,9 @@ def test_all_sources_ambiguous_name_uses_negative_of_the_picked_source():
     ]
     seen = set()
     for i in RUNS:
-        positive, negative = resolve_pair("{sg:body:Tanned}", "", _by_cat(styles), deck=DeckContext(i, i))
+        positive, negative = resolve_pair(
+            "{sg:body:Tanned}", "", _by_cat(styles), deck=DeckContext(i, i), style_negatives=True
+        )
         seen.add(positive)
         assert negative == {"tanned skin, pack a": "neg-a", "tanned skin, pack b": "neg-b"}[positive]
     assert len(seen) == 2
@@ -112,7 +118,9 @@ def test_negative_tag_already_in_positive_is_dropped_and_logged(caplog):
         _style("DETAIL_Clean", "smooth skin", "Freckles, blurry"),
     ]
     with caplog.at_level(logging.INFO, logger="StyleGrid"):
-        _, negative = resolve_pair("{sg:skin}, {sg:detail}", "lowres, smooth skin", _by_cat(styles), deck=DECK)
+        _, negative = resolve_pair(
+            "{sg:skin}, {sg:detail}", "lowres, smooth skin", _by_cat(styles), deck=DECK, style_negatives=True
+        )
 
     assert negative == "lowres, pale skin, blurry"
     dropped = [rec.getMessage() for rec in caplog.records if "dropped from negative" in rec.getMessage()]
@@ -157,16 +165,16 @@ def node_module(monkeypatch):
     return module
 
 
-def test_node_style_negatives_input_defaults_on(node_module):
+def test_node_style_negatives_input_defaults_off(node_module):
     kind, options = node_module.StyleGridNode.INPUT_TYPES()["optional"]["style_negatives"]
     assert kind == "BOOLEAN"
-    assert options["default"] is True
+    assert options["default"] is False
 
 
 def test_node_apply_and_is_changed_take_style_negatives(node_module):
     node = node_module.StyleGridNode
-    assert node().apply("{sgd:body}", "lowres", "") == ("tanned skin", "lowres, pale skin")
-    assert node().apply("{sgd:body}", "lowres", "", style_negatives=False) == ("tanned skin", "lowres")
+    assert node().apply("{sgd:body}", "lowres", "") == ("tanned skin", "lowres")
+    assert node().apply("{sgd:body}", "lowres", "", style_negatives=True) == ("tanned skin", "lowres, pale skin")
     assert node.IS_CHANGED("{sgd:body}", "", "", style_negatives=True) != node.IS_CHANGED(
         "{sgd:body}", "", "", style_negatives=False
     )

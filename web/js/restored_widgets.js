@@ -22,7 +22,7 @@ export function toWidgetInt(value) {
 export function repairRestoredWidgets(widgets) {
     for (const widget of widgets) {
         if (widget.name === STYLE_NEGATIVES_WIDGET) {
-            if (typeof widget.value !== "boolean") widget.value = true;
+            if (typeof widget.value !== "boolean") widget.value = false;
             continue;
         }
         const fallbackMode = CONTROL_DEFAULTS.get(widget.name);

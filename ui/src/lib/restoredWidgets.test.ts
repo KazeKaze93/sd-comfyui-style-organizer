@@ -25,7 +25,7 @@ function createWidgets(): Widget[] {
     { name: 'active_source', value: '' },
     ...intWithControl('deck_seed', 'fixed', 'fixed'),
     ...intWithControl('deck_index', 'increment', 'increment'),
-    { name: 'style_negatives', value: true },
+    { name: 'style_negatives', value: false },
     ...intWithControl('seed', 'control_after_generate', 'randomize'),
     { name: 'Browse Styles', value: null },
   ]
@@ -61,13 +61,13 @@ const TEXT = ['{sgd:accessory:Anklet,Armband,Backpack}', 'lowres', 'styles_nsfw_
 describe('repairRestoredWidgets on workflows saved by older versions', () => {
   it('before the deck inputs: the button null lands on deck_seed', () => {
     expect(loadPositional([...TEXT, null])).toEqual([
-      ...TEXT, 0, 'fixed', 0, 'increment', true, 0, 'randomize', null,
+      ...TEXT, 0, 'fixed', 0, 'increment', false, 0, 'randomize', null,
     ])
   })
 
   it('0.0.11, before style_negatives: the button null lands on style_negatives', () => {
     expect(loadPositional([...TEXT, 42, 'fixed', 3, 'increment', null])).toEqual([
-      ...TEXT, 42, 'fixed', 3, 'increment', true, 0, 'randomize', null,
+      ...TEXT, 42, 'fixed', 3, 'increment', false, 0, 'randomize', null,
     ])
   })
 

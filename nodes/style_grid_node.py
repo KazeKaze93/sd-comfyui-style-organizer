@@ -52,7 +52,7 @@ class StyleGridNode:
                 "style_negatives": (
                     "BOOLEAN",
                     {
-                        "default": True,
+                        "default": False,
                         "tooltip": "Add the negative prompt of each style picked by {sg:...} / {sgd:...} "
                         "in the positive text to the negative output.",
                     },
@@ -84,7 +84,7 @@ class StyleGridNode:
         active_source,
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
-        style_negatives=True,
+        style_negatives=False,
         seed=SEED_DEFAULT,
     ):
         payload = "\x00".join(
@@ -107,7 +107,7 @@ class StyleGridNode:
         active_source,
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
-        style_negatives=True,
+        style_negatives=False,
         seed=SEED_DEFAULT,
     ):
         styles = list(get_cached_styles())
