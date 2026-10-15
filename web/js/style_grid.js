@@ -1,4 +1,5 @@
 import { app } from "/scripts/app.js";
+import { DECK_INDEX_WIDGET, DECK_SEED_WIDGET, repairRestoredWidgets, toWidgetInt } from "./restored_widgets.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
 
@@ -174,8 +175,6 @@ function getTextWidgets(node) {
     };
 }
 
-const DECK_SEED_WIDGET = "deck_seed";
-const DECK_INDEX_WIDGET = "deck_index";
 const DECK_SEED_RANDOM_MASK = 0x7fffffff; // new decks stay far below 2^53 (JS numbers)
 const DECK_HOOKED_FLAG = "__sgDeckHooked";
 
@@ -198,17 +197,12 @@ function getDeckWidgets(node) {
     };
 }
 
-function toDeckNumber(value) {
-    const n = Number(value);
-    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
-}
-
 function postDeckState(node) {
     if (!ready || !iframe?.contentWindow || node !== currentNode) return;
     const { seed, index } = getDeckWidgets(node);
     if (!seed || !index) return;
     iframe.contentWindow.postMessage(
-        { type: "SG_DECK_STATE", seed: toDeckNumber(seed.value), index: toDeckNumber(index.value) },
+        { type: "SG_DECK_STATE", seed: toWidgetInt(seed.value), index: toWidgetInt(index.value) },
         "*"
     );
 }
@@ -250,7 +244,6 @@ function hookDeckWidgetCallbacks(node) {
     }
 }
 
-const DECK_CONTROL_DEFAULTS = { [DECK_SEED_WIDGET]: "fixed", [DECK_INDEX_WIDGET]: "increment" };
 const DECK_SERIALIZER_FLAG = "__sgDeckSerializer";
 
 /** Workflows saved before the deck widgets existed keep the Browse Styles button's null in positional
@@ -260,31 +253,8 @@ function guardDeckWidgetSerialization(node) {
     for (const widget of [seed, index]) {
         if (!widget || widget[DECK_SERIALIZER_FLAG]) continue;
         widget[DECK_SERIALIZER_FLAG] = true;
-        widget.serializeValue = async () => toDeckNumber(widget.value);
+        widget.serializeValue = async () => toWidgetInt(widget.value);
     }
-}
-
-/** Repair values restored from an older or misaligned workflow: invalid numbers and invalid control modes. */
-function repairDeckWidgets(node) {
-    const { seed, index } = getDeckWidgets(node);
-    for (const widget of [seed, index]) {
-        if (!widget) continue;
-        const clean = toDeckNumber(widget.value);
-        if (widget.value !== clean) widget.value = clean;
-        const fallbackMode = DECK_CONTROL_DEFAULTS[widget.name];
-        for (const linked of widget.linkedWidgets || []) {
-            const allowed = linked.options?.values;
-            if (Array.isArray(allowed) && !allowed.includes(linked.value)) {
-                linked.value = fallbackMode;
-            }
-        }
-    }
-}
-
-/** Workflows saved before style_negatives existed put the Browse Styles button's null in its slot. */
-function repairStyleNegativesWidget(node) {
-    const widget = node?.widgets?.find((w) => w.name === "style_negatives");
-    if (widget && typeof widget.value !== "boolean") widget.value = true;
 }
 
 function getActiveStyles(text, negativeText, excludeName) {
@@ -825,8 +795,7 @@ app.registerExtension({
     },
     loadedGraphNode(node) {
         if (node.comfyClass !== "StyleGridNode") return;
-        repairDeckWidgets(node);
-        repairStyleNegativesWidget(node);
+        repairRestoredWidgets(node.widgets || []);
         guardDeckWidgetSerialization(node);
     },
 });

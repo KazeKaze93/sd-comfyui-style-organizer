@@ -15,7 +15,7 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Thumbnail previews with manual upload
 - Import and export styles and presets as JSON
 - Manual Backup: zip snapshot of user-dir CSVs + presets under `user/style_grid/backups/`
-- Wildcard support: `{sg:category}` picks a random style from that category at node execution; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob). Shuffle wildcards `{sgd:category}` / `{sgd:category:spec}` draw without repeats, one step per queue run
+- Wildcard support: `{sg:category}` picks a random style from that category at node execution, driven by the node's **seed**; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob). Shuffle wildcards `{sgd:category}` / `{sgd:category:spec}` draw without repeats, one step per queue run
 - Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
 - Combos: styles can list related names in their description (`Combos: …`); the card shows clickable “Works with” chips to select those styles or jump to a category
 
@@ -37,6 +37,7 @@ Right-click a category in the **sidebar** for wildcard actions, in two groups: *
 - **Resolution:** includes are unioned, then excludes subtract. If every listed name is missing, the token **falls back to the whole category** instead of vanishing. The UI writes the shortest correct form; the resolver understands all forms
 - **Chips:** each active `{sg:…}` appears as a chip in the selected bar. A slice chip shows the **resolved pool size** (how many styles the token can pick from), with those style names in the tooltip — not the number of raw spec entries
 - **When / what:** expanded when the Style Grid node runs. A wildcard in the positive field (`pos`) pulls the style’s `prompt`; in the negative field (`neg`) it pulls `negative_prompt`
+- **Seed:** the picks come from the node’s **seed** input. The same seed and text give the same picks: set it to `fixed` to repeat a result, keep `randomize` for new picks on every queue run. Workflows saved before the input existed load with `randomize`
 - **The picked style’s negative comes along:** a wildcard in the positive field also adds that style’s `negative_prompt` to the negative output, after your negative text, in token order, then duplicates are merged. The same token in the negative field reuses the positive pick (the k-th occurrence pairs with the k-th one). A negative tag that also appears in the expanded positive is dropped and logged. Turn it off with the node’s **style_negatives** toggle (on by default)
 - **Nesting depth:** nested `{sg:…}` tokens resolve in up to **3** passes. Leftovers after that are stripped with a warning
 - **Empty fields:** an empty chosen field resolves to an empty string (the token is not kept), on both the positive and negative sides
@@ -57,9 +58,9 @@ A shuffle wildcard draws styles **without repeats**. Where `{sg:category}` may p
 - **Several tokens:** repeating the same token in one prompt draws a different style for each occurrence
 - **Positive and negative:** the same shuffle token in both fields resolves to the same style
 - **Duplicates across packs:** styles with identical prompt and negative prompt count once
-- **Random wildcards are unchanged.** Mixing `{sg:…}` and `{sgd:…}` in one prompt is fine, they do not influence each other
+- **Random wildcards are separate.** `{sg:…}` follows the node’s **seed**, not the deck seed or position. Mixing `{sg:…}` and `{sgd:…}` in one prompt is fine, they do not influence each other
 - **Presets:** shuffle chips are saved in presets and restored as shuffle chips
-- **Existing workflows:** the seed and position are stored in two optional inputs that stay hidden on the node and are saved with the workflow. Workflows saved before load as before
+- **Existing workflows:** the deck seed and position are stored in two optional inputs that stay hidden on the node and are saved with the workflow. Workflows saved before load as before
 
 - Works with multiple CSV sources at once, or filtered to one
 - **Theme:** the panel follows the ComfyUI color palette (light / dark) automatically

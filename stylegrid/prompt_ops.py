@@ -139,19 +139,20 @@ def resolve_and_pack(
     return dedup_prompt(resolve_sg_picks(prompt_str, styles_by_cat, rng, field, deck=deck, paired=paired)[0])
 
 
-def resolve_pair(text, negative_text, styles_by_cat, *, deck: DeckContext, style_negatives=True):
+def resolve_pair(text, negative_text, styles_by_cat, *, rng=None, deck: DeckContext, style_negatives=True):
     """Resolve the node's positive and negative text; returns (positive, negative).
 
+    rng draws the {sg:...} picks of the positive, then of negative tokens without a positive pick.
     Negative tokens reuse the positive picks. With style_negatives, every style picked in
     the positive also adds its negative_prompt after negative_text, in token order, and
     negative tags that also occur in the expanded positive are dropped.
     """
-    resolved, picks = resolve_sg_picks(text, styles_by_cat, deck=deck)
+    resolved, picks = resolve_sg_picks(text, styles_by_cat, rng, deck=deck)
     positive = dedup_prompt(resolved)
     if style_negatives:
         parts = [negative_text, *(pick.style.get("negative_prompt") or "" for pick in picks)]
         negative_text = ", ".join(part for part in parts if part)
-    negative = resolve_and_pack(negative_text, styles_by_cat, field="negative_prompt", deck=deck, paired=picks)
+    negative = resolve_and_pack(negative_text, styles_by_cat, rng, field="negative_prompt", deck=deck, paired=picks)
     if style_negatives and picks:
         negative, dropped = drop_shared_tags(negative, positive)
         if dropped:

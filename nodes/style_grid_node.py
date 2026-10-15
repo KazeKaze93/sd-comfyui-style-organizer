@@ -1,5 +1,5 @@
 import hashlib
-import re
+import random
 
 from ..stylegrid.cache import get_cached_styles
 from ..stylegrid.csv_io import categorize_styles
@@ -14,8 +14,8 @@ from ..stylegrid.deck_limits import (
 from ..stylegrid.prompt_ops import build_styles_by_cat, resolve_pair
 from ..stylegrid.wildcards import DeckContext
 
-# Dice tokens re-roll on every queue; deck tokens are a pure function of the inputs.
-_DICE_TOKEN = re.compile(r"\{sg:", re.IGNORECASE)
+SEED_DEFAULT = 0
+SEED_MAX = 0xFFFFFFFFFFFFFFFF
 
 
 class StyleGridNode:
@@ -57,6 +57,17 @@ class StyleGridNode:
                         "in the positive text to the negative output.",
                     },
                 ),
+                # Must stay the last input: older workflows restore widget values by position.
+                "seed": (
+                    "INT",
+                    {
+                        "default": SEED_DEFAULT,
+                        "min": 0,
+                        "max": SEED_MAX,
+                        "control_after_generate": True,
+                        "tooltip": "Random wildcards {sg:...}: the same seed and text give the same picks.",
+                    },
+                ),
             },
         }
 
@@ -74,10 +85,8 @@ class StyleGridNode:
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
         style_negatives=True,
+        seed=SEED_DEFAULT,
     ):
-        """Force re-execution only when a dice wildcard needs re-rolling."""
-        if _DICE_TOKEN.search(text) or _DICE_TOKEN.search(negative_text):
-            return float("nan")
         payload = "\x00".join(
             [
                 text,
@@ -86,6 +95,7 @@ class StyleGridNode:
                 str(clamp_deck_seed(deck_seed)),
                 str(clamp_deck_index(deck_index)),
                 str(style_negatives),
+                str(seed),
             ]
         )
         return hashlib.md5(payload.encode("utf-8")).hexdigest()
@@ -98,10 +108,13 @@ class StyleGridNode:
         deck_seed=DECK_SEED_DEFAULT,
         deck_index=DECK_INDEX_DEFAULT,
         style_negatives=True,
+        seed=SEED_DEFAULT,
     ):
         styles = list(get_cached_styles())
         categorize_styles(styles)
         by_cat = build_styles_by_cat(styles, active_source)
         # One queue run = one draw: every image of a latent batch shares this conditioning.
         deck = DeckContext(clamp_deck_seed(deck_seed), clamp_deck_index(deck_index))
-        return resolve_pair(text, negative_text, by_cat, deck=deck, style_negatives=style_negatives)
+        return resolve_pair(
+            text, negative_text, by_cat, rng=random.Random(seed), deck=deck, style_negatives=style_negatives
+        )
