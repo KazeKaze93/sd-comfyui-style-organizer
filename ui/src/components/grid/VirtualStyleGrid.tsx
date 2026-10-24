@@ -50,6 +50,10 @@ import {
   rowGapPx,
 } from './constants'
 import { dispatchCellContextMenu, findCellElement } from './gridCellDom'
+import {
+  getCachedRangeIndexes,
+  type StickyRangeCache,
+} from './rangeCache'
 
 export type VirtualStyleGridProps = {
   groups: readonly CategoryGroup[]
@@ -171,13 +175,7 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
   const activeStickyIndexRef = useRef(0)
   const rowsRef = useRef<GridRow[]>([])
   const pendingFocusRef = useRef<GridCell | null>(null)
-  const rangeCacheRef = useRef<{
-    startIndex: number
-    endIndex: number
-    sticky: number
-    focusedRow: number | null
-    result: number[]
-  } | null>(null)
+  const rangeCacheRef = useRef<StickyRangeCache | null>(null)
 
   // Row only — col-only focus (toggle clicks across a row) skips this re-render.
   const focusedRow = useFocusedRow()
@@ -267,16 +265,8 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
       if (stickyIndexes.length === 0) {
         const base = defaultRangeExtractor(range)
         if (focused == null) return base
-        const cached = rangeCacheRef.current
-        if (
-          cached &&
-          cached.startIndex === range.startIndex &&
-          cached.endIndex === range.endIndex &&
-          cached.sticky === -1 &&
-          cached.focusedRow === focused
-        ) {
-          return cached.result
-        }
+        const hit = getCachedRangeIndexes(rangeCacheRef.current, range, -1, focused)
+        if (hit) return hit
         const next = new Set(base)
         next.add(focused)
         const result = [...next].sort((a, b) => a - b)
@@ -285,22 +275,15 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
           endIndex: range.endIndex,
           sticky: -1,
           focusedRow: focused,
+          count: range.count,
           result,
         }
         return result
       }
       const sticky = activeStickyHeaderIndex(stickyIndexes, range.startIndex)
       activeStickyIndexRef.current = sticky
-      const cached = rangeCacheRef.current
-      if (
-        cached &&
-        cached.startIndex === range.startIndex &&
-        cached.endIndex === range.endIndex &&
-        cached.sticky === sticky &&
-        cached.focusedRow === focused
-      ) {
-        return cached.result
-      }
+      const hit = getCachedRangeIndexes(rangeCacheRef.current, range, sticky, focused)
+      if (hit) return hit
       const next = new Set([sticky, ...defaultRangeExtractor(range)])
       if (focused != null) next.add(focused)
       const result = [...next].sort((a, b) => a - b)
@@ -309,6 +292,7 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
         endIndex: range.endIndex,
         sticky,
         focusedRow: focused,
+        count: range.count,
         result,
       }
       return result
@@ -337,7 +321,7 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
   useEffect(() => {
     rangeCacheRef.current = null
     virtualizer.measure()
-  }, [columns, compactMode, windowed, virtualizer])
+  }, [columns, compactMode, windowed, rows.length, virtualizer])
 
   useEffect(() => {
     if (scrollResetKey === undefined) return
@@ -364,7 +348,7 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
 
   const virtualItems = virtualizer.getVirtualItems()
   // Stable key for remount focus restore without depending on item object identity.
-  const virtualItemsKey = virtualItems.map((v) => v.index).join(',')
+  const virtualItemsKey = virtualItems.map((v) => v?.index ?? '').join(',')
 
   const onGridKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -438,6 +422,7 @@ export const VirtualStyleGrid = memo(function VirtualStyleGrid({
         }}
       >
         {virtualItems.map((virtualRow) => {
+          if (!virtualRow) return null
           const row = rows[virtualRow.index]
           if (!row) return null
           const isActiveSticky =
