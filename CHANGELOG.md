@@ -1,12 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.0.12 — 2026-10-24
 
 ### Added
 - **Paired negatives:** a `{sg:…}` / `{sgd:…}` wildcard in the positive text always adds the picked style’s negative prompt to the negative output (after your text, in token order). The same wildcard in the negative text reuses the positive pick, and a negative tag that is also in the expanded positive is dropped. Негативы стилей, выбранных {sg}/{sgd} в позитивном промпте, теперь добавляются в негатив того же изображения. Если в ваших CSV есть шумные негативы, результаты изменятся.
 - **Seed for random wildcards:** `{sg:…}` picks come from the new node input **seed** (the standard seed widget with control after generate). The same seed and text give the same picks, so a `fixed` seed repeats a result and the node is no longer re-run on every queue; `randomize` re-rolls every run. Shuffle wildcards `{sgd:…}` do not use it.
 
 Compatibility: **seed** is a new optional input; workflows saved before load with **seed** 0 set to randomize, so random wildcards keep re-rolling every run.
+
+### Fixed
+- **Style Grid blank panel:** fixed the Style Grid panel intermittently going blank after scrolling a large catalog and then narrowing the list (filter, search, collapsing categories), and added a crash recovery screen with a Reload button and a collapsible Details section.
 
 ## 0.0.11 — 2026-10-15
 
