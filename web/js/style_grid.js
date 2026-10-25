@@ -591,6 +591,43 @@ function setActiveSource(node, source) {
     node.graph?.setDirtyCanvas(true, true);
 }
 
+/** Separates name / prompt / negative_prompt in collapsePresentStyles content keys. */
+const PRESENT_STYLE_CONTENT_KEY_SEP = "\0";
+
+/** @param {string} [p] @returns {string} */
+function normalizeSourcePath(p) {
+    return String(p || "").replace(/\\/g, "/");
+}
+
+/** @param {string} [p] @returns {string} */
+function sourceBasename(p) {
+    const s = normalizeSourcePath(p);
+    const i = s.lastIndexOf("/");
+    return i < 0 ? s : s.slice(i + 1);
+}
+
+/**
+ * One row per content-identical present style (name+prompt+negative_prompt).
+ * Prefer activeSource full path if any row matches; else basename; else first-seen.
+ * @param {Array<{ name?: string, prompt?: string, negative_prompt?: string, source_file?: string }>} present
+ * @param {string} [activeSource] @returns {typeof present}
+ */
+function collapsePresentStyles(present, activeSource) {
+    const want = activeSource ? normalizeSourcePath(activeSource) : "";
+    const useFull = !!(want && present.some((s) => normalizeSourcePath(s.source_file) === want));
+    const prefer = (s) => !want ? false
+        : useFull ? normalizeSourcePath(s.source_file) === want
+        : sourceBasename(s.source_file) === sourceBasename(activeSource);
+    /** @type {Map<string, (typeof present)[number]>} */
+    const byContent = new Map();
+    for (const style of present) {
+        const key = [style.name || "", style.prompt || "", style.negative_prompt || ""].join(PRESENT_STYLE_CONTENT_KEY_SEP);
+        if (!byContent.has(key)) byContent.set(key, style);
+        else if (prefer(style)) byContent.set(key, style);
+    }
+    return [...byContent.values()];
+}
+
 function rehydrate() {
     return fetch("/style_grid/styles")
         .then((r) => r.json())
@@ -606,10 +643,10 @@ function rehydrate() {
             const { text, neg } = getTextWidgets(currentNode);
             const currentText = text ? text.value || "" : "";
             const currentNeg = neg ? neg.value || "" : "";
-            for (const style of allStylesCache) {
-                if (styleIsPresent(currentText, currentNeg, style)) {
-                    iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
-                }
+            const present = allStylesCache.filter((s) => styleIsPresent(currentText, currentNeg, s));
+            const activeW = currentNode.widgets?.find((w) => w.name === "active_source");
+            for (const style of collapsePresentStyles(present, activeW ? String(activeW.value || "") : "")) {
+                iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
             }
             syncWildcards(currentNode);
         });
