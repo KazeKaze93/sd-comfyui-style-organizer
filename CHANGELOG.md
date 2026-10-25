@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.13 — 2026-10-25
+
+### Fixed
+- **Duplicate selection chips on reopen:** selecting one style (for example a row that also exists with the same prompt in other CSV packs) no longer restores six identical chips after Queue. Rehydrate collapses content-identical matches and prefers the active source file when it can.
+- **Selected chip React keys:** chips in the selection bar are keyed by `(source_file, name)` so same-named styles from different packs do not collide.
+
+### Changed
+- Removed the unused `SG_PROMPT_CHANGED` host→iframe message type (it was never sent or handled).
+
 ## 0.0.12 — 2026-10-24
 
 ### Added
