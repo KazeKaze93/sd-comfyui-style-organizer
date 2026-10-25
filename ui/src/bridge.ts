@@ -8,7 +8,6 @@ export type HostMessage =
   | { type: 'SG_STYLE_APPLIED'; style: Style }
   | { type: 'SG_WILDCARDS_ACTIVE'; categories: WildcardRef[] }
   | { type: 'SG_THUMB_DONE';     styleId: string; version: number; source_file: string }
-  | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
   | { type: 'SG_CLOSE' }
   | { type: 'SG_THEME'; mode: ThemeMode }
   | { type: 'SG_DECK_STATE'; seed: number; index: number }
