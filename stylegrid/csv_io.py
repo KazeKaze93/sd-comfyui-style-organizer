@@ -10,6 +10,11 @@ from .safe_persistence import locked_path, write_atomic
 
 FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
 
+# Count-only debug when the same style name appears in more than one CSV pack.
+CROSS_FILE_NAME_OVERLAP_MSG = (
+    "[Style Grid] %d style name(s) appear in more than one file"
+)
+
 
 def _write_csv_atomic(target_path, header, rows):
     buf = io.StringIO(newline="")
@@ -102,12 +107,11 @@ def parse_styles_csv(filepath):
 
 
 def load_all_styles():
-    """Merge CSVs from data/ and samples/. Uniqueness key is (source_file, name).
-    Warns on the same name appearing in different packs (thumbnail hash collision risk).
-    """
+    """Merge CSVs from data/ and samples/. Uniqueness key is (source_file, name)."""
     all_styles = []
     seen_keys = set()
     name_owner = {}
+    multi_file_names = set()
     for filepath in get_all_styles_file_paths():
         for s in parse_styles_csv(filepath):
             key = (s["source_file"], s["name"])
@@ -116,12 +120,12 @@ def load_all_styles():
             seen_keys.add(key)
             prior = name_owner.get(s["name"])
             if prior and prior != s["source"]:
-                logger.warning(
-                    "[Style Grid] duplicate style name %r in %s and %s "
-                    "(names must be globally unique)", s["name"], prior, s["source"])
+                multi_file_names.add(s["name"])
             else:
                 name_owner[s["name"]] = s["source"]
             all_styles.append(s)
+    if multi_file_names:
+        logger.debug(CROSS_FILE_NAME_OVERLAP_MSG, len(multi_file_names))
     return all_styles
 
 

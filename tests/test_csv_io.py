@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 
 from stylegrid import csv_io
 
@@ -19,6 +20,38 @@ def _patch_write_dirs(tmp_path, monkeypatch):
         lambda: [str(p)] if p.is_file() else [],
     )
     return p
+
+
+def test_load_all_styles_shared_name_no_warning(tmp_path, monkeypatch, caplog):
+    """Cross-pack duplicate names are legal; do not flood WARNING logs."""
+    a = tmp_path / "pack_a.csv"
+    b = tmp_path / "pack_b.csv"
+    a.write_text(
+        "name,prompt,negative_prompt,description,category\n"
+        "SHARED,prompt_a,neg_a,desc_a,BASE\n",
+        encoding="utf-8-sig",
+    )
+    b.write_text(
+        "name,prompt,negative_prompt,description,category\n"
+        "SHARED,prompt_b,neg_b,desc_b,BASE\n",
+        encoding="utf-8-sig",
+    )
+    monkeypatch.setattr(
+        csv_io,
+        "get_all_styles_file_paths",
+        lambda: [str(a), str(b)],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="StyleGrid"):
+        styles = csv_io.load_all_styles()
+
+    assert len(styles) == 2
+    assert {s["prompt"] for s in styles} == {"prompt_a", "prompt_b"}
+    assert all(s["name"] == "SHARED" for s in styles)
+    assert not [
+        rec for rec in caplog.records
+        if rec.name == "StyleGrid" and rec.levelno >= logging.WARNING
+    ]
 
 
 def test_minus_underscore_minus_round_trip_unchanged(tmp_path, monkeypatch):
