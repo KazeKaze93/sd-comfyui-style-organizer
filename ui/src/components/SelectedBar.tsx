@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { WILDCARD_KIND_DECK } from '../bridge'
-import { useStylesStore } from '../store/stylesStore'
+import { styleRowKey, useStylesStore } from '../store/stylesStore'
 import { CHIP_FOCUS_RING } from '../lib/chipStyles'
 import { describeSpec } from '../lib/wildcardSlice'
 import { SHUFFLE_CHIP_TITLE } from '../lib/wildcardLabels'
@@ -66,7 +66,7 @@ export function SelectedBar() {
             <div className="flex flex-wrap gap-2">
               {selectedStyles.map(s => (
                 <span
-                  key={s.name}
+                  key={styleRowKey(s)}
                   tabIndex={0}
                   role="group"
                   aria-label={displayName(s.name)}
