@@ -20,7 +20,7 @@ def data_files(tmp_path, monkeypatch):
     monkeypatch.setattr(sg_config, "PRESETS_FILE", str(presets_path))
     monkeypatch.setattr(
         sg_data,
-        "load_all_styles",
+        "get_cached_styles",
         lambda: [
             {
                 "name": "Test Style A",

@@ -11,7 +11,7 @@ from .config import (
     PRESETS_FILE,
     _csvs_in,
 )
-from .csv_io import load_all_styles
+from .cache import get_cached_styles
 from .wildcards import TOKEN_SGD
 from .safe_persistence import (
     CorruptDataError,
@@ -107,7 +107,7 @@ def normalize_presets(presets):
     if not isinstance(presets, dict):
         return {}
     styles_by_name_first = {}
-    for s in load_all_styles():
+    for s in get_cached_styles():
         styles_by_name_first.setdefault(s["name"], s)
     out = {}
     for preset_name, preset in presets.items():

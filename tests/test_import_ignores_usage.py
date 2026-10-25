@@ -95,7 +95,7 @@ def _import_handler(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(sg_routes, "IMPORTS_DIR", str(imports))
     monkeypatch.setattr(sg_routes, "PRESETS_FILE", str(presets))
     monkeypatch.setattr(sg_data, "PRESETS_FILE", str(presets))
-    monkeypatch.setattr(sg_data, "load_all_styles", lambda: [])
+    monkeypatch.setattr(sg_data, "get_cached_styles", lambda: [])
 
     fake = _FakeRoutes()
     sg_routes.register_api(fake)
