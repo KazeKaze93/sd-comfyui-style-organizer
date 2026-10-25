@@ -105,3 +105,59 @@ def test_module_paths_use_resolver_constants():
     assert sg_config.THUMBNAILS_DIR == os.path.join(sg_config.DATA_DIR, "thumbnails")
     assert sg_config.SAMPLES_DIR == os.path.join(sg_config.EXT_DIR, "samples")
     assert sg_config.LEGACY_DATA_DIR == os.path.join(sg_config.EXT_DIR, "data")
+
+
+def test_find_legacy_csv_drift_same_dir(tmp_path):
+    root = tmp_path / "same"
+    root.mkdir()
+    (root / "a.csv").write_text("name\nA\n", encoding="utf-8")
+    assert sg_config.find_legacy_csv_drift(str(root), str(root)) == []
+
+
+def test_find_legacy_csv_drift_missing_legacy(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    assert sg_config.find_legacy_csv_drift(str(data), str(tmp_path / "nope")) == []
+
+
+def test_find_legacy_csv_drift_identical(tmp_path):
+    data = tmp_path / "data"
+    legacy = tmp_path / "legacy"
+    data.mkdir()
+    legacy.mkdir()
+    body = "name,prompt\nX,y\n"
+    (data / "pack.csv").write_text(body, encoding="utf-8")
+    (legacy / "pack.csv").write_text(body, encoding="utf-8")
+    assert sg_config.find_legacy_csv_drift(str(data), str(legacy)) == []
+
+
+def test_find_legacy_csv_drift_different_content(tmp_path):
+    data = tmp_path / "data"
+    legacy = tmp_path / "legacy"
+    data.mkdir()
+    legacy.mkdir()
+    (data / "pack.csv").write_text("name\nold\n", encoding="utf-8")
+    (legacy / "pack.csv").write_text("name\nnew\n", encoding="utf-8")
+    assert sg_config.find_legacy_csv_drift(str(data), str(legacy)) == ["pack.csv"]
+
+
+def test_find_legacy_csv_drift_absent_in_data(tmp_path):
+    data = tmp_path / "data"
+    legacy = tmp_path / "legacy"
+    data.mkdir()
+    legacy.mkdir()
+    (legacy / "only_legacy.csv").write_text("name\nZ\n", encoding="utf-8")
+    assert sg_config.find_legacy_csv_drift(str(data), str(legacy)) == [
+        "only_legacy.csv"
+    ]
+
+
+def test_find_legacy_csv_drift_ignores_non_csv_and_sorts(tmp_path):
+    data = tmp_path / "data"
+    legacy = tmp_path / "legacy"
+    data.mkdir()
+    legacy.mkdir()
+    (legacy / "notes.txt").write_text("ignore", encoding="utf-8")
+    (legacy / "z.csv").write_text("name\nz\n", encoding="utf-8")
+    (legacy / "a.csv").write_text("name\na\n", encoding="utf-8")
+    assert sg_config.find_legacy_csv_drift(str(data), str(legacy)) == ["a.csv", "z.csv"]

@@ -172,7 +172,7 @@ The panel supports fullscreen for browsing large packs:
 
 ## Style packs
 
-Style Grid ships with one small sample pack (`demo.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2409619/sfw-prompt-pack). Drop CSV files into ComfyUI's `user/style_grid/` folder to add more.
+Style Grid ships with one small sample pack (`demo.csv`) so the grid isn't empty on first install. Full style packs are distributed separately on [CivitAI](https://civitai.com/models/2409619/sfw-prompt-pack). Drop CSV files into ComfyUI's `user/style_grid/` folder to add more. Do not put the same CSV file in both `user/style_grid/` and `user/style_grid/imports/`: each copy loads as a separate source, so every style in it appears twice.
 
 ## BREAK and prompt chunking
 
@@ -203,7 +203,7 @@ is empty and the extension still has files under its legacy `data/`
 folder, Style Grid **copies** (never moves) that content into the new
 location and writes a marker file. The old `data/` folder inside the
 extension is **not** auto-deleted — remove it yourself once you confirm
-the copy looks right.
+the copy looks right. CSVs placed in the extension's `data/` folder are not loaded; Style Grid logs a startup warning when that folder holds CSVs missing from or different to `user/style_grid/`.
 
 `samples/demo.csv` (the bundled demo pack) stays inside the extension and
 is read-only by design — Edit, Move, and Delete are blocked on styles from

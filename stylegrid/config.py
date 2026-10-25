@@ -8,12 +8,19 @@ on first startup it is copied into the new root when the new root is empty.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
 from typing import Iterable
 
 logger = logging.getLogger("StyleGrid")
+
+LEGACY_CSV_DRIFT_WARN = (
+    "[Style Grid] CSVs in legacy dir %s are missing or different from %s and are not loaded: %s. "
+    "Copy them into the target dir to use them."
+)
+HASH_CHUNK_BYTES = 1024 * 1024
 
 # stylegrid/ package dir -> repo root
 PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -178,9 +185,58 @@ def _ensure_data_dirs(data_dir: str) -> None:
     os.makedirs(os.path.join(data_dir, "imports"), exist_ok=True)
 
 
+def _file_sha256(path: str) -> str | None:
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            while True:
+                chunk = fh.read(HASH_CHUNK_BYTES)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def find_legacy_csv_drift(data_dir: str, legacy_dir: str) -> list[str]:
+    """Basenames of legacy CSVs missing from or SHA256-different in data_dir (sorted)."""
+    data_abs = os.path.normpath(os.path.abspath(data_dir))
+    legacy_abs = os.path.normpath(os.path.abspath(legacy_dir))
+    if data_abs == legacy_abs or not os.path.isdir(legacy_abs):
+        return []
+    try:
+        names = sorted(
+            n for n in os.listdir(legacy_abs) if n.lower().endswith(".csv")
+        )
+    except OSError:
+        return []
+    drifted: list[str] = []
+    for name in names:
+        legacy_path = os.path.join(legacy_abs, name)
+        data_path = os.path.join(data_abs, name)
+        if not os.path.isfile(legacy_path):
+            continue
+        if not os.path.isfile(data_path):
+            drifted.append(name)
+            continue
+        left = _file_sha256(legacy_path)
+        right = _file_sha256(data_path)
+        if left is None or right is None:
+            continue
+        if left != right:
+            drifted.append(name)
+    return drifted
+
+
 # Resolved once at import (ComfyUI startup / pytest import).
 DATA_DIR = resolve_user_data_dir()
 migrate_legacy_user_data(DATA_DIR, LEGACY_DATA_DIR)
+_drifted = find_legacy_csv_drift(DATA_DIR, LEGACY_DATA_DIR)
+if _drifted:
+    logger.warning(
+        LEGACY_CSV_DRIFT_WARN, LEGACY_DATA_DIR, DATA_DIR, ", ".join(_drifted)
+    )
 _ensure_data_dirs(DATA_DIR)
 
 IMPORTS_DIR = os.path.join(DATA_DIR, "imports")
