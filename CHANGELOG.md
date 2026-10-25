@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.14 — 2026-10-25
+
+### Fixed
+- **Console flood on open:** opening Style Grid no longer emits one WARNING per cross-pack duplicate style name (tens of thousands of lines with large multi-pack libraries). Cross-pack same names remain legal; identity is `(source_file, name)`. At most one DEBUG count line is logged per catalog load.
+- **Triple CSV reload on open:** `normalize_presets` reads styles through the in-memory cache instead of calling `load_all_styles()` again, so a modal open parses the catalog once when files are unchanged.
+- **Shared cache mutation:** categorization enriches shallow copies (`enrich_style`) instead of writing `category` / `display_name` / `has_placeholder` into cached style dicts. The node builds its wildcard pool from those copies in cache order so seeded `{sg:}` / `{sgd:}` picks stay stable.
+
+### Added
+- **Legacy `data/` CSVs:** startup warns when the extension folder still holds style CSVs that are not loaded after migration to the ComfyUI user data directory.
+
 ## 0.0.13 — 2026-10-25
 
 ### Fixed
