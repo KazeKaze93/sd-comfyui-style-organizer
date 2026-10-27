@@ -14,6 +14,7 @@ import {
   type CorruptDataInfo,
 } from '../lib/parseCorruptData'
 import { tagKeySet } from '../lib/tagIdentity'
+import { isSourceId, sourceLeaf } from '../lib/styleIdentity'
 
 /** Avoid toast spam: categories() runs during render while coverage stays low. */
 let categoryOrderCoverageToastShown = false
@@ -255,10 +256,11 @@ export function resolvePresetStyleEntry(
 }
 
 /**
- * Upgrade legacy bare-name favorites/recent entries to styleRowKey composites.
- * Entries that already contain '\0' are kept. Bare names resolve only when
- * exactly one library row matches; 2+ matches -> ambiguous, 0 -> missing
- * (never assigned to the first pack).
+ * Upgrade legacy favorites/recent entries to styleRowKey composites.
+ * Composite entries: exact catalog hit or source-id kept as stored; abs/other
+ * remapped only when exactly one catalog row shares name + source leaf.
+ * Bare names resolve only when exactly one library row matches; 2+ -> ambiguous,
+ * 0 -> missing (never assigned to the first pack).
  */
 export function migrateLegacyNameKeys(
   entries: string[],
@@ -270,21 +272,42 @@ export function migrateLegacyNameKeys(
   const seenKeys = new Set<string>()
   const seenAmbiguous = new Set<string>()
   const seenMissing = new Set<string>()
+  const catalogKeys = new Set(styles.map((s) => styleRowKey(s)))
+  const pushKey = (key: string) => {
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key)
+      keys.push(key)
+    }
+  }
   for (const entry of entries) {
     if (entry.includes('\0')) {
-      if (!seenKeys.has(entry)) {
-        seenKeys.add(entry)
-        keys.push(entry)
+      const sep = entry.indexOf('\0')
+      const sourcePart = entry.slice(0, sep)
+      const name = entry.slice(sep + 1)
+      if (catalogKeys.has(entry) || isSourceId(sourcePart)) {
+        pushKey(entry)
+        continue
+      }
+      const leaf = sourceLeaf(sourcePart)
+      const candidates = styles.filter(
+        (s) => s.name === name && sourceLeaf(s.source_file) === leaf,
+      )
+      if (candidates.length === 1) {
+        pushKey(styleRowKey(candidates[0]))
+      } else if (candidates.length > 1) {
+        if (!seenAmbiguous.has(entry)) {
+          seenAmbiguous.add(entry)
+          ambiguous.push(entry)
+        }
+      } else if (!seenMissing.has(entry)) {
+        seenMissing.add(entry)
+        missing.push(entry)
       }
       continue
     }
     const matches = styles.filter((s) => s.name === entry)
     if (matches.length === 1) {
-      const key = styleRowKey(matches[0])
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key)
-        keys.push(key)
-      }
+      pushKey(styleRowKey(matches[0]))
     } else if (matches.length > 1) {
       if (!seenAmbiguous.has(entry)) {
         seenAmbiguous.add(entry)
@@ -410,17 +433,15 @@ export function dedupeStylesByNameForAllSources(styles: Style[]): Style[] {
   })
 }
 
-/** Map persisted or UI source string to an entry in `sources` (exact match, else basename). */
+/** Map persisted or UI source string to an entry in `sources` (exact, else unique leaf). */
 function resolveSourceInList(sources: string[], preferred: string | null): string | null {
   if (!preferred || sources.length === 0) return null
   if (sources.includes(preferred)) return preferred
-  const key = (s: string) => {
-    const base = s.replace(/\\/g, '/').split('/').pop() ?? s
-    return base.replace(/\.csv$/i, '').toLowerCase()
-  }
-  const k = key(preferred)
-  const found = sources.find((s) => key(s) === k)
-  return found ?? null
+  // Source ids that miss exactly must not collapse across packs by basename.
+  if (isSourceId(preferred)) return null
+  const leaf = sourceLeaf(preferred)
+  const matches = sources.filter((s) => sourceLeaf(s) === leaf)
+  return matches.length === 1 ? matches[0] : null
 }
 
 /**
@@ -750,7 +771,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       normalized.map(s => s.source_file).filter(Boolean)
     )].sort()
 
-    // Restore selection: exact match can fail when host path strings differ from LS (basename must match)
+    // Restore selection: exact match, else unique leaf for legacy abs paths only
     const lastSource = localStorage.getItem('sg_v2_last_source')
     const prevActive = get().activeSource
     const activeSource =
@@ -788,6 +809,28 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const favorites = new Set(favMig.keys)
     const recentNames = recentMig.keys
 
+    // Copy abs-path thumb version keys onto unique source-id remaps (never delete old LS keys).
+    const catalogKeys = new Set(normalized.map((s) => styleRowKey(s)))
+    const prevThumbs = get().thumbVersions
+    let nextThumbs: Record<string, string> | null = null
+    for (const [key, version] of Object.entries(prevThumbs)) {
+      if (!key.includes('\0')) continue
+      if (catalogKeys.has(key)) continue
+      const sep = key.indexOf('\0')
+      const sourcePart = key.slice(0, sep)
+      if (isSourceId(sourcePart)) continue
+      const name = key.slice(sep + 1)
+      const leaf = sourceLeaf(sourcePart)
+      const candidates = normalized.filter(
+        (s) => s.name === name && sourceLeaf(s.source_file) === leaf,
+      )
+      if (candidates.length !== 1) continue
+      const newKey = styleRowKey(candidates[0])
+      if (nextThumbs === null) nextThumbs = { ...prevThumbs }
+      nextThumbs[newKey] = version
+      localStorage.setItem(`${THUMB_VERSION_LS_PREFIX}${newKey}`, version)
+    }
+
     const patch: Partial<StylesStore> = {
       styles: normalized,
       sources,
@@ -797,6 +840,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       duplicatesByName: buildDuplicatesByName(normalized),
       searchTextByKey: buildSearchTextByKey(normalized),
     }
+    if (nextThumbs) patch.thumbVersions = nextThumbs
     if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
       patch.activeCategory = null
     }
@@ -805,7 +849,14 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
     set(patch)
 
-    const ambiguousNames = [...new Set([...favMig.ambiguous, ...recentMig.ambiguous])].sort()
+    const ambiguousNames = [
+      ...new Set(
+        [...favMig.ambiguous, ...recentMig.ambiguous].map((e) => {
+          const i = e.indexOf('\0')
+          return i < 0 ? e : e.slice(i + 1)
+        }),
+      ),
+    ].sort()
     if (ambiguousNames.length > 0) {
       const signature = ambiguousNames.join('\n')
       if (signature !== lastAmbiguousToastSignature) {
@@ -823,8 +874,10 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       }
     }
 
-    if (activeSource) {
+    if (activeSource && activeSource !== lastSource) {
       localStorage.setItem('sg_v2_last_source', activeSource)
+    }
+    if (activeSource) {
       sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
     }
     // List endpoint returns names only (not name+source); merge flags after catalog lands.

@@ -1,5 +1,26 @@
 import type { Style } from '../bridge'
 
+/** True when value looks like `<prefix>/<leaf.csv>` with a known lowercase prefix. */
+export function isSourceId(s: string): boolean {
+  if (typeof s !== 'string' || !s) return false
+  const slash = s.indexOf('/')
+  if (slash <= 0) return false
+  const prefix = s.slice(0, slash)
+  const leaf = s.slice(slash + 1)
+  if (prefix !== 'data' && prefix !== 'imports' && prefix !== 'samples') return false
+  if (!leaf || leaf === '.' || leaf === '..') return false
+  if (leaf.includes('/') || leaf.includes('\\') || leaf.includes(':') || leaf.includes('\0')) {
+    return false
+  }
+  return leaf.toLowerCase().endsWith('.csv')
+}
+
+/** Last path segment after `/` or `\`, lowercased. */
+export function sourceLeaf(s: string): string {
+  const base = s.replace(/\\/g, '/').split('/').pop() ?? s
+  return base.toLowerCase()
+}
+
 /** Same composite as stylesStore.styleRowKey — kept here so tests stay free of the store. */
 export function styleIdentityKey(name: string, sourceFile: string): string {
   return `${sourceFile}\0${name}`

@@ -35,8 +35,9 @@ function row(
   }
 }
 
-const FILE_A = 'a.csv'
-const FILE_B = 'b.csv'
+/** Id-form source_file as emitted by the server since dbe3f77. */
+const FILE_A = 'data/a.csv'
+const FILE_B = 'imports/b.csv'
 
 function resetStore() {
   localStorage.clear()
@@ -57,6 +58,7 @@ function resetStore() {
     activePresetName: null,
     styleContributors: {},
     activeWildcards: [],
+    thumbVersions: {},
   })
   vi.mocked(sendToHost).mockClear()
 }
@@ -129,7 +131,7 @@ describe('style identity (name, source_file)', () => {
     )
   })
 
-  it('unapply A sends source_file a.csv; B stays selected', () => {
+  it('unapply A sends source_file data/a.csv; B stays selected', () => {
     const a = row('X', FILE_A, { prompt: 'from-a' })
     const b = row('X', FILE_B, { prompt: 'from-b' })
     useStylesStore.getState().setStyles([a, b])
@@ -267,5 +269,91 @@ describe('style identity (name, source_file)', () => {
     )
 
     toastSpy.mockRestore()
+  })
+
+  it('remaps abs-path favorite to unique source id and persists', () => {
+    const a = row('X', 'data/a.csv', { prompt: 'from-a' })
+    const b = row('X', 'imports/b.csv', { prompt: 'from-b' })
+    const legacy = 'D:\\old\\style_grid\\a.csv\0X'
+    localStorage.setItem('sg_v2_favorites', JSON.stringify([legacy]))
+    useStylesStore.getState().setStyles([a, b])
+
+    const want = styleRowKey(a)
+    expect(useStylesStore.getState().favorites.has(want)).toBe(true)
+    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(want)
+    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).not.toContain(legacy)
+    expect(
+      filterFavoriteStyles([a, b], '', null, useStylesStore.getState().favorites),
+    ).toEqual([a])
+  })
+
+  it('keeps abs composite when leaf matches two packs; toasts name only', async () => {
+    const a = row('X', 'data/a.csv', { prompt: 'from-a' })
+    const b = row('X', 'imports/a.csv', { prompt: 'from-b' })
+    const legacy = 'D:\\old\\style_grid\\a.csv\0X'
+    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
+    localStorage.setItem('sg_v2_favorites', JSON.stringify([legacy]))
+    useStylesStore.getState().setStyles([a, b])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(legacy)
+    expect(useStylesStore.getState().favorites.has(legacy)).toBe(false)
+    expect(useStylesStore.getState().favorites.has(styleRowKey(a))).toBe(false)
+    const toasts = toastSpy.mock.calls.filter(([msg]) =>
+      String(msg).includes('match styles in several packs'),
+    )
+    expect(toasts).toHaveLength(1)
+    expect(String(toasts[0][0])).toContain('X')
+    expect(String(toasts[0][0])).not.toMatch(/D:\\|style_grid|data\/a|imports\/a/i)
+    toastSpy.mockRestore()
+  })
+
+  it('keeps id composite when that pack is unloaded; no toast, no remap to other pack', async () => {
+    const other = row('X', 'imports/gone.csv', { prompt: 'from-imports' })
+    const stored = 'data/gone.csv\0X'
+    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
+    localStorage.setItem('sg_v2_favorites', JSON.stringify([stored]))
+    useStylesStore.getState().setStyles([other])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(stored)
+    expect(useStylesStore.getState().favorites.has(stored)).toBe(true)
+    expect(useStylesStore.getState().favorites.has(styleRowKey(other))).toBe(false)
+    expect(toastSpy).not.toHaveBeenCalled()
+    toastSpy.mockRestore()
+  })
+
+  it('restores sg_v2_last_source by unique leaf; ambiguous leaf stays null', () => {
+    const pack = row('X', 'imports/pack.csv')
+    const other = row('Y', 'data/other.csv')
+    localStorage.setItem('sg_v2_last_source', 'C:\\x\\imports\\pack.csv')
+    useStylesStore.getState().setStyles([other, pack])
+    expect(useStylesStore.getState().activeSource).toBe('imports/pack.csv')
+    expect(localStorage.getItem('sg_v2_last_source')).toBe('imports/pack.csv')
+
+    resetStore()
+    localStorage.setItem('sg_v2_last_source', 'C:\\x\\imports\\pack.csv')
+    const dataPack = row('X', 'data/pack.csv')
+    const importsPack = row('X', 'imports/pack.csv')
+    useStylesStore.getState().setStyles([dataPack, importsPack])
+    expect(useStylesStore.getState().activeSource).toBeNull()
+    expect(localStorage.getItem('sg_v2_last_source')).toBe('C:\\x\\imports\\pack.csv')
+  })
+
+  it('copies abs thumb version key to unique source-id key without deleting old', () => {
+    const a = row('X', 'data/a.csv')
+    const b = row('X', 'imports/b.csv')
+    const absKey = 'D:\\old\\style_grid\\a.csv\0X'
+    const newKey = styleRowKey(a)
+    localStorage.setItem(`sg_thumb_v_${absKey}`, 'v42')
+    useStylesStore.setState({ thumbVersions: { [absKey]: 'v42' } })
+    useStylesStore.getState().setStyles([a, b])
+
+    expect(localStorage.getItem(`sg_thumb_v_${absKey}`)).toBe('v42')
+    expect(localStorage.getItem(`sg_thumb_v_${newKey}`)).toBe('v42')
+    expect(useStylesStore.getState().thumbVersions[newKey]).toBe('v42')
+    expect(useStylesStore.getState().thumbVersions[absKey]).toBe('v42')
   })
 })
