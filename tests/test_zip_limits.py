@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import struct
 import zipfile
 
 import pytest
@@ -70,3 +71,25 @@ def test_reject_too_many_entries_custom_cap():
     with _zip_with_entries([("a.csv", b"hello"), ("b.csv", b"world")]) as zf:
         with pytest.raises(BackupZipLimitError, match="too many entries"):
             validate_backup_zip_limits(zf, max_entry_count=1)
+
+
+def test_under_declared_uncompressed_size_stays_bounded():
+    # CPython truncates inflate at ZipInfo.file_size, so under-declared sizes cannot inflate past that.
+    payload = b"\x00" * (5 * 1024 * 1024)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("bomb.csv", payload)
+    data = bytearray(buf.getvalue())
+
+    local_off = data.find(b"PK\x03\x04")
+    assert local_off >= 0
+    struct.pack_into("<I", data, local_off + 22, 10)
+
+    cd_off = data.find(b"PK\x01\x02")
+    assert cd_off >= 0
+    struct.pack_into("<I", data, cd_off + 24, 10)
+
+    with zipfile.ZipFile(io.BytesIO(bytes(data)), "r") as zf:
+        validate_backup_zip_limits(zf)  # declared total is 10 bytes
+        with pytest.raises(zipfile.BadZipFile):
+            zf.read("bomb.csv")

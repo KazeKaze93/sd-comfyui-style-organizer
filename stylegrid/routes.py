@@ -43,6 +43,13 @@ from .thumbnails import (
     get_thumbnail_path,
     list_thumbnails,
 )
+from .http_limits import (
+    IMPORT_BODY_MAX_BYTES,
+    JSON_BODY_MAX_BYTES,
+    THUMBNAIL_UPLOAD_BODY_MAX_BYTES,
+    RequestBodyTooLarge,
+    read_body_capped,
+)
 from .zip_limits import BackupZipLimitError, validate_backup_zip_limits
 
 
@@ -167,10 +174,27 @@ def detect_conflicts(style_names):
     return conflicts
 
 
-async def _read_json(request):
+# Real aiohttp exposes this; test stubs may not. Fall back so import still works.
+_HTTPRequestEntityTooLarge = getattr(web, "HTTPRequestEntityTooLarge", RequestBodyTooLarge)
+
+
+async def _read_body_capped(request, max_bytes: int) -> bytes:
+    """Read the request body with a hard byte cap; oversize becomes HTTP 413."""
+    try:
+        return await read_body_capped(request, max_bytes)
+    except RequestBodyTooLarge as exc:
+        if _HTTPRequestEntityTooLarge is RequestBodyTooLarge:
+            raise
+        raise _HTTPRequestEntityTooLarge(
+            max_size=exc.max_size,
+            actual_size=exc.actual_size,
+        ) from exc
+
+
+async def _read_json(request, max_bytes: int = JSON_BODY_MAX_BYTES):
     """Parse request body as JSON, returning {} on empty/invalid body."""
     try:
-        raw = await request.read()
+        raw = await _read_body_capped(request, max_bytes)
         if not raw:
             return {}
         return json.loads(raw.decode("utf-8"))
@@ -247,12 +271,12 @@ def _register_style_routes(routes):
 
     @routes.post("/style_grid/import")
     async def api_import(request):
-        raw = await request.read()
+        try:
+            raw = await _read_body_capped(request, IMPORT_BODY_MAX_BYTES)
+        except _HTTPRequestEntityTooLarge:
+            return web.json_response({"error": "Import too large (max 50MB)"})
         if not raw:
             return web.json_response({"error": "No importable data found in file"})
-        max_import = 50 * 1024 * 1024
-        if len(raw) > max_import:
-            return web.json_response({"error": "Import too large (max 50MB)"})
         if len(raw) >= 2 and raw[:2] == b"PK":
             try:
                 with zipfile.ZipFile(BytesIO(raw)) as zf:
@@ -627,7 +651,7 @@ def _register_thumbnail_routes(routes):
 
     @routes.post("/style_grid/thumbnail/upload")
     async def api_upload_thumbnail(request):
-        data = await _read_json(request)
+        data = await _read_json(request, max_bytes=THUMBNAIL_UPLOAD_BODY_MAX_BYTES)
         style_name = data.get("name", "").strip()
         image_data = data.get("image", "")
         csv_path = (data.get("source") or data.get("csv_path") or "").strip()
