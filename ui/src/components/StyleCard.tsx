@@ -81,7 +81,7 @@ export const StyleCard = memo(function StyleCard({
     useShallow((s) => ({
       isSelected: s.selectedKeySet.has(key),
       duplicates: s.duplicatesByName.get(style.name) ?? EMPTY_DUPLICATES,
-      fav: s.favorites.has(style.name),
+      fav: s.favorites.has(styleRowKey(style)),
       borderColor: getCategoryColor(style.category || 'OTHER', s.themeMode),
     })),
   )
@@ -263,7 +263,7 @@ export const StyleCard = memo(function StyleCard({
           <MenuItem
             className="flex items-center gap-2"
             onSelect={() => {
-              useStylesStore.getState().toggleFavorite(style.name)
+              useStylesStore.getState().toggleFavorite(style)
               closeMenu()
             }}
           >
@@ -491,7 +491,11 @@ export const StyleCard = memo(function StyleCard({
                   `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
                   { method: 'DELETE' },
                 ).catch(() => { /* best-effort, style delete already succeeded */ })
-                sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+                sendToHost({
+                  type: 'SG_UNAPPLY',
+                  styleId: displayStyle.name,
+                  source_file: displayStyle.source_file,
+                })
                 useStylesStore.getState().removeStyleRow(displayStyle)
                 showToast(`Deleted "${displayStyle.name}"`, 'success')
                 setPendingDelete(false)
@@ -660,12 +664,17 @@ export const StyleCard = memo(function StyleCard({
               // node widgets — nothing else refreshes them on edit. Swap
               // so the canvas text matches the saved style.
               if (wasSelected) {
-                sendToHost({ type: 'SG_UNAPPLY', styleId: displayStyle.name })
+                sendToHost({
+                  type: 'SG_UNAPPLY',
+                  styleId: displayStyle.name,
+                  source_file: displayStyle.source_file,
+                })
                 sendToHost({
                   type: 'SG_APPLY',
                   styleId: displayStyle.name,
                   prompt: updated.prompt,
                   neg: updated.negative_prompt,
+                  source_file: displayStyle.source_file,
                 })
               }
               useStylesStore.getState().detectConflicts()

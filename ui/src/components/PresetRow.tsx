@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   resolvePresetMembers,
   styleDisplayName,
+  styleRowKey,
   useStylesStore,
   type PresetRecord,
   type ResolvedPresetMember,
@@ -61,7 +62,9 @@ export function PresetRow({ name, preset }: Props) {
   )
   const activeWcKeys = new Set(activeWildcards.map((w) => wildcardKey(w.category, w.spec, w.kind)))
   const isActive = foundMembers.length > 0 &&
-    foundMembers.every((m) => selectedStyles.some((s) => s.name === m.style.name)) &&
+    foundMembers.every((m) =>
+      selectedStyles.some((s) => styleRowKey(s) === styleRowKey(m.style)),
+    ) &&
     [...presetWcKeys].every((k) => activeWcKeys.has(k))
 
   useLayer(renameOpen, () => {

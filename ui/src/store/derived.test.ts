@@ -200,26 +200,26 @@ describe('derived: addToRecent coalesce', () => {
     resetDerivedStore()
   })
 
-  it('keeps recentNames ref when head name is already the style', () => {
+  it('keeps recentNames ref when head key is already the style', () => {
     const a = row('BODY_Ears', FILE_A)
     const b = row('HAIR_Long', FILE_B, { category: 'HAIR' })
     useStylesStore.getState().setStyles([a, b])
 
     useStylesStore.getState().toggleStyle(a)
     const afterFirst = useStylesStore.getState().recentNames
-    expect(afterFirst[0]).toBe(a.name)
+    expect(afterFirst[0]).toBe(styleRowKey(a))
 
-    useStylesStore.getState().toggleStyle(a) // deselect — must not touch recent
+    useStylesStore.getState().toggleStyle(a) // deselect: must not touch recent
     expect(useStylesStore.getState().recentNames).toBe(afterFirst)
 
-    useStylesStore.getState().toggleStyle(a) // re-select — already head → no-op
+    useStylesStore.getState().toggleStyle(a) // re-select: already head -> no-op
     expect(useStylesStore.getState().recentNames).toBe(afterFirst)
 
     useStylesStore.getState().toggleStyle(b)
     const afterB = useStylesStore.getState().recentNames
     expect(afterB).not.toBe(afterFirst)
-    expect(afterB[0]).toBe(b.name)
-    expect(afterB[1]).toBe(a.name)
+    expect(afterB[0]).toBe(styleRowKey(b))
+    expect(afterB[1]).toBe(styleRowKey(a))
   })
 })
 

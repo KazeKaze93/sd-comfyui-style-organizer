@@ -15,11 +15,12 @@ export type HostMessage =
 /** Messages sent from the React iframe back to ComfyUI host extension (web/js/style_grid.js). */
 export type FrameMessage =
   | { type: 'SG_READY' }
-  | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; source_file?: string }
-  | { type: 'SG_UNAPPLY';       styleId: string; source_file?: string }
+  | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; source_file: string }
+  | { type: 'SG_UNAPPLY';       styleId: string; source_file: string }
   | { type: 'SG_WILDCARD_CATEGORY'; category: string; kind?: WildcardKind }
   | { type: 'SG_WILDCARD_SLICE'; category: string; spec: string; kind?: WildcardKind }
   | { type: 'SG_REMOVE_WILDCARD'; category: string; spec: string; kind?: WildcardKind }
+  /** styleIds are styleRowKey values (`source_file\\0name`). */
   | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
   | { type: 'SG_REORDER_WILDCARDS'; categories: WildcardRef[] }
   | { type: 'SG_CLOSE_REQUEST' }
