@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.0.15 - 2026-10-27
+
+### Fixed
+- **Same-named styles from different packs:** applying, removing, starring, Recent and presets now track the pack each style came from. Removing a style no longer strips tags that belong to a same-named style from another pack, and an ambiguous remove leaves the prompt untouched with a notice instead of guessing.
+- **Favorites after upgrade:** favorites from earlier versions are linked automatically. A style whose name exists in several packs with identical content is starred in each of them; names whose content differs between packs are listed once in a notice so you can star the right pack again. Nothing is deleted.
+- **Moving your ComfyUI folder:** favorites, presets and thumbnails stay linked after the install is moved or renamed. Packs are now identified by a short id such as `data/pack.csv`, `imports/pack.csv` or `samples/pack.csv`; `presets.json` is updated to these ids once at startup (the previous file is kept as a backup).
+- **Conflict badge:** weighted tags such as `(pale skin:1.2)` are now recognized as the same tag as `pale skin`, matching what the node drops from the negative at generation.
+- **Deleting a missing style** returns "not found" instead of a server error.
+
+### Changed
+- **Empty slices:** a slice wildcard such as `{sg:body:Name}` whose names match no style now resolves to nothing instead of picking from the whole category.
+- **Wildcard warnings on screen:** empty slices and unknown or empty categories are reported in a Style Grid notice after the run. On frontends without the notice API they are written to the browser console.
+- **Request size limits** on the Style Grid API (2 MB for most requests, 16 MB for thumbnail uploads, 50 MB for imports).
+- **Path privacy:** the API no longer returns full file system paths of your packs or data files.
+- Removed the unused `/style_grid/conflicts` endpoint.
+
+Compatibility: node inputs and outputs are unchanged and existing workflows load as before. Workflows that relied on an empty slice falling back to the whole category now get no pick from that token.
+
 ## 0.0.14 — 2026-10-25
 
 ### Fixed
