@@ -255,28 +255,55 @@ export function resolvePresetStyleEntry(
   return matches.length === 1 ? matches[0] : undefined
 }
 
+function sameContent(a: Style, b: Style): boolean {
+  return (a.prompt ?? '') === (b.prompt ?? '')
+    && (a.negative_prompt ?? '') === (b.negative_prompt ?? '')
+}
+
 /**
  * Upgrade legacy favorites/recent entries to styleRowKey composites.
  * Composite entries: exact catalog hit or source-id kept as stored; abs/other
- * remapped only when exactly one catalog row shares name + source leaf.
- * Bare names resolve only when exactly one library row matches; 2+ -> ambiguous,
- * 0 -> missing (never assigned to the first pack).
+ * remapped by name + source leaf. Multi-pack candidates with identical prompt
+ * and negative_prompt link to every pack when linkIdenticalToAll, else sit in
+ * `identical` (no toast). Diverging content stays ambiguous. Bare names: unique
+ * upgrades; 0 -> missing (never assigned to the first pack).
  */
 export function migrateLegacyNameKeys(
   entries: string[],
   styles: Style[],
-): { keys: string[]; ambiguous: string[]; missing: string[] } {
+  options?: { linkIdenticalToAll?: boolean },
+): { keys: string[]; ambiguous: string[]; missing: string[]; identical: string[] } {
   const keys: string[] = []
   const ambiguous: string[] = []
   const missing: string[] = []
+  const identical: string[] = []
   const seenKeys = new Set<string>()
   const seenAmbiguous = new Set<string>()
   const seenMissing = new Set<string>()
+  const seenIdentical = new Set<string>()
   const catalogKeys = new Set(styles.map((s) => styleRowKey(s)))
+  const linkIdenticalToAll = Boolean(options?.linkIdenticalToAll)
   const pushKey = (key: string) => {
     if (!seenKeys.has(key)) {
       seenKeys.add(key)
       keys.push(key)
+    }
+  }
+  const resolveMulti = (entry: string, candidates: Style[]) => {
+    const first = candidates[0]
+    const allIdentical = candidates.every((c) => sameContent(first, c))
+    if (allIdentical) {
+      if (linkIdenticalToAll) {
+        for (const c of candidates) pushKey(styleRowKey(c))
+      } else if (!seenIdentical.has(entry)) {
+        seenIdentical.add(entry)
+        identical.push(entry)
+      }
+      return
+    }
+    if (!seenAmbiguous.has(entry)) {
+      seenAmbiguous.add(entry)
+      ambiguous.push(entry)
     }
   }
   for (const entry of entries) {
@@ -295,10 +322,7 @@ export function migrateLegacyNameKeys(
       if (candidates.length === 1) {
         pushKey(styleRowKey(candidates[0]))
       } else if (candidates.length > 1) {
-        if (!seenAmbiguous.has(entry)) {
-          seenAmbiguous.add(entry)
-          ambiguous.push(entry)
-        }
+        resolveMulti(entry, candidates)
       } else if (!seenMissing.has(entry)) {
         seenMissing.add(entry)
         missing.push(entry)
@@ -309,16 +333,13 @@ export function migrateLegacyNameKeys(
     if (matches.length === 1) {
       pushKey(styleRowKey(matches[0]))
     } else if (matches.length > 1) {
-      if (!seenAmbiguous.has(entry)) {
-        seenAmbiguous.add(entry)
-        ambiguous.push(entry)
-      }
+      resolveMulti(entry, matches)
     } else if (!seenMissing.has(entry)) {
       seenMissing.add(entry)
       missing.push(entry)
     }
   }
-  return { keys, ambiguous, missing }
+  return { keys, ambiguous, missing, identical }
 }
 
 /** Session guard so the ambiguous-legacy toast does not repeat on every SG_INIT. */
@@ -794,10 +815,24 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         return [...get().recentNames]
       }
     })()
-    const favMig = migrateLegacyNameKeys(prevFavEntries, normalized)
-    const recentMig = migrateLegacyNameKeys(prevRecentEntries, normalized)
-    const nextFavStore = [...favMig.keys, ...favMig.ambiguous, ...favMig.missing]
-    const nextRecentStore = [...recentMig.keys, ...recentMig.ambiguous, ...recentMig.missing]
+    const favMig = migrateLegacyNameKeys(prevFavEntries, normalized, {
+      linkIdenticalToAll: true,
+    })
+    const recentMig = migrateLegacyNameKeys(prevRecentEntries, normalized, {
+      linkIdenticalToAll: false,
+    })
+    const nextFavStore = [
+      ...favMig.keys,
+      ...favMig.ambiguous,
+      ...favMig.missing,
+      ...favMig.identical,
+    ]
+    const nextRecentStore = [
+      ...recentMig.keys,
+      ...recentMig.ambiguous,
+      ...recentMig.missing,
+      ...recentMig.identical,
+    ]
     const prevFavStore = JSON.stringify(prevFavEntries)
     const prevRecentStore = JSON.stringify(prevRecentEntries)
     if (JSON.stringify(nextFavStore) !== prevFavStore) {
@@ -853,7 +888,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
 
     const ambiguousNames = [
       ...new Set(
-        [...favMig.ambiguous, ...recentMig.ambiguous].map((e) => {
+        favMig.ambiguous.map((e) => {
           const i = e.indexOf('\0')
           return i < 0 ? e : e.slice(i + 1)
         }),
@@ -863,13 +898,13 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       const signature = ambiguousNames.join('\n')
       if (signature !== lastAmbiguousToastSignature) {
         lastAmbiguousToastSignature = signature
-        const shown = ambiguousNames.slice(0, 10)
+        const shown = ambiguousNames.slice(0, 5)
         const extra = ambiguousNames.length - shown.length
         const list = shown.join(', ') + (extra > 0 ? ` (+${extra} more)` : '')
         const n = ambiguousNames.length
         queueMicrotask(() => {
           get().showToast(
-            `${n} favorites or recent entries match styles in several packs and were not linked: ${list}. Star the right pack again.`,
+            `${n} favorites match styles that differ between packs and were not linked: ${list}. Star the right pack again.`,
             'info',
           )
         })
