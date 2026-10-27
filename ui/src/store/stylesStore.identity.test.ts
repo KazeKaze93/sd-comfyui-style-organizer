@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Style } from '../bridge'
 import { sendToHost } from '../bridge'
 import {
+  __resetAmbiguousToastForTests,
   FAVORITES_VIEW,
   filterFavoriteStyles,
   migrateLegacyNameKeys,
@@ -62,6 +63,7 @@ function resetStore() {
 
 describe('style identity (name, source_file)', () => {
   beforeEach(() => {
+    __resetAmbiguousToastForTests()
     resetStore()
   })
 
@@ -175,16 +177,17 @@ describe('style identity (name, source_file)', () => {
     expect(useStylesStore.getState().selectedStyles).toHaveLength(0)
   })
 
-  it('migrateLegacyNameKeys: unique upgrades; ambiguous stays unresolved', () => {
+  it('migrateLegacyNameKeys: unique upgrades; ambiguous and missing stay separate', () => {
     const unique = row('CAMERA_Closeup', FILE_A)
     const a = row('X', FILE_A)
     const b = row('X', FILE_B)
     const migrated = migrateLegacyNameKeys(
-      ['CAMERA_Closeup', 'X', styleRowKey(a)],
+      ['CAMERA_Closeup', 'X', 'GONE', styleRowKey(a)],
       [unique, a, b],
     )
     expect(migrated.keys).toEqual([styleRowKey(unique), styleRowKey(a)])
-    expect(migrated.unresolved).toEqual(['X'])
+    expect(migrated.ambiguous).toEqual(['X'])
+    expect(migrated.missing).toEqual(['GONE'])
     expect(migrated.keys).not.toContain(styleRowKey(b))
   })
 
@@ -203,5 +206,50 @@ describe('style identity (name, source_file)', () => {
     )
     expect(useStylesStore.getState().favorites.has(styleRowKey(b))).toBe(true)
     expect(useStylesStore.getState().activeCategory).not.toBe(FAVORITES_VIEW)
+  })
+
+  it('toasts ambiguous bare names once per signature; missing never toasts', async () => {
+    const a = row('X', FILE_A, { prompt: 'from-a' })
+    const b = row('X', FILE_B, { prompt: 'from-b' })
+    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
+
+    localStorage.setItem('sg_v2_favorites', JSON.stringify(['X']))
+    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const ambiguousToasts = toastSpy.mock.calls.filter(([msg]) =>
+      String(msg).includes('match styles in several packs'),
+    )
+    expect(ambiguousToasts).toHaveLength(1)
+
+    localStorage.setItem(
+      'sg_v2_favorites',
+      JSON.stringify(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]').concat(['Y'])),
+    )
+    const c = row('Y', FILE_A, { prompt: 'y-a' })
+    const d = row('Y', FILE_B, { prompt: 'y-b' })
+    useStylesStore.getState().setStyles([a, b, c, d])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const afterY = toastSpy.mock.calls.filter(([msg]) =>
+      String(msg).includes('match styles in several packs'),
+    )
+    expect(afterY).toHaveLength(2)
+    expect(String(afterY[1][0])).toContain('Y')
+
+    toastSpy.mockClear()
+    localStorage.setItem('sg_v2_favorites', JSON.stringify(['MISSING_ONLY']))
+    useStylesStore.getState().setStyles([a, b])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(toastSpy).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(
+      'MISSING_ONLY',
+    )
+
+    toastSpy.mockRestore()
   })
 })

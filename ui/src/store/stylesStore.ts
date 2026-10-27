@@ -256,17 +256,19 @@ export function resolvePresetStyleEntry(
 /**
  * Upgrade legacy bare-name favorites/recent entries to styleRowKey composites.
  * Entries that already contain '\0' are kept. Bare names resolve only when
- * exactly one library row matches; ambiguous or missing names go to unresolved
+ * exactly one library row matches; 2+ matches -> ambiguous, 0 -> missing
  * (never assigned to the first pack).
  */
 export function migrateLegacyNameKeys(
   entries: string[],
   styles: Style[],
-): { keys: string[]; unresolved: string[] } {
+): { keys: string[]; ambiguous: string[]; missing: string[] } {
   const keys: string[] = []
-  const unresolved: string[] = []
+  const ambiguous: string[] = []
+  const missing: string[] = []
   const seenKeys = new Set<string>()
-  const seenUnresolved = new Set<string>()
+  const seenAmbiguous = new Set<string>()
+  const seenMissing = new Set<string>()
   for (const entry of entries) {
     if (entry.includes('\0')) {
       if (!seenKeys.has(entry)) {
@@ -282,12 +284,25 @@ export function migrateLegacyNameKeys(
         seenKeys.add(key)
         keys.push(key)
       }
-    } else if (!seenUnresolved.has(entry)) {
-      seenUnresolved.add(entry)
-      unresolved.push(entry)
+    } else if (matches.length > 1) {
+      if (!seenAmbiguous.has(entry)) {
+        seenAmbiguous.add(entry)
+        ambiguous.push(entry)
+      }
+    } else if (!seenMissing.has(entry)) {
+      seenMissing.add(entry)
+      missing.push(entry)
     }
   }
-  return { keys, unresolved }
+  return { keys, ambiguous, missing }
+}
+
+/** Session guard so the ambiguous-legacy toast does not repeat on every SG_INIT. */
+let lastAmbiguousToastSignature: string | null = null
+
+/** Test-only: clear the once-per-session ambiguous toast signature. */
+export function __resetAmbiguousToastForTests(): void {
+  lastAmbiguousToastSignature = null
 }
 
 function readLsStringArray(lsKey: string): string[] {
@@ -764,8 +779,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })()
     const favMig = migrateLegacyNameKeys(prevFavEntries, normalized)
     const recentMig = migrateLegacyNameKeys(prevRecentEntries, normalized)
-    const nextFavStore = [...favMig.keys, ...favMig.unresolved]
-    const nextRecentStore = [...recentMig.keys, ...recentMig.unresolved]
+    const nextFavStore = [...favMig.keys, ...favMig.ambiguous, ...favMig.missing]
+    const nextRecentStore = [...recentMig.keys, ...recentMig.ambiguous, ...recentMig.missing]
     const prevFavStore = JSON.stringify(prevFavEntries)
     const prevRecentStore = JSON.stringify(prevRecentEntries)
     if (JSON.stringify(nextFavStore) !== prevFavStore) {
@@ -794,18 +809,22 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
     set(patch)
 
-    const unresolvedNames = [...new Set([...favMig.unresolved, ...recentMig.unresolved])]
-    if (unresolvedNames.length > 0) {
-      const shown = unresolvedNames.slice(0, 10)
-      const extra = unresolvedNames.length - shown.length
-      const list = shown.join(', ') + (extra > 0 ? ` (+${extra} more)` : '')
-      const n = unresolvedNames.length
-      queueMicrotask(() => {
-        get().showToast(
-          `${n} favorites or recent entries match styles in several packs and were not linked: ${list}. Star the right pack again.`,
-          'info',
-        )
-      })
+    const ambiguousNames = [...new Set([...favMig.ambiguous, ...recentMig.ambiguous])].sort()
+    if (ambiguousNames.length > 0) {
+      const signature = ambiguousNames.join('\n')
+      if (signature !== lastAmbiguousToastSignature) {
+        lastAmbiguousToastSignature = signature
+        const shown = ambiguousNames.slice(0, 10)
+        const extra = ambiguousNames.length - shown.length
+        const list = shown.join(', ') + (extra > 0 ? ` (+${extra} more)` : '')
+        const n = ambiguousNames.length
+        queueMicrotask(() => {
+          get().showToast(
+            `${n} favorites or recent entries match styles in several packs and were not linked: ${list}. Star the right pack again.`,
+            'info',
+          )
+        })
+      }
     }
 
     if (activeSource) {
