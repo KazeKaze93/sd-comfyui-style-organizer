@@ -18,8 +18,57 @@ let themeTimer = null;
 let allStylesCache = [];
 /** Element that had focus when the browser was opened (restore on close). */
 let openerEl = null;
-/** node → Map<styleName, { prompt, negative_prompt }> written at apply time. */
+/** node → Map<styleKey, { name, source_file, prompt, negative_prompt }> written at apply time. */
 const appliedByNode = new Map();
+
+const STYLE_KEY_SEP = "\0";
+
+/** Same format as ui/src/store/stylesStore.ts styleRowKey. */
+function styleKey(name, sourceFile) {
+    return `${sourceFile || ""}${STYLE_KEY_SEP}${name}`;
+}
+
+function parseStyleKey(id) {
+    const i = typeof id === "string" ? id.indexOf(STYLE_KEY_SEP) : -1;
+    if (i < 0) return null;
+    return { source_file: id.slice(0, i), name: id.slice(i + 1) };
+}
+
+function sameStyleContent(a, b) {
+    return (a.prompt || "") === (b.prompt || "")
+        && (a.negative_prompt || "") === (b.negative_prompt || "");
+}
+
+/**
+ * Resolve a catalog row. Returns { row, status } where status is
+ * "exact" | "unique" | "content" | "ambiguous" | "missing".
+ * content (optional) = { prompt, negative_prompt } used only when sourceFile is empty and the name is ambiguous.
+ */
+function resolveStyleRow(name, sourceFile, content) {
+    if (sourceFile) {
+        const row = allStylesCache.find((s) =>
+            s.name === name && String(s.source_file || "") === String(sourceFile)
+        );
+        return row ? { row, status: "exact" } : { row: null, status: "missing" };
+    }
+    const byName = allStylesCache.filter((s) => s.name === name);
+    if (byName.length === 0) return { row: null, status: "missing" };
+    if (byName.length === 1) return { row: byName[0], status: "unique" };
+    if (content) {
+        const byContent = byName.filter((s) => sameStyleContent(s, content));
+        if (byContent.length === 1) return { row: byContent[0], status: "content" };
+    }
+    return { row: null, status: "ambiguous" };
+}
+
+function postInfoToast(message) {
+    if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage(
+            { type: "SG_TOAST", message, variant: "info" },
+            "*"
+        );
+    }
+}
 
 function srgbToLinear(c) {
     const v = c / 255;
@@ -257,9 +306,15 @@ function guardDeckWidgetSerialization(node) {
     }
 }
 
-function getActiveStyles(text, negativeText, excludeName) {
+function getActiveStyles(text, negativeText, excludeStyle) {
     return allStylesCache.filter((s) => {
-        if (s.name === excludeName) return false;
+        if (excludeStyle) {
+            const sameKey = styleKey(s.name, s.source_file)
+                === styleKey(excludeStyle.name, excludeStyle.source_file);
+            const twinContent = s.name === excludeStyle.name
+                && sameStyleContent(s, excludeStyle);
+            if (sameKey || twinContent) return false;
+        }
         return styleIsPresent(text, negativeText, s);
     });
 }
@@ -269,7 +324,7 @@ function isWrapStyle(style) {
         (style.negative_prompt || "").includes("{prompt}");
 }
 
-function applyStyleToNode(node, style) {
+function applyStyleToNode(node, style, options = { record: true }) {
     const { text, neg } = getTextWidgets(node);
     const currentText = text ? text.value || "" : "";
     const currentNeg = neg ? neg.value || "" : "";
@@ -277,17 +332,12 @@ function applyStyleToNode(node, style) {
     // Nesting a second {prompt}-wrap puts the new prefix/suffix on the
     // boundaries, so removeStyleText can no longer find the inner wrap.
     if (isWrapStyle(style)) {
-        const activeWrap = getActiveStyles(currentText, currentNeg, style.name)
+        const activeWrap = getActiveStyles(currentText, currentNeg, style)
             .find(isWrapStyle);
         if (activeWrap) {
             const message = "Only one {prompt}-wrap style can be active at a time";
             console.warn(`[Style Grid] ${message} (blocked: ${style.name}; active: ${activeWrap.name})`);
-            if (iframe?.contentWindow) {
-                iframe.contentWindow.postMessage(
-                    { type: "SG_TOAST", message, variant: "info" },
-                    "*"
-                );
-            }
+            postInfoToast(message);
             return;
         }
     }
@@ -296,33 +346,38 @@ function applyStyleToNode(node, style) {
     if (neg) neg.value = applyStyleText(currentNeg, style.negative_prompt || "");
     node.graph?.setDirtyCanvas(true, true);
 
-    let byName = appliedByNode.get(node);
-    if (!byName) {
-        byName = new Map();
-        appliedByNode.set(node, byName);
+    if (options.record === false) return;
+
+    let byKey = appliedByNode.get(node);
+    if (!byKey) {
+        byKey = new Map();
+        appliedByNode.set(node, byKey);
     }
-    byName.set(style.name, {
+    byKey.set(styleKey(style.name, style.source_file), {
+        name: style.name,
+        source_file: style.source_file || "",
         prompt: style.prompt || "",
         negative_prompt: style.negative_prompt || "",
     });
 }
 
 function unapplyStyleFromNode(node, style) {
-    const recorded = appliedByNode.get(node)?.get(style.name);
+    const key = styleKey(style.name, style.source_file);
+    const recorded = appliedByNode.get(node)?.get(key);
     const prompt = recorded ? recorded.prompt : (style.prompt || "");
     const negTpl = recorded ? recorded.negative_prompt : (style.negative_prompt || "");
 
     const { text, neg } = getTextWidgets(node);
     const currentText = text ? text.value || "" : "";
     const currentNeg = neg ? neg.value || "" : "";
-    const others = getActiveStyles(currentText, currentNeg, style.name);
+    const others = getActiveStyles(currentText, currentNeg, style);
     const protectPos = others.flatMap((s) => parseTags(s.prompt || ""));
     const protectNeg = others.flatMap((s) => parseTags(s.negative_prompt || ""));
     if (text) text.value = removeStyleText(currentText, prompt, protectPos);
     if (neg) neg.value = removeStyleText(currentNeg, negTpl, protectNeg);
     node.graph?.setDirtyCanvas(true, true);
 
-    appliedByNode.get(node)?.delete(style.name);
+    appliedByNode.get(node)?.delete(key);
 }
 
 // Reorders the tag-blocks belonging to currently-applied plain-tag styles to
@@ -339,7 +394,9 @@ function reorderStylesInNode(node, styleIds) {
     const isReorderable = (s) =>
         !(s.prompt || "").includes("{prompt}") && !(s.negative_prompt || "").includes("{prompt}");
     const activeStyles = getActiveStyles(currentText, currentNeg, null).filter(isReorderable);
-    const activeByName = new Map(activeStyles.map((s) => [s.name, s]));
+    const activeByKey = new Map(
+        activeStyles.map((s) => [styleKey(s.name, s.source_file), s])
+    );
 
     const rebuild = (baseText, field) => {
         const ownedKeys = new Set();
@@ -360,7 +417,14 @@ function reorderStylesInNode(node, styleIds) {
             }
         };
         for (const id of styleIds) {
-            const style = activeByName.get(id);
+            let style = null;
+            const parsed = parseStyleKey(id);
+            if (parsed) {
+                style = activeByKey.get(styleKey(parsed.name, parsed.source_file));
+            } else {
+                const matches = activeStyles.filter((s) => s.name === id);
+                if (matches.length === 1) style = matches[0];
+            }
             if (style) appendStyleTags(style);
         }
         // Safety net: an active reorderable style missing from styleIds
@@ -645,8 +709,23 @@ function rehydrate() {
             const currentNeg = neg ? neg.value || "" : "";
             const present = allStylesCache.filter((s) => styleIsPresent(currentText, currentNeg, s));
             const activeW = currentNode.widgets?.find((w) => w.name === "active_source");
+            const ledger = appliedByNode.get(currentNode);
             for (const style of collapsePresentStyles(present, activeW ? String(activeW.value || "") : "")) {
-                iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style }, "*");
+                let toPost = style;
+                if (ledger) {
+                    for (const entry of ledger.values()) {
+                        if (
+                            entry.name === style.name
+                            && sameStyleContent(entry, style)
+                            && String(entry.source_file || "") !== String(style.source_file || "")
+                        ) {
+                            const r = resolveStyleRow(entry.name, entry.source_file || "");
+                            if (r.row) toPost = r.row;
+                            break;
+                        }
+                    }
+                }
+                iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style: toPost }, "*");
             }
             syncWildcards(currentNode);
         });
@@ -724,39 +803,83 @@ function ensureOverlay() {
             rehydrate();
         }
         if (msg.type === "SG_APPLY" && currentNode) {
-            applyStyleToNode(currentNode, {
-                name: msg.styleId,
-                prompt: msg.prompt,
-                negative_prompt: msg.neg,
-                source_file: msg.source_file || "",
-            });
+            const content = { prompt: msg.prompt, negative_prompt: msg.neg };
+            const r = resolveStyleRow(msg.styleId, msg.source_file || "", content);
+            if (r.status === "exact" || r.status === "unique" || r.status === "content") {
+                applyStyleToNode(currentNode, {
+                    name: msg.styleId,
+                    prompt: msg.prompt,
+                    negative_prompt: msg.neg,
+                    source_file: r.row.source_file || "",
+                });
+            } else if (r.status === "missing") {
+                applyStyleToNode(currentNode, {
+                    name: msg.styleId,
+                    prompt: msg.prompt,
+                    negative_prompt: msg.neg,
+                    source_file: msg.source_file || "",
+                });
+            } else {
+                applyStyleToNode(
+                    currentNode,
+                    {
+                        name: msg.styleId,
+                        prompt: msg.prompt,
+                        negative_prompt: msg.neg,
+                        source_file: "",
+                    },
+                    { record: false }
+                );
+                postInfoToast(
+                    `Applied "${msg.styleId}" but its pack is ambiguous; select a source in the panel before removing it.`
+                );
+            }
         }
         if (msg.type === "SG_UNAPPLY" && currentNode) {
-            const recorded = appliedByNode.get(currentNode)?.get(msg.styleId);
-            const cached = allStylesCache.find((s) => {
-                if (s.name !== msg.styleId) return false;
-                if (!msg.source_file) return true;
-                return String(s.source_file || "") === String(msg.source_file);
-            });
+            const name = msg.styleId || "style";
+            let recorded = null;
+            let cached = null;
+            if (msg.source_file) {
+                recorded = appliedByNode.get(currentNode)?.get(styleKey(name, msg.source_file));
+                cached = resolveStyleRow(name, msg.source_file).row;
+            } else {
+                const ledgerHits = [];
+                const byKey = appliedByNode.get(currentNode);
+                if (byKey) {
+                    for (const entry of byKey.values()) {
+                        if (entry.name === name) ledgerHits.push(entry);
+                    }
+                }
+                if (ledgerHits.length === 1) {
+                    recorded = ledgerHits[0];
+                } else {
+                    const r = resolveStyleRow(name, "");
+                    if (r.status === "unique") {
+                        cached = r.row;
+                    } else if (r.status === "ambiguous") {
+                        postInfoToast(
+                            `Could not remove "${name}": the same name exists in several packs; select a source in the panel and remove it there.`
+                        );
+                        return;
+                    }
+                }
+            }
             if (recorded || cached) {
                 unapplyStyleFromNode(currentNode, {
-                    name: msg.styleId,
+                    name,
+                    source_file: recorded
+                        ? (recorded.source_file || "")
+                        : (cached.source_file || ""),
                     prompt: recorded ? recorded.prompt : (cached.prompt || ""),
                     negative_prompt: recorded
                         ? recorded.negative_prompt
                         : (cached.negative_prompt || ""),
                 });
             } else {
-                const name = msg.styleId || "style";
                 const message =
-                    `Could not remove ${name} — style data not found; check the prompt text manually`;
+                    `Could not remove ${name}: style data not found; check the prompt text manually`;
                 console.warn(`[Style Grid] ${message}`);
-                if (iframe?.contentWindow) {
-                    iframe.contentWindow.postMessage(
-                        { type: "SG_TOAST", message, variant: "info" },
-                        "*"
-                    );
-                }
+                postInfoToast(message);
             }
         }
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
