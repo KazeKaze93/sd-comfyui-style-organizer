@@ -100,10 +100,10 @@ class StyleGridNode:
         seed=SEED_DEFAULT,
     ):
         enriched = [enrich_style(s) for s in get_cached_styles()]
-        by_cat = build_styles_by_cat(enriched, active_source)
         # One queue run = one draw: every image of a latent batch shares this conditioning.
         deck = DeckContext(clamp_deck_seed(deck_seed), clamp_deck_index(deck_index))
         warnings: list[str] = []
+        by_cat = build_styles_by_cat(enriched, active_source, warnings=warnings)
         positive, negative = resolve_pair(
             text, negative_text, by_cat, rng=random.Random(seed), deck=deck, warnings=warnings
         )

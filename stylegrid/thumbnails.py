@@ -7,6 +7,7 @@ import shutil
 
 from .cache import get_cached_styles
 from .config import DATA_DIR, EXT_DIR, THUMBNAILS_DIR, get_styles_dirs
+from .source_ids import coerce_source_ref
 
 # Hash is the stem; extension matches on-disk bytes (honest naming, no re-encode).
 _THUMB_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif")
@@ -17,6 +18,9 @@ def _thumbnail_hash_input(style_name, csv_path=""):
     """Stable string for thumbnail filename hash; empty csv_path keeps legacy name-only hash."""
     if not csv_path:
         return style_name
+    resolved = coerce_source_ref(csv_path)
+    if resolved:
+        csv_path = resolved
     ap = os.path.normpath(os.path.abspath(csv_path))
     rel = None
     for base in get_styles_dirs():

@@ -18,7 +18,7 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import CATEGORY_ORDER_FILE, IMPORTS_DIR, PRESETS_FILE
+from .config import CATEGORY_ORDER_FILE, DATA_DIR, IMPORTS_DIR, PRESETS_FILE, logger
 from .csv_io import (
     FIELDNAMES,
     categorize_styles,
@@ -31,6 +31,7 @@ from .data_files import (
     CorruptDataError,
     backup_csv_files,
     load_presets,
+    migrate_presets_source_ids_once,
     preset_styles_payload_ok,
     save_presets,
 )
@@ -162,12 +163,30 @@ async def _read_json(request, max_bytes: int = JSON_BODY_MAX_BYTES):
         return {}
 
 
+def _display_data_path(path: str) -> str:
+    """Path for client-facing errors: relative to DATA_DIR when inside it, else basename."""
+    if not path:
+        return path
+    abs_path = os.path.normpath(os.path.abspath(path))
+    data_abs = os.path.normpath(os.path.abspath(DATA_DIR))
+    try:
+        rel = os.path.relpath(abs_path, data_abs)
+    except ValueError:
+        return os.path.basename(abs_path).replace("\\", "/")
+    if rel.startswith(".."):
+        return os.path.basename(abs_path).replace("\\", "/")
+    return rel.replace("\\", "/")
+
+
 def _corrupt_payload(exc: CorruptDataError) -> dict:
+    display = _display_data_path(exc.path)
+    abs_path = os.path.normpath(os.path.abspath(exc.path))
+    message = str(exc).replace(abs_path, display).replace(exc.path, display)
     return {
         "error": "corrupt_data",
-        "path": exc.path,
-        "bak_path": exc.path + ".bak",
-        "message": str(exc),
+        "path": display,
+        "bak_path": display + ".bak",
+        "message": message,
     }
 
 
@@ -666,6 +685,13 @@ def register_api(routes):
     notable exceptions are the /styles ETag 304 and /thumbnail 404. Thumbnail generation
     and the UI HTML route are registered separately in later phases.
     """
+    try:
+        migrate_presets_source_ids_once()
+    except Exception as exc:
+        logger.warning(
+            "[Style Grid] presets source-id migration failed: %s",
+            exc,
+        )
     _register_style_routes(routes)
     _register_preset_routes(routes)
     _register_crud_routes(routes)

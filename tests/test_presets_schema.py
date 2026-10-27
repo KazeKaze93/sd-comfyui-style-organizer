@@ -12,8 +12,8 @@ sys.path.insert(0, ROOT)
 
 @pytest.fixture
 def data_files(tmp_path, monkeypatch):
-    from stylegrid import data_files as sg_data
     from stylegrid import config as sg_config
+    from stylegrid import data_files as sg_data
 
     presets_path = tmp_path / "presets.json"
     monkeypatch.setattr(sg_data, "PRESETS_FILE", str(presets_path))
@@ -24,7 +24,7 @@ def data_files(tmp_path, monkeypatch):
         lambda: [
             {
                 "name": "Test Style A",
-                "source_file": str(tmp_path / "pack.csv").replace("\\", "/"),
+                "source_file": "data/pack.csv",
             }
         ],
     )

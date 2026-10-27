@@ -5,8 +5,15 @@ import io
 import os
 
 from .cache import invalidate_styles_cache
-from .config import DATA_DIR, IMPORTS_DIR, SAMPLES_DIR, get_all_styles_file_paths, logger
+from .config import (
+    DATA_DIR,
+    IMPORTS_DIR,
+    SAMPLES_DIR,
+    get_all_styles_file_paths,
+    logger,
+)
 from .safe_persistence import locked_path, write_atomic
+from .source_ids import coerce_source_ref, is_source_id, to_source_id
 
 FIELDNAMES = ["name", "prompt", "negative_prompt", "description", "category"]
 
@@ -50,7 +57,7 @@ def parse_styles_csv(filepath):
     Parse one styles CSV as UTF-8/UTF-8-BOM into normalized style dicts.
 
     Keys: name, prompt, negative_prompt, description, category_explicit,
-    source (basename), source_file (absolute path). Malformed rows are skipped
+    source (basename), source_file (stable relative id). Malformed rows are skipped
     and logged; they never abort the rest of the file.
 
     Legacy apostrophe-escaped formula prefixes are stripped in memory only;
@@ -60,6 +67,13 @@ def parse_styles_csv(filepath):
     if not os.path.isfile(filepath):
         return styles
     base = os.path.basename(filepath)
+    source_id = to_source_id(filepath)
+    if source_id is None:
+        logger.warning(
+            "[Style Grid] skip CSV outside known roots (no source id): %s",
+            base,
+        )
+        return styles
     try:
         f = open(filepath, "r", encoding="utf-8-sig")
     except OSError as e:
@@ -97,8 +111,10 @@ def parse_styles_csv(filepath):
                         row[4].strip() if len(row) > 4 else ""
                     ),
                     "source": base,
-                    "source_file": os.path.abspath(filepath),
-                    "read_only": os.path.dirname(filepath) == SAMPLES_DIR,
+                    "source_file": source_id,
+                    "read_only": os.path.normcase(
+                        os.path.dirname(os.path.abspath(filepath))
+                    ) == os.path.normcase(os.path.abspath(SAMPLES_DIR)),
                 })
             except (IndexError, AttributeError):
                 logger.warning("[Style Grid] %s:%d skipped malformed row", base, reader.line_num)
@@ -177,24 +193,49 @@ def categorize_styles(styles):
 
 
 def _resolve_write_target(source_file):
-    """Resolve a CSV path for writes. Matches files under DATA_DIR or IMPORTS_DIR —
-    samples/ is never a write target, even if a same-named file exists there.
+    """Resolve a CSV path for writes under DATA_DIR or IMPORTS_DIR.
+
+    Source ids and absolute paths go through coerce_source_ref (samples -> None).
+    Bare basenames keep the legacy first-match-under-data/imports behavior.
+    Returns None when the ref is refused (samples, unmappable abs/id, bad shape).
     """
-    if source_file:
-        source_file = os.path.basename(source_file)
-        if not source_file.lower().endswith(".csv"):
-            source_file += ".csv"
-    if not source_file:
-        source_file = "styles.csv"
+    raw = ""
+    if isinstance(source_file, str):
+        raw = source_file.strip()
+
+    if raw and (is_source_id(raw) or os.path.isabs(raw)):
+        resolved = coerce_source_ref(raw)
+        if resolved is None:
+            return None
+        samples_abs = os.path.normcase(os.path.abspath(SAMPLES_DIR))
+        if os.path.normcase(os.path.dirname(resolved)) == samples_abs:
+            return None
+        return resolved
+
+    if raw and ("/" in raw or "\\" in raw):
+        return None
+
+    if raw:
+        basename = os.path.basename(raw)
+        if not basename.lower().endswith(".csv"):
+            basename += ".csv"
+    else:
+        basename = "styles.csv"
+
+    data_abs = os.path.normcase(os.path.abspath(DATA_DIR))
+    imports_abs = os.path.normcase(os.path.abspath(IMPORTS_DIR))
     for fp in get_all_styles_file_paths():
-        if os.path.dirname(fp) in (DATA_DIR, IMPORTS_DIR) and os.path.basename(fp) == source_file:
+        parent = os.path.normcase(os.path.dirname(os.path.abspath(fp)))
+        if parent in (data_abs, imports_abs) and os.path.basename(fp) == basename:
             return fp
-    return os.path.join(DATA_DIR, source_file)
+    return os.path.join(DATA_DIR, basename)
 
 
 def save_style_to_csv(name, prompt, negative_prompt, description="", source_file=None, category=None):
     """Upsert a style row in a data/ CSV: replace the first matching name row, or append."""
     target_path = _resolve_write_target(source_file)
+    if not target_path:
+        return False
     with locked_path(target_path):
         rows = []
         header = None
@@ -249,18 +290,11 @@ def delete_style_from_csv(name, source_file=None):
     if not source_file:
         for s in load_all_styles():
             if s["name"] == name:
-                source_file = s.get("source", "")
+                source_file = s.get("source_file") or s.get("source", "")
                 break
     if not source_file:
         return False
-    source_file = os.path.basename(source_file)
-    if not source_file.lower().endswith(".csv"):
-        source_file += ".csv"
-    target_path = None
-    for fp in get_all_styles_file_paths():
-        if os.path.dirname(fp) in (DATA_DIR, IMPORTS_DIR) and os.path.basename(fp) == source_file:
-            target_path = fp
-            break
+    target_path = _resolve_write_target(source_file)
     if not target_path:
         return False
     with locked_path(target_path):

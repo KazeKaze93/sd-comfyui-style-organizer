@@ -4,15 +4,15 @@ import os
 import time
 import zipfile
 
+from .cache import get_cached_styles
 from .config import (
     BACKUP_DIR,
     DATA_DIR,
     IMPORTS_DIR,
     PRESETS_FILE,
     _csvs_in,
+    logger,
 )
-from .cache import get_cached_styles
-from .wildcards import TOKEN_SGD
 from .safe_persistence import (
     CorruptDataError,
     cleanup_stale_tmp,
@@ -20,6 +20,8 @@ from .safe_persistence import (
     locked_path,
     write_json_atomic,
 )
+from .source_ids import to_source_id
+from .wildcards import TOKEN_SGD
 
 
 def _coerce_weight(raw):
@@ -185,6 +187,51 @@ def load_presets():
         cleanup_stale_tmp(PRESETS_FILE)
         raw = load_json_object(PRESETS_FILE, require_object_values=True)
         return normalize_presets(raw)
+
+
+def migrate_presets_source_ids_once() -> int:
+    """Eager rewrite of abs ``source_file`` values in presets.json to public ids.
+
+    Copy-never-delete: only rewrites mappable abs paths; unmappable stay as-is.
+    Corrupt or missing file: log and return 0 (never overwrite).
+    """
+    changed = 0
+    with locked_path(PRESETS_FILE):
+        cleanup_stale_tmp(PRESETS_FILE)
+        try:
+            raw = load_json_object(PRESETS_FILE, require_object_values=True)
+        except CorruptDataError as exc:
+            logger.warning(
+                "[Style Grid] presets source-id migration skipped (corrupt): %s",
+                exc,
+            )
+            return 0
+        if not isinstance(raw, dict):
+            return 0
+        for _preset_name, preset in raw.items():
+            if not isinstance(preset, dict):
+                continue
+            styles_raw = preset.get("styles")
+            if not isinstance(styles_raw, list):
+                continue
+            for entry in styles_raw:
+                if not isinstance(entry, dict):
+                    continue
+                raw_source = entry.get("source_file", "")
+                if not isinstance(raw_source, str) or not raw_source.strip():
+                    continue
+                src = raw_source.strip()
+                if not os.path.isabs(src):
+                    continue
+                sid = to_source_id(src)
+                if sid is None:
+                    continue
+                if sid != src:
+                    entry["source_file"] = sid
+                    changed += 1
+        if changed:
+            write_json_atomic(PRESETS_FILE, raw, require_object_values=True)
+    return changed
 
 
 def save_presets(presets):

@@ -10,9 +10,16 @@ from stylegrid import csv_io
 
 
 def _patch_write_dirs(tmp_path, monkeypatch):
+    from stylegrid import config as sg_config
+
     monkeypatch.setattr(csv_io, "invalidate_styles_cache", lambda: None)
     monkeypatch.setattr(csv_io, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(csv_io, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sg_config, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "SAMPLES_DIR", str(tmp_path / "samples"))
+    (tmp_path / "imports").mkdir(exist_ok=True)
+    (tmp_path / "samples").mkdir(exist_ok=True)
     p = tmp_path / "styles.csv"
     monkeypatch.setattr(
         csv_io,
@@ -36,6 +43,12 @@ def test_load_all_styles_shared_name_no_warning(tmp_path, monkeypatch, caplog):
         "SHARED,prompt_b,neg_b,desc_b,BASE\n",
         encoding="utf-8-sig",
     )
+    from stylegrid import config as sg_config
+
+    monkeypatch.setattr(sg_config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sg_config, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "SAMPLES_DIR", str(tmp_path / "samples"))
+    monkeypatch.setattr(csv_io, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(
         csv_io,
         "get_all_styles_file_paths",
@@ -96,8 +109,13 @@ def test_plus_underscore_plus_round_trip_unchanged(tmp_path, monkeypatch):
     assert styles[0]["negative_prompt"] == "-neg_tag"
 
 
-def test_legacy_apostrophe_stripped_on_load_only(tmp_path):
+def test_legacy_apostrophe_stripped_on_load_only(tmp_path, monkeypatch):
     """Older files with '=formula / '-tag style cells are migrated in memory, not rewritten."""
+    from stylegrid import config as sg_config
+
+    monkeypatch.setattr(sg_config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sg_config, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "SAMPLES_DIR", str(tmp_path / "samples"))
     p = tmp_path / "styles.csv"
     before = (
         "name,prompt,negative_prompt,description,category\n"

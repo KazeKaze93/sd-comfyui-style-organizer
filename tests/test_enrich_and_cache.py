@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from stylegrid import cache as sg_cache
@@ -63,13 +62,21 @@ def _patch_style_paths(monkeypatch, paths: list[str]) -> None:
 
 def _by_cat_fingerprint(by_cat: dict) -> dict[str, list[tuple[str, str]]]:
     return {
-        cat: [(os.path.basename(s.get("source_file") or ""), s["name"]) for s in rows]
+        cat: [
+            ((s.get("source_file") or "").rsplit("/", 1)[-1], s["name"])
+            for s in rows
+        ]
         for cat, rows in by_cat.items()
     }
 
 
 def test_node_path_by_cat_matches_prechange_golden(tmp_path, monkeypatch):
+    from stylegrid import config as sg_config
+
     paths = _write_golden_packs(tmp_path)
+    monkeypatch.setattr(sg_config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sg_config, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "SAMPLES_DIR", str(tmp_path / "samples"))
     _patch_style_paths(monkeypatch, paths)
 
     enriched = [csv_io.enrich_style(s) for s in sg_cache.get_cached_styles()]
@@ -145,7 +152,12 @@ def test_enrich_and_categorize_do_not_mutate_input():
 
 
 def test_normalize_presets_reuses_styles_cache(tmp_path, monkeypatch):
+    from stylegrid import config as sg_config
+
     paths = _write_golden_packs(tmp_path)
+    monkeypatch.setattr(sg_config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sg_config, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "SAMPLES_DIR", str(tmp_path / "samples"))
     _patch_style_paths(monkeypatch, paths)
 
     calls = {"n": 0}

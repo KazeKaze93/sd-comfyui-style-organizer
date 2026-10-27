@@ -106,16 +106,47 @@ def dedup_prompt(prompt: str) -> str:
     return ", ".join(slot.text for slot in slots)
 
 
-def build_styles_by_cat(styles, active_source=""):
-    """Group styles by lowercased category. When active_source is set, only styles
-    whose basename source matches are included (UI may pass an abs path). No silent
-    fallback to the full library when the filter matches nothing.
+def build_styles_by_cat(styles, active_source="", *, warnings: list[str] | None = None):
+    """Group styles by lowercased category, optionally filtered by active_source.
+
+    active_source empty: all styles. A public source id matches ``source_file``
+    exactly. A legacy abs path or bare basename is accepted only when it maps to
+    exactly one loaded pack; ambiguous basenames yield an empty pool and a warning.
+    No silent fallback to the full library when the filter matches nothing.
     """
-    normalized_source = os.path.basename(active_source) if active_source else None
-    if normalized_source:
-        pool = [s for s in styles if (s.get("source") or "") == normalized_source]
-    else:
+    from .source_ids import is_source_id, to_source_id
+
+    if not active_source:
         pool = styles
+    elif is_source_id(active_source):
+        pool = [s for s in styles if (s.get("source_file") or "") == active_source]
+    else:
+        mapped_id = None
+        if os.path.isabs(active_source):
+            mapped_id = to_source_id(active_source)
+        if mapped_id:
+            pool = [s for s in styles if (s.get("source_file") or "") == mapped_id]
+        else:
+            want_base = os.path.basename(active_source.replace("\\", "/"))
+            ids = sorted(
+                {
+                    sid
+                    for s in styles
+                    for sid in [(s.get("source_file") or "")]
+                    if sid and sid.rsplit("/", 1)[-1] == want_base
+                }
+            )
+            if len(ids) == 1:
+                pool = [s for s in styles if (s.get("source_file") or "") == ids[0]]
+            else:
+                pool = []
+                if len(ids) > 1 and warnings is not None:
+                    msg = (
+                        f'active_source "{want_base}" matches several packs '
+                        f'({", ".join(ids)}); select the pack again'
+                    )
+                    if msg not in warnings:
+                        warnings.append(msg)
     by_cat = {}
     for s in pool:
         key = (s.get("category") or "").lower()
