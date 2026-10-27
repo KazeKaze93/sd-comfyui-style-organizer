@@ -826,6 +826,8 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       )
       if (candidates.length !== 1) continue
       const newKey = styleRowKey(candidates[0])
+      if (Object.prototype.hasOwnProperty.call(nextThumbs ?? prevThumbs, newKey)) continue
+      if (localStorage.getItem(`${THUMB_VERSION_LS_PREFIX}${newKey}`) != null) continue
       if (nextThumbs === null) nextThumbs = { ...prevThumbs }
       nextThumbs[newKey] = version
       localStorage.setItem(`${THUMB_VERSION_LS_PREFIX}${newKey}`, version)

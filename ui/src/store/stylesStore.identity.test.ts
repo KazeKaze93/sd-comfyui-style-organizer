@@ -356,4 +356,24 @@ describe('style identity (name, source_file)', () => {
     expect(useStylesStore.getState().thumbVersions[newKey]).toBe('v42')
     expect(useStylesStore.getState().thumbVersions[absKey]).toBe('v42')
   })
+
+  it('does not overwrite an existing id thumb version on later setStyles', () => {
+    const a = row('X', 'data/a.csv')
+    const b = row('X', 'imports/b.csv')
+    const absKey = 'D:\\old\\style_grid\\a.csv\0X'
+    const newKey = styleRowKey(a)
+    localStorage.setItem(`sg_thumb_v_${absKey}`, 'v1')
+    useStylesStore.setState({ thumbVersions: { [absKey]: 'v1' } })
+    useStylesStore.getState().setStyles([a, b])
+    expect(localStorage.getItem(`sg_thumb_v_${newKey}`)).toBe('v1')
+    expect(useStylesStore.getState().thumbVersions[newKey]).toBe('v1')
+
+    useStylesStore.getState().bumpThumbVersion(newKey, 'v2')
+    useStylesStore.getState().setStyles([a, b])
+
+    expect(localStorage.getItem(`sg_thumb_v_${newKey}`)).toBe('v2')
+    expect(useStylesStore.getState().thumbVersions[newKey]).toBe('v2')
+    expect(localStorage.getItem(`sg_thumb_v_${absKey}`)).toBe('v1')
+    expect(useStylesStore.getState().thumbVersions[absKey]).toBe('v1')
+  })
 })
