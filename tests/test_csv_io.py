@@ -129,3 +129,49 @@ def test_legacy_apostrophe_stripped_on_load_only(tmp_path, monkeypatch):
     assert styles[0]["negative_prompt"] == "-neg"
     assert styles[0]["description"] == "@desc"
     assert p.read_bytes() == before_bytes, "load must not rewrite the file"
+
+
+def test_delete_missing_bare_basename_returns_false(tmp_path, monkeypatch):
+    """Unknown bare basename must not raise or create a file (regression vs dbe3f77)."""
+    _patch_write_dirs(tmp_path, monkeypatch)
+    missing = tmp_path / "nope.csv"
+    assert not missing.exists()
+    assert csv_io.delete_style_from_csv("Any", "nope.csv") is False
+    assert not missing.exists()
+
+
+def test_delete_missing_data_id_returns_false(tmp_path, monkeypatch):
+    """Unknown data/ id must not raise or create a file (regression vs dbe3f77)."""
+    _patch_write_dirs(tmp_path, monkeypatch)
+    missing = tmp_path / "missing.csv"
+    assert not missing.exists()
+    assert csv_io.delete_style_from_csv("Any", "data/missing.csv") is False
+    assert not missing.exists()
+
+
+def test_delete_imports_id_when_data_has_same_basename(tmp_path, monkeypatch):
+    """Delete via imports/ id must hit only the imports file."""
+    from stylegrid import config as sg_config
+
+    monkeypatch.setattr(csv_io, "invalidate_styles_cache", lambda: None)
+    monkeypatch.setattr(csv_io, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(csv_io, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sg_config, "IMPORTS_DIR", str(tmp_path / "imports"))
+    monkeypatch.setattr(sg_config, "SAMPLES_DIR", str(tmp_path / "samples"))
+    (tmp_path / "imports").mkdir(exist_ok=True)
+    (tmp_path / "samples").mkdir(exist_ok=True)
+    data_csv = tmp_path / "foo.csv"
+    imports_csv = tmp_path / "imports" / "foo.csv"
+    header = "name,prompt,negative_prompt,description,category\n"
+    data_csv.write_text(header + "KeepMe,p,n,d,BASE\n", encoding="utf-8-sig")
+    imports_csv.write_text(header + "DropMe,p,n,d,BASE\n", encoding="utf-8-sig")
+    monkeypatch.setattr(
+        csv_io,
+        "get_all_styles_file_paths",
+        lambda: [str(data_csv), str(imports_csv)],
+    )
+
+    assert csv_io.delete_style_from_csv("DropMe", "imports/foo.csv") is True
+    assert "DropMe" not in imports_csv.read_text(encoding="utf-8-sig")
+    assert "KeepMe" in data_csv.read_text(encoding="utf-8-sig")

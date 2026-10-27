@@ -295,7 +295,7 @@ def delete_style_from_csv(name, source_file=None):
     if not source_file:
         return False
     target_path = _resolve_write_target(source_file)
-    if not target_path:
+    if not target_path or not os.path.isfile(target_path):
         return False
     with locked_path(target_path):
         rows = []
