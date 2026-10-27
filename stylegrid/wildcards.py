@@ -173,9 +173,9 @@ def resolve_sg_wildcards(
     Optional slice: ``{sg:CATEGORY:spec}`` / ``{sgd:CATEGORY:spec}`` where ``spec`` is a
     comma-separated include/exclude/glob list (see ``select_slice``). A spec applies only
     to its own token; nested tokens resolve by their own specs (or none), the outer
-    slice is not inherited. Empty slices fall back to the full category. Unknown or
-    empty categories keep the raw token through nested passes, then strip with a
-    warning. An empty style field resolves to an empty string (token is not kept).
+    slice is not inherited. Empty slices resolve to an empty string with a warning.
+    Unknown or empty categories keep the raw token through nested passes, then strip
+    with a warning. An empty style field resolves to an empty string (token is not kept).
     """
     return resolve_sg_picks(prompt, styles_by_category, rng, field, deck=deck)[0]
 
@@ -188,6 +188,7 @@ def resolve_sg_picks(
     *,
     deck: DeckContext | None = None,
     paired: Sequence[Pick] = (),
+    warnings: list[str] | None = None,
 ) -> tuple[str, list[Pick]]:
     """``resolve_sg_wildcards`` that also returns the picked styles in token order.
 
@@ -196,6 +197,11 @@ def resolve_sg_picks(
     category and spec reuses the k-th paired style instead of drawing again.
     Tokens without a paired style draw as usual.
     """
+
+    def _warn(msg: str) -> None:
+        if warnings is not None and msg not in warnings:
+            warnings.append(msg)
+
     picker = rng or random
     queues: dict[tuple[str, str, str], list[dict]] = {}
     for pick in paired:
@@ -216,8 +222,11 @@ def resolve_sg_picks(
             if not candidates or (kind == TOKEN_SGD and deck is None):
                 return m.group(0)
             pool = select_slice(candidates, category, spec) if spec else candidates
-            if not pool:
-                pool = candidates
+            if spec and not pool:
+                msg = f"{m.group(0)} matches no styles; resolved to empty"
+                _warn(msg)
+                logger.warning("[Style Grid] %s", msg)
+                return ""
             key = (kind, category, normalize_deck_spec(spec))
             if kind == TOKEN_SGD:
                 deck_key = key[1:]
@@ -245,5 +254,13 @@ def resolve_sg_picks(
             "[Style Grid] nested {sg:} unresolved after %d passes; stripping leftovers",
             _MAX_PASSES,
         )
+        leftover_seen: list[str] = []
+        for m in _SG_TOKEN.finditer(text):
+            token = m.group(0)
+            if token not in leftover_seen:
+                leftover_seen.append(token)
+                _warn(
+                    f"{token} could not be resolved (unknown or empty category, or deck token without a deck); removed"
+                )
         text = _SG_TOKEN.sub("", text)
     return text, picks

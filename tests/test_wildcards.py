@@ -6,8 +6,15 @@ import random
 from pathlib import Path
 
 import pytest
-
-from stylegrid.wildcards import _MAX_PASSES, parse_sg_token, resolve_sg_wildcards, select_slice
+from stylegrid.prompt_ops import resolve_pair
+from stylegrid.wildcards import (
+    _MAX_PASSES,
+    DeckContext,
+    parse_sg_token,
+    resolve_sg_picks,
+    resolve_sg_wildcards,
+    select_slice,
+)
 
 _GOLDEN_PATH = Path(__file__).resolve().parent / "fixtures" / "sg_wildcard_golden.json"
 _FIELD_BY_CASE = {"pos": "prompt", "neg": "negative_prompt"}
@@ -162,21 +169,32 @@ def test_nested_sg_token_resolves_without_inheriting_outer_slice():
     assert result == "wrap p::ACCESSORY_X"
 
 
-def test_stale_slice_falls_back_to_full_category():
-    """Every name in the spec absent → fall back to the FULL category.
-
-    This matters more here than in the WebUI sibling: after ``_MAX_PASSES``,
-    leftover ``{sg:}`` tokens are stripped with a warning. Without the
-    empty-slice fallback a stale include list would leave an unresolved token
-    that then vanishes silently instead of degrading to a normal category pick.
-    """
+def test_stale_slice_resolves_empty_with_warning():
+    """Every name in the spec absent → empty string + warning; picker never called."""
     candidates = _styles_from_names(["BODY_Tanned", "BODY_Pale"])
     styles_by = {"body": candidates}
     picker = _RecordingPicker()
-    result = resolve_sg_wildcards("{sg:body:Ghost,Missing}", styles_by, rng=picker)
+    warnings: list[str] = []
+    result, _ = resolve_sg_picks(
+        "{sg:body:Ghost,Missing}", styles_by, rng=picker, warnings=warnings
+    )
 
-    assert picker.pools[0] is candidates
-    assert result == "p::BODY_Tanned"
+    assert result == ""
+    assert picker.pools == []
+    assert warnings == ["{sg:body:Ghost,Missing} matches no styles; resolved to empty"]
+
+
+def test_sgd_empty_slice_resolves_empty_with_warning():
+    styles_by = {"body": _styles_from_names(["BODY_Tanned", "BODY_Pale"])}
+    warnings: list[str] = []
+    result, _ = resolve_sg_picks(
+        "{sgd:body:Missing}",
+        styles_by,
+        deck=DeckContext(1, 0),
+        warnings=warnings,
+    )
+    assert result == ""
+    assert warnings == ["{sgd:body:Missing} matches no styles; resolved to empty"]
 
 
 def test_unknown_category_strips_raw_token_after_max_passes_with_warning(caplog):
@@ -189,6 +207,39 @@ def test_unknown_category_strips_raw_token_after_max_passes_with_warning(caplog)
         "nested {sg:} unresolved after" in rec.message and "stripping leftovers" in rec.message
         for rec in caplog.records
     )
+
+
+def test_unknown_category_warning_deduped_when_token_repeats():
+    styles_by = {"animal": _styles_from_names(["ANIMAL_X"])}
+    warnings: list[str] = []
+    result, _ = resolve_sg_picks(
+        "{sg:nope}{sg:nope}", styles_by, rng=_RecordingPicker(), warnings=warnings
+    )
+    assert result == ""
+    assert warnings == [
+        "{sg:nope} could not be resolved (unknown or empty category, or deck token without a deck); removed"
+    ]
+
+
+def test_resolve_pair_forwards_warnings_from_both_sides():
+    styles_by = {
+        "body": _styles_from_names(["BODY_Tanned"]),
+        "hair": _styles_from_names(["HAIR_Red"]),
+    }
+    warnings: list[str] = []
+    positive, negative = resolve_pair(
+        "{sg:body:Ghost}",
+        "{sg:nope}",
+        styles_by,
+        deck=DeckContext(0, 0),
+        warnings=warnings,
+    )
+    assert positive == ""
+    assert negative == ""
+    assert warnings == [
+        "{sg:body:Ghost} matches no styles; resolved to empty",
+        "{sg:nope} could not be resolved (unknown or empty category, or deck token without a deck); removed",
+    ]
 
 
 # --- Golden fixture (R3 resolver contract) ----------------------------------

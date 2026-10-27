@@ -43,6 +43,13 @@ def node(node_module):
     return node_module.StyleGridNode()
 
 
+def _apply_result(node, *args, **kwargs):
+    out = node.apply(*args, **kwargs)
+    assert isinstance(out, dict)
+    assert isinstance(out["ui"]["sg_warnings"], list)
+    return out["result"]
+
+
 def test_seed_is_a_standard_seed_widget_and_the_last_input(node_module):
     optional = node_module.StyleGridNode.INPUT_TYPES()["optional"]
     assert list(optional) == ["deck_seed", "deck_index", "seed"]
@@ -54,17 +61,17 @@ def test_seed_is_a_standard_seed_widget_and_the_last_input(node_module):
 
 @pytest.mark.parametrize("seed", [0, 1, 123_456_789, 2**64 - 1])
 def test_same_seed_gives_same_picks(node, seed):
-    first = node.apply(TEXT, "{sg:hair}", "", seed=seed)
+    first = _apply_result(node, TEXT, "{sg:hair}", "", seed=seed)
     random.seed(seed + 1)
-    assert node.apply(TEXT, "{sg:hair}", "", seed=seed) == first
+    assert _apply_result(node, TEXT, "{sg:hair}", "", seed=seed) == first
 
 
 def test_missing_seed_uses_the_default(node):
-    assert node.apply(TEXT, "{sg:hair}", "") == node.apply(TEXT, "{sg:hair}", "", seed=0)
+    assert _apply_result(node, TEXT, "{sg:hair}", "") == _apply_result(node, TEXT, "{sg:hair}", "", seed=0)
 
 
 def test_different_seeds_give_different_picks(node):
-    results = [node.apply(TEXT, "{sg:hair}", "", seed=seed) for seed in SEEDS]
+    results = [_apply_result(node, TEXT, "{sg:hair}", "", seed=seed) for seed in SEEDS]
     assert len({positive for positive, _ in results}) == len(SEEDS)
     assert len({negative for _, negative in results}) > 1
 
@@ -72,30 +79,37 @@ def test_different_seeds_give_different_picks(node):
 def test_sg_picks_ignore_the_deck_inputs(node):
     for seed in SEEDS:
         positives = [
-            node.apply("{sg:body}, {sgd:hair}", "", "", deck_seed=deck_seed, deck_index=deck_index, seed=seed)[0]
+            _apply_result(
+                node, "{sg:body}, {sgd:hair}", "", "", deck_seed=deck_seed, deck_index=deck_index, seed=seed
+            )[0]
             for deck_seed, deck_index in DECKS
         ]
         assert len({positive.split(", ")[0] for positive in positives}) == 1
 
 
 def test_sg_does_not_freeze_past_the_last_deck_position(node):
-    frozen_deck = {node.apply("{sgd:body}", "", "", deck_index=i)[0] for i in (DECK_INDEX_MAX, DECK_INDEX_MAX + 500)}
+    frozen_deck = {
+        _apply_result(node, "{sgd:body}", "", "", deck_index=i)[0]
+        for i in (DECK_INDEX_MAX, DECK_INDEX_MAX + 500)
+    }
     assert len(frozen_deck) == 1
-    picks = {node.apply(TEXT, "", "", deck_index=DECK_INDEX_MAX + 500, seed=seed)[0] for seed in SEEDS}
+    picks = {
+        _apply_result(node, TEXT, "", "", deck_index=DECK_INDEX_MAX + 500, seed=seed)[0] for seed in SEEDS
+    }
     assert len(picks) == len(SEEDS)
 
 
 def test_paired_negative_follows_the_seeded_pick(node):
     for seed in SEEDS:
-        positive, negative = node.apply("{sg:body}", "{sg:body}, lowres", "", seed=seed)
+        positive, negative = _apply_result(node, "{sg:body}", "{sg:body}, lowres", "", seed=seed)
         assert negative == f"{NEGATIVE_BY_PROMPT[positive]}, lowres"
-        positive, negative = node.apply("{sg:body}", "lowres", "", seed=seed)
+        positive, negative = _apply_result(node, "{sg:body}", "lowres", "", seed=seed)
         assert negative == f"lowres, {NEGATIVE_BY_PROMPT[positive]}"
 
 
 def test_global_random_state_is_untouched(node):
     before = random.getstate()
-    node.apply(TEXT, "{sg:hair}", "", seed=5)
+    _apply_result(node, TEXT, "{sg:hair}", "", seed=5)
     assert random.getstate() == before
 
 

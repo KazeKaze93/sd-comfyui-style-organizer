@@ -186,5 +186,8 @@ def test_node_has_no_style_negatives_input(node_module):
 
 def test_node_apply_always_adds_style_negatives(node_module):
     node = node_module.StyleGridNode
-    assert node().apply("{sgd:body}", "lowres", "") == ("tanned skin", "lowres, pale skin")
+    out = node().apply("{sgd:body}", "lowres", "")
+    assert isinstance(out, dict)
+    assert isinstance(out["ui"]["sg_warnings"], list)
+    assert out["result"] == ("tanned skin", "lowres, pale skin")
     assert node.IS_CHANGED("{sgd:body}", "", "", seed=1) != node.IS_CHANGED("{sgd:body}", "", "", seed=2)

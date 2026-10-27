@@ -103,4 +103,8 @@ class StyleGridNode:
         by_cat = build_styles_by_cat(enriched, active_source)
         # One queue run = one draw: every image of a latent batch shares this conditioning.
         deck = DeckContext(clamp_deck_seed(deck_seed), clamp_deck_index(deck_index))
-        return resolve_pair(text, negative_text, by_cat, rng=random.Random(seed), deck=deck)
+        warnings: list[str] = []
+        positive, negative = resolve_pair(
+            text, negative_text, by_cat, rng=random.Random(seed), deck=deck, warnings=warnings
+        )
+        return {"ui": {"sg_warnings": warnings}, "result": (positive, negative)}

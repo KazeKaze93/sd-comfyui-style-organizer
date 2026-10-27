@@ -34,7 +34,7 @@ Right-click a category in the **sidebar** for wildcard actions, in two groups: *
 
 - **Whole category:** `{sg:body}` — category match is case-insensitive
 - **Slice:** `{sg:body:Tanned,Shortstack}` — comma-separated **suffixes without the category prefix** (not `BODY_Tanned`). Leading `-` excludes (`{sg:body:-Tanned}`); trailing `*` is a prefix glob (`{sg:body:Male_*}`)
-- **Resolution:** includes are unioned, then excludes subtract. If every listed name is missing, the token **falls back to the whole category** instead of vanishing. The UI writes the shortest correct form; the resolver understands all forms
+- **Resolution:** includes are unioned, then excludes subtract. A slice that matches no styles resolves to empty and the node shows a warning. The UI writes the shortest correct form; the resolver understands all forms
 - **Chips:** each active `{sg:…}` appears as a chip in the selected bar. A slice chip shows the **resolved pool size** (how many styles the token can pick from), with those style names in the tooltip — not the number of raw spec entries
 - **When / what:** expanded when the Style Grid node runs. A wildcard in the positive field (`pos`) pulls the style’s `prompt`; in the negative field (`neg`) it pulls `negative_prompt`
 - **Seed:** the picks come from the node’s **seed** input. The same seed and text give the same picks: set it to `fixed` to repeat a result, keep `randomize` for new picks on every queue run. Workflows saved before the input existed load with `randomize`
@@ -114,9 +114,7 @@ The toolbar (icon buttons with tooltips) includes **Backup**,
 fullscreen, and close. When multi-select finds conflicts, a red warning
 badge with a count appears — **click** it to open a popover listing each
 conflict; you can remove the conflicting style from there.
-Applying a style keeps the first occurrence of a tag (and its weight) so
-unapply can restore the prompt exactly; at generation the node dedups
-weighted duplicates and keeps the highest non-negative weight.
+Applying a style keeps the first occurrence of a tag (and its weight) so unapply can restore the prompt exactly; at generation the node dedups weighted duplicates and keeps the highest weight, unless one occurrence is a de-emphasis (below 1.0), in which case the first occurrence wins.
 
 Favorite styles show a **star** on the tile; selected styles show a
 **check** badge. Right-click any style card for Select/Deselect, Add/Remove

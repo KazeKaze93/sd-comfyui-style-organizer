@@ -131,15 +131,22 @@ def resolve_and_pack(
     *,
     deck: DeckContext | None = None,
     paired=(),
+    warnings: list[str] | None = None,
 ):
     """Expand {sg:...} / {sgd:...} wildcards from the given category map, then dedup
     tags. field selects which side of a picked style a wildcard pulls from; deck enables
     {sgd:...} draws; paired reuses picks of the other field (see resolve_sg_picks).
     """
-    return dedup_prompt(resolve_sg_picks(prompt_str, styles_by_cat, rng, field, deck=deck, paired=paired)[0])
+    return dedup_prompt(
+        resolve_sg_picks(
+            prompt_str, styles_by_cat, rng, field, deck=deck, paired=paired, warnings=warnings
+        )[0]
+    )
 
 
-def resolve_pair(text, negative_text, styles_by_cat, *, rng=None, deck: DeckContext):
+def resolve_pair(
+    text, negative_text, styles_by_cat, *, rng=None, deck: DeckContext, warnings: list[str] | None = None
+):
     """Resolve the node's positive and negative text; returns (positive, negative).
 
     rng draws the {sg:...} picks of the positive, then of negative tokens without a positive pick.
@@ -147,11 +154,19 @@ def resolve_pair(text, negative_text, styles_by_cat, *, rng=None, deck: DeckCont
     negative_prompt after negative_text, in token order, and negative tags that also occur in the
     expanded positive are dropped.
     """
-    resolved, picks = resolve_sg_picks(text, styles_by_cat, rng, deck=deck)
+    resolved, picks = resolve_sg_picks(text, styles_by_cat, rng, deck=deck, warnings=warnings)
     positive = dedup_prompt(resolved)
     parts = [negative_text, *(pick.style.get("negative_prompt") or "" for pick in picks)]
     negative_text = ", ".join(part for part in parts if part)
-    negative = resolve_and_pack(negative_text, styles_by_cat, rng, field="negative_prompt", deck=deck, paired=picks)
+    negative = resolve_and_pack(
+        negative_text,
+        styles_by_cat,
+        rng,
+        field="negative_prompt",
+        deck=deck,
+        paired=picks,
+        warnings=warnings,
+    )
     if picks:
         negative, dropped = drop_shared_tags(negative, positive)
         if dropped:

@@ -164,11 +164,8 @@ def test_deck_fallbacks():
     # No deck / unknown category: keep raw through passes, then strip.
     assert resolve_sg_wildcards("{sgd:cat}", styles, deck=None) == ""
     assert resolve_sg_wildcards("{sgd:missing}", styles, deck=DeckContext(1, 0)) == ""
-    out = resolve_sg_wildcards(
-        "{sgd:cat:Ghost,Missing}", styles, deck=DeckContext(1, 0)
-    )
-    assert out in {s["prompt"] for s in styles["cat"]}
-    assert "{sgd:" not in out
+    # Empty slice resolves to empty (no fallback to the full category).
+    assert resolve_sg_wildcards("{sgd:cat:Ghost,Missing}", styles, deck=DeckContext(1, 0)) == ""
 
 
 def test_spec_normalization_order_independent():

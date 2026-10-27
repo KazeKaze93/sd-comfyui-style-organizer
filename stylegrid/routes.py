@@ -134,46 +134,6 @@ def _write_styles_to_new_import_csv(styles, name_hint):
     return len(styles)
 
 
-def detect_conflicts(style_names):
-    styles_map = {s["name"]: s for s in get_cached_styles()}
-    conflicts = []
-    style_tokens = {}
-    for name in style_names:
-        s = styles_map.get(name)
-        if not s:
-            continue
-        style_tokens[name] = {"positive": set(), "negative": set()}
-        for token in (s.get("prompt") or "").split(","):
-            t = token.strip().lower()
-            if t and t != "{prompt}":
-                style_tokens[name]["positive"].add(t)
-        for token in (s.get("negative_prompt") or "").split(","):
-            t = token.strip().lower()
-            if t and t != "{prompt}":
-                style_tokens[name]["negative"].add(t)
-    names = list(style_tokens.keys())
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            a, b = names[i], names[j]
-            overlap1 = style_tokens[a]["positive"] & style_tokens[b]["negative"]
-            if overlap1:
-                conflicts.append({
-                    "styles": [a, b],
-                    "type": "positive_vs_negative",
-                    "tokens": list(overlap1)[:5],
-                    "message": f"'{a}' adds tokens that '{b}' negates: {', '.join(list(overlap1)[:3])}"
-                })
-            overlap2 = style_tokens[b]["positive"] & style_tokens[a]["negative"]
-            if overlap2:
-                conflicts.append({
-                    "styles": [b, a],
-                    "type": "positive_vs_negative",
-                    "tokens": list(overlap2)[:5],
-                    "message": f"'{b}' adds tokens that '{a}' negates: {', '.join(list(overlap2)[:3])}"
-                })
-    return conflicts
-
-
 # Real aiohttp exposes this; test stubs may not. Fall back so import still works.
 _HTTPRequestEntityTooLarge = getattr(web, "HTTPRequestEntityTooLarge", RequestBodyTooLarge)
 
@@ -250,11 +210,6 @@ def _register_style_routes(routes):
     @routes.get("/style_grid/check_update")
     async def api_check_update(request):
         return web.json_response({"changed": check_files_changed()})
-
-    @routes.post("/style_grid/conflicts")
-    async def api_conflicts(request):
-        data = await _read_json(request)
-        return web.json_response({"conflicts": detect_conflicts(data.get("styles", []))})
 
     @routes.get("/style_grid/export")
     async def api_export(request):
