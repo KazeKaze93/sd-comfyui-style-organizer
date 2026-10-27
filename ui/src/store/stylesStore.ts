@@ -13,6 +13,7 @@ import {
   parseCorruptData,
   type CorruptDataInfo,
 } from '../lib/parseCorruptData'
+import { tagKeySet } from '../lib/tagIdentity'
 
 /** Avoid toast spam: categories() runs during render while coverage stays low. */
 let categoryOrderCoverageToastShown = false
@@ -638,14 +639,9 @@ export function selectFilteredStyles(
   return filtered
 }
 
-/** Comma-split tokens like server detect_conflicts: trim, lower, skip empty/{prompt}. */
+/** Tag keys for conflict intersection; mirrors node drop_shared_tags identity, not /conflicts. */
 function conflictTokenSet(str: string): Set<string> {
-  const out = new Set<string>()
-  for (const part of (str || '').split(',')) {
-    const t = part.trim().toLowerCase()
-    if (t && t !== '{prompt}') out.add(t)
-  }
-  return out
+  return tagKeySet(str)
 }
 
 function tokenSetsIntersect(a: Set<string>, b: Set<string>): boolean {
@@ -1069,7 +1065,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })), ttl)
   },
   detectConflicts: () => {
-    // Mirror server detect_conflicts: exact token-set intersection, not substring.
+    // Exact tagKey-set intersection (node drop_shared_tags identity), not substring.
     // Resolve prompt/neg from the live catalog so edits/refreshes aren't missed.
     const { selectedStyles, styles } = get()
     const conflicts: Conflict[] = []

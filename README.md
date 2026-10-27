@@ -114,6 +114,9 @@ The toolbar (icon buttons with tooltips) includes **Backup**,
 fullscreen, and close. When multi-select finds conflicts, a red warning
 badge with a count appears — **click** it to open a popover listing each
 conflict; you can remove the conflicting style from there.
+Applying a style keeps the first occurrence of a tag (and its weight) so
+unapply can restore the prompt exactly; at generation the node dedups
+weighted duplicates and keeps the highest non-negative weight.
 
 Favorite styles show a **star** on the tile; selected styles show a
 **check** badge. Right-click any style card for Select/Deselect, Add/Remove

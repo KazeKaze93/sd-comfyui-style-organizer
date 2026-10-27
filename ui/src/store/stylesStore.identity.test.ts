@@ -67,6 +67,22 @@ describe('style identity (name, source_file)', () => {
     resetStore()
   })
 
+  it('conflict: weighted pale skin vs bare negative is one conflict', () => {
+    const a = row('A', FILE_A, {
+      prompt: '(pale skin:1.2)',
+      negative_prompt: '',
+    })
+    const b = row('B', FILE_B, {
+      prompt: 'other',
+      negative_prompt: 'pale skin',
+    })
+    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().toggleStyle(a)
+    useStylesStore.getState().toggleStyle(b)
+    useStylesStore.getState().detectConflicts()
+    expect(useStylesStore.getState().conflicts).toHaveLength(1)
+  })
+
   it('favorites A only then both; Favorites view lists the right packs', () => {
     const a = row('X', FILE_A, { prompt: 'from-a' })
     const b = row('X', FILE_B, { prompt: 'from-b' })

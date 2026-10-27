@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "segment": "pale skin",
+      "key": "pale skin"
+    },
+    {
+      "segment": "(pale skin:1.2)",
+      "key": "pale skin"
+    },
+    {
+      "segment": "(Pale Skin:0.8)",
+      "key": "pale skin"
+    },
+    {
+      "segment": "PALE SKIN",
+      "key": "pale skin"
+    },
+    {
+      "segment": "(a:b:1.2)",
+      "key": "(a:b:1.2)"
+    },
+    {
+      "segment": "<lora:foo:0.8>",
+      "key": "<lora:foo:0.8>"
+    },
+    {
+      "segment": "((pale skin))",
+      "key": "((pale skin))"
+    },
+    {
+      "segment": "[pale skin]",
+      "key": "[pale skin]"
+    },
+    {
+      "segment": "(smiling",
+      "key": "(smiling"
+    },
+    {
+      "segment": "happy:1.2)",
+      "key": "happy:1.2)"
+    },
+    {
+      "segment": "(tag:1)",
+      "key": "tag"
+    },
+    {
+      "segment": "(tag:1.25)",
+      "key": "tag"
+    }
+  ]
+}
