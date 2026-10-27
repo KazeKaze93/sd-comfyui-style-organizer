@@ -1,4 +1,5 @@
 import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
 import { DECK_INDEX_WIDGET, DECK_SEED_WIDGET, repairRestoredWidgets, toWidgetInt } from "./restored_widgets.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
@@ -941,8 +942,32 @@ function openStyleBrowser(node) {
     }
 }
 
+let sgWarningsListenerRegistered = false;
+
 app.registerExtension({
     name: "StyleGrid.Browser",
+    setup() {
+        if (sgWarningsListenerRegistered) return;
+        sgWarningsListenerRegistered = true;
+        api.addEventListener("executed", (ev) => {
+            const detail = ev.detail;
+            const warnings = detail?.output?.sg_warnings;
+            if (!Array.isArray(warnings) || !warnings.length) return;
+            const node = app.graph?.getNodeById(Number(detail.node));
+            if (node?.comfyClass !== "StyleGridNode") return;
+            const toast = app.extensionManager?.toast;
+            if (toast?.add) {
+                toast.add({
+                    severity: "warn",
+                    summary: "Style Grid",
+                    detail: warnings.join("\n"),
+                    life: 8000,
+                });
+            } else {
+                console.warn("[Style Grid]", ...warnings);
+            }
+        });
+    },
     async nodeCreated(node) {
         if (node.comfyClass !== "StyleGridNode") return;
         const { seed, index } = getDeckWidgets(node);
