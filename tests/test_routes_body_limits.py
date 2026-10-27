@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
-
 from stylegrid.http_limits import (
     IMPORT_BODY_MAX_BYTES,
     JSON_BODY_MAX_BYTES,

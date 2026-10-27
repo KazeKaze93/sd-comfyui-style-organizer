@@ -34,6 +34,13 @@ from .data_files import (
     preset_styles_payload_ok,
     save_presets,
 )
+from .http_limits import (
+    IMPORT_BODY_MAX_BYTES,
+    JSON_BODY_MAX_BYTES,
+    THUMBNAIL_UPLOAD_BODY_MAX_BYTES,
+    RequestBodyTooLarge,
+    read_body_capped,
+)
 from .safe_persistence import locked_path, write_atomic
 from .thumbnails import (
     cleanup_orphan_thumbnails,
@@ -42,13 +49,6 @@ from .thumbnails import (
     find_thumbnail_path,
     get_thumbnail_path,
     list_thumbnails,
-)
-from .http_limits import (
-    IMPORT_BODY_MAX_BYTES,
-    JSON_BODY_MAX_BYTES,
-    THUMBNAIL_UPLOAD_BODY_MAX_BYTES,
-    RequestBodyTooLarge,
-    read_body_capped,
 )
 from .zip_limits import BackupZipLimitError, validate_backup_zip_limits
 
