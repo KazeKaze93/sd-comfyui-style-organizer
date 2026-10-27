@@ -1,5 +1,5 @@
 /**
- * Tag identity for conflict detection — mirrors stylegrid/prompt_ops.py
+ * Tag identity for conflict detection: mirrors stylegrid/prompt_ops.py
  * `_parse` / `_tag_key` / `drop_shared_tags` (raw comma split, not top-level).
  */
 
