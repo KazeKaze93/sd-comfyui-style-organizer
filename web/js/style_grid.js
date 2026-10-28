@@ -1,6 +1,14 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { DECK_INDEX_WIDGET, DECK_SEED_WIDGET, repairRestoredWidgets, toWidgetInt } from "./restored_widgets.js";
+import {
+    LEDGER_FIELD,
+    parseLedger,
+    serializeLedger,
+    subsumePresent,
+    selectFromLedger,
+    syntheticStyle,
+} from "./applied_ledger.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
 /** Target origin for host -> iframe messages; IFRAME_SRC is an absolute same-origin path. */
@@ -22,7 +30,9 @@ let allStylesCache = [];
 /** Element that had focus when the browser was opened (restore on close). */
 let openerEl = null;
 /** node → Map<styleKey, { name, source_file, prompt, negative_prompt }> written at apply time. */
-const appliedByNode = new Map();
+const appliedByNode = new WeakMap();
+/** Legacy rehydrate display list (no persisted ledger yet), used to seed a ledger on first mutate. */
+const legacyShown = new WeakMap();
 
 const STYLE_KEY_SEP = "\0";
 
@@ -310,7 +320,45 @@ function guardDeckWidgetSerialization(node) {
     }
 }
 
-function getActiveStyles(text, negativeText, excludeStyle) {
+function styleKeysOf(style) {
+    return {
+        pos: new Set(parseTags(style.prompt || "").map(tagKey)),
+        neg: new Set(parseTags(style.negative_prompt || "").map(tagKey)),
+    };
+}
+
+/** Seed an empty-or-legacyShown ledger before the first mutating action on a legacy node. */
+function ensureLedger(node) {
+    if (appliedByNode.has(node)) return appliedByNode.get(node);
+    const shown = legacyShown.get(node) || [];
+    const byKey = new Map();
+    for (const e of shown) {
+        byKey.set(styleKey(e.name, e.source_file), {
+            name: e.name,
+            source_file: e.source_file || "",
+            prompt: e.prompt || "",
+            negative_prompt: e.negative_prompt || "",
+        });
+    }
+    appliedByNode.set(node, byKey);
+    return byKey;
+}
+
+function getActiveStyles(text, negativeText, excludeStyle, node) {
+    if (node && appliedByNode.has(node)) {
+        const out = [];
+        for (const entry of appliedByNode.get(node).values()) {
+            if (excludeStyle) {
+                const sameKey = styleKey(entry.name, entry.source_file)
+                    === styleKey(excludeStyle.name, excludeStyle.source_file);
+                const twinContent = entry.name === excludeStyle.name
+                    && sameStyleContent(entry, excludeStyle);
+                if (sameKey || twinContent) continue;
+            }
+            if (styleIsPresent(text, negativeText, entry)) out.push(entry);
+        }
+        return out;
+    }
     return allStylesCache.filter((s) => {
         if (excludeStyle) {
             const sameKey = styleKey(s.name, s.source_file)
@@ -336,7 +384,7 @@ function applyStyleToNode(node, style, options = { record: true }) {
     // Nesting a second {prompt}-wrap puts the new prefix/suffix on the
     // boundaries, so removeStyleText can no longer find the inner wrap.
     if (isWrapStyle(style)) {
-        const activeWrap = getActiveStyles(currentText, currentNeg, style)
+        const activeWrap = getActiveStyles(currentText, currentNeg, style, node)
             .find(isWrapStyle);
         if (activeWrap) {
             const message = "Only one {prompt}-wrap style can be active at a time";
@@ -352,20 +400,18 @@ function applyStyleToNode(node, style, options = { record: true }) {
 
     if (options.record === false) return;
 
-    let byKey = appliedByNode.get(node);
-    if (!byKey) {
-        byKey = new Map();
-        appliedByNode.set(node, byKey);
-    }
+    const byKey = ensureLedger(node);
     byKey.set(styleKey(style.name, style.source_file), {
         name: style.name,
         source_file: style.source_file || "",
         prompt: style.prompt || "",
         negative_prompt: style.negative_prompt || "",
     });
+    node.graph?.setDirtyCanvas(true, true);
 }
 
 function unapplyStyleFromNode(node, style) {
+    ensureLedger(node);
     const key = styleKey(style.name, style.source_file);
     const recorded = appliedByNode.get(node)?.get(key);
     const prompt = recorded ? recorded.prompt : (style.prompt || "");
@@ -374,7 +420,7 @@ function unapplyStyleFromNode(node, style) {
     const { text, neg } = getTextWidgets(node);
     const currentText = text ? text.value || "" : "";
     const currentNeg = neg ? neg.value || "" : "";
-    const others = getActiveStyles(currentText, currentNeg, style);
+    const others = getActiveStyles(currentText, currentNeg, style, node);
     const protectPos = others.flatMap((s) => parseTags(s.prompt || ""));
     const protectNeg = others.flatMap((s) => parseTags(s.negative_prompt || ""));
     if (text) text.value = removeStyleText(currentText, prompt, protectPos);
@@ -382,6 +428,7 @@ function unapplyStyleFromNode(node, style) {
     node.graph?.setDirtyCanvas(true, true);
 
     appliedByNode.get(node)?.delete(key);
+    node.graph?.setDirtyCanvas(true, true);
 }
 
 // Reorders the tag-blocks belonging to currently-applied plain-tag styles to
@@ -397,7 +444,7 @@ function reorderStylesInNode(node, styleIds) {
 
     const isReorderable = (s) =>
         !(s.prompt || "").includes("{prompt}") && !(s.negative_prompt || "").includes("{prompt}");
-    const activeStyles = getActiveStyles(currentText, currentNeg, null).filter(isReorderable);
+    const activeStyles = getActiveStyles(currentText, currentNeg, null, node).filter(isReorderable);
     const activeByKey = new Map(
         activeStyles.map((s) => [styleKey(s.name, s.source_file), s])
     );
@@ -445,6 +492,7 @@ function reorderStylesInNode(node, styleIds) {
 }
 
 function clearAllStyles(node) {
+    ensureLedger(node);
     const { text, neg } = getTextWidgets(node);
     let currentText = text ? text.value || "" : "";
     let currentNeg = neg ? neg.value || "" : "";
@@ -454,7 +502,7 @@ function clearAllStyles(node) {
     currentText = stripWildcards(currentText);
     currentNeg = stripWildcards(currentNeg);
 
-    for (const style of getActiveStyles(currentText, currentNeg, null)) {
+    for (const style of getActiveStyles(currentText, currentNeg, null, node)) {
         currentText = removeStyleText(currentText, style.prompt || "", []);
         currentNeg = removeStyleText(currentNeg, style.negative_prompt || "", []);
     }
@@ -463,7 +511,8 @@ function clearAllStyles(node) {
     if (neg) neg.value = currentNeg;
     node.graph?.setDirtyCanvas(true, true);
     syncWildcards(node);
-    appliedByNode.delete(node);
+    // Keep an empty ledger so the node is no longer treated as legacy.
+    appliedByNode.set(node, new Map());
     if (iframe?.contentWindow) {
         postToIframe({ type: "SG_CLEAR_SELECTION" });
     }
@@ -711,25 +760,44 @@ function rehydrate() {
             const { text, neg } = getTextWidgets(currentNode);
             const currentText = text ? text.value || "" : "";
             const currentNeg = neg ? neg.value || "" : "";
-            const present = allStylesCache.filter((s) => styleIsPresent(currentText, currentNeg, s));
-            const activeW = currentNode.widgets?.find((w) => w.name === "active_source");
-            const ledger = appliedByNode.get(currentNode);
-            for (const style of collapsePresentStyles(present, activeW ? String(activeW.value || "") : "")) {
-                let toPost = style;
-                if (ledger) {
-                    for (const entry of ledger.values()) {
-                        if (
-                            entry.name === style.name
-                            && sameStyleContent(entry, style)
-                            && String(entry.source_file || "") !== String(style.source_file || "")
-                        ) {
-                            const r = resolveStyleRow(entry.name, entry.source_file || "");
-                            if (r.row) toPost = r.row;
-                            break;
-                        }
-                    }
+
+            if (appliedByNode.has(currentNode)) {
+                const byKey = appliedByNode.get(currentNode);
+                const { kept, dropped } = selectFromLedger(
+                    [...byKey.values()],
+                    (entry) => styleIsPresent(currentText, currentNeg, entry),
+                );
+                let ledgerChanged = false;
+                for (const entry of dropped) {
+                    byKey.delete(styleKey(entry.name, entry.source_file));
+                    ledgerChanged = true;
                 }
-                postToIframe({ type: "SG_STYLE_APPLIED", style: toPost });
+                if (ledgerChanged) currentNode.graph?.setDirtyCanvas(true, true);
+                for (const entry of kept) {
+                    const r = resolveStyleRow(entry.name, entry.source_file || "");
+                    const toPost = r.row || syntheticStyle(entry);
+                    postToIframe({ type: "SG_STYLE_APPLIED", style: toPost });
+                }
+            } else {
+                const present = allStylesCache.filter((s) => styleIsPresent(currentText, currentNeg, s));
+                const activeW = currentNode.widgets?.find((w) => w.name === "active_source");
+                let collapsed = collapsePresentStyles(
+                    present,
+                    activeW ? String(activeW.value || "") : "",
+                );
+                collapsed = subsumePresent(collapsed, styleKeysOf);
+                legacyShown.set(
+                    currentNode,
+                    collapsed.map((s) => ({
+                        name: s.name,
+                        source_file: s.source_file || "",
+                        prompt: s.prompt || "",
+                        negative_prompt: s.negative_prompt || "",
+                    })),
+                );
+                for (const style of collapsed) {
+                    postToIframe({ type: "SG_STYLE_APPLIED", style });
+                }
             }
             syncWildcards(currentNode);
         });
@@ -927,9 +995,6 @@ function openStyleBrowser(node) {
         closeStyleBrowser();
         return;
     }
-    if (currentNode !== node) {
-        appliedByNode.clear();
-    }
     currentNode = node;
     openerEl = document.activeElement;
     ensureOverlay();
@@ -981,10 +1046,42 @@ app.registerExtension({
         hookDeckWidgetCallbacks(node);
         guardDeckWidgetSerialization(node);
         node.addWidget("button", "Browse Styles", null, () => openStyleBrowser(node));
+
+        // User-created nodes only get nodeCreated (not loadedGraphNode). Give them an
+        // empty ledger so applies persist. Loaded nodes: onConfigure may replace it;
+        // loadedGraphNode demotes to legacy when the workflow has no LEDGER_FIELD.
+        appliedByNode.set(node, new Map());
+        node.__sgLedgerFromWorkflow = false;
+
+        const prevSerialize = node.onSerialize;
+        node.onSerialize = function (o) {
+            prevSerialize?.apply(this, arguments);
+            if (appliedByNode.has(this)) {
+                o[LEDGER_FIELD] = serializeLedger(appliedByNode.get(this).values());
+            }
+        };
+        const prevConfigure = node.onConfigure;
+        node.onConfigure = function (o) {
+            prevConfigure?.apply(this, arguments);
+            const entries = parseLedger(o?.[LEDGER_FIELD]);
+            if (entries !== null) {
+                appliedByNode.set(
+                    this,
+                    new Map(entries.map((e) => [styleKey(e.name, e.source_file), e])),
+                );
+                this.__sgLedgerFromWorkflow = true;
+            } else {
+                this.__sgLedgerFromWorkflow = false;
+            }
+        };
     },
     loadedGraphNode(node) {
         if (node.comfyClass !== "StyleGridNode") return;
         repairRestoredWidgets(node.widgets || []);
         guardDeckWidgetSerialization(node);
+        // Loaded workflow node without sg_applied: treat as legacy (no ledger).
+        if (!node.__sgLedgerFromWorkflow) {
+            appliedByNode.delete(node);
+        }
     },
 });
