@@ -3,6 +3,8 @@ import { api } from "/scripts/api.js";
 import { DECK_INDEX_WIDGET, DECK_SEED_WIDGET, repairRestoredWidgets, toWidgetInt } from "./restored_widgets.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
+/** Target origin for host -> iframe messages; IFRAME_SRC is an absolute same-origin path. */
+const IFRAME_ORIGIN = window.location.origin;
 
 const THEME_CANDIDATES = () => [document.body, document.documentElement];
 const THEME_LIGHT_LUMINANCE = 0.4;
@@ -62,12 +64,14 @@ function resolveStyleRow(name, sourceFile, content) {
     return { row: null, status: "ambiguous" };
 }
 
+function postToIframe(msg) {
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage(msg, IFRAME_ORIGIN);
+}
+
 function postInfoToast(message) {
     if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage(
-            { type: "SG_TOAST", message, variant: "info" },
-            "*"
-        );
+        postToIframe({ type: "SG_TOAST", message, variant: "info" });
     }
 }
 
@@ -92,7 +96,7 @@ function detectTheme() {
 
 function postTheme() {
     if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: "SG_THEME", mode: currentTheme }, "*");
+        postToIframe({ type: "SG_THEME", mode: currentTheme });
     }
 }
 
@@ -251,9 +255,8 @@ function postDeckState(node) {
     if (!ready || !iframe?.contentWindow || node !== currentNode) return;
     const { seed, index } = getDeckWidgets(node);
     if (!seed || !index) return;
-    iframe.contentWindow.postMessage(
-        { type: "SG_DECK_STATE", seed: toWidgetInt(seed.value), index: toWidgetInt(index.value) },
-        "*"
+    postToIframe(
+        { type: "SG_DECK_STATE", seed: toWidgetInt(seed.value), index: toWidgetInt(index.value) }
     );
 }
 
@@ -462,7 +465,7 @@ function clearAllStyles(node) {
     syncWildcards(node);
     appliedByNode.delete(node);
     if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
+        postToIframe({ type: "SG_CLEAR_SELECTION" });
     }
 }
 
@@ -568,7 +571,7 @@ function syncWildcards(node) {
         text ? text.value || "" : "",
         neg ? neg.value || "" : ""
     ).map((entry) => ({ category: entry.category, spec: entry.spec, kind: normalizeWildcardKind(entry.kind) }));
-    iframe.contentWindow.postMessage({ type: "SG_WILDCARDS_ACTIVE", categories }, "*");
+    postToIframe({ type: "SG_WILDCARDS_ACTIVE", categories });
 }
 
 function removeWildcardCategory(node, category, spec, kind) {
@@ -698,11 +701,11 @@ function rehydrate() {
         .then((r) => r.json())
         .then((data) => {
             allStylesCache = Object.values(data.categories || {}).flat();
-            iframe.contentWindow.postMessage({
+            postToIframe({
                 type: "SG_INIT",
                 styles: allStylesCache,
-            }, "*");
-            iframe.contentWindow.postMessage({ type: "SG_CLEAR_SELECTION" }, "*");
+            });
+            postToIframe({ type: "SG_CLEAR_SELECTION" });
 
             if (!currentNode) return;
             const { text, neg } = getTextWidgets(currentNode);
@@ -726,7 +729,7 @@ function rehydrate() {
                         }
                     }
                 }
-                iframe.contentWindow.postMessage({ type: "SG_STYLE_APPLIED", style: toPost }, "*");
+                postToIframe({ type: "SG_STYLE_APPLIED", style: toPost });
             }
             syncWildcards(currentNode);
         });
@@ -794,6 +797,7 @@ function ensureOverlay() {
 
     window.addEventListener("message", (e) => {
         if (e.source !== iframe.contentWindow) return;
+        if (e.origin !== IFRAME_ORIGIN) return;
         const msg = e.data;
         if (!msg || typeof msg.type !== "string") return;
 
