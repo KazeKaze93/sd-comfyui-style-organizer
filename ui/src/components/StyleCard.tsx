@@ -384,11 +384,6 @@ export const StyleCard = memo(function StyleCard({
                   }
                   const version = String(Date.now())
                   useStylesStore.getState().bumpThumbVersion(key, version)
-                  // App's single onHostMessage also bumps via SG_THUMB_DONE.
-                  window.postMessage(
-                    { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
-                    '*',
-                  )
                   void useStylesStore.getState().loadThumbnails()
                   showToast('Preview deleted', 'success')
                 } catch {
@@ -724,11 +719,6 @@ export const StyleCard = memo(function StyleCard({
                 }
                 const version = String(Date.now())
                 useStylesStore.getState().bumpThumbVersion(key, version)
-                // App's single onHostMessage also bumps via SG_THUMB_DONE.
-                window.postMessage(
-                  { type: 'SG_THUMB_DONE', styleId: displayStyle.name, version, source_file: displayStyle.source_file || '' },
-                  '*',
-                )
                 void useStylesStore.getState().loadThumbnails()
                 showToast('Preview updated', 'success')
               } catch {

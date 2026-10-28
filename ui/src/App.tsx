@@ -270,12 +270,6 @@ export default function App() {
       if (msg.type === 'SG_DECK_STATE') {
         useStylesStore.getState().setDeckState({ seed: msg.seed, index: msg.index })
       }
-      if (msg.type === 'SG_THUMB_DONE') {
-        useStylesStore.getState().bumpThumbVersion(
-          styleRowKey({ name: msg.styleId, source_file: msg.source_file }),
-          String(msg.version),
-        )
-      }
     })
     sendToHost({ type: 'SG_READY' })
     return unsub
