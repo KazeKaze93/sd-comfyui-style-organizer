@@ -1,16 +1,23 @@
 # Changelog
 
 ## 0.0.16 - 2026-10-28
+
 ### Fixed
+
 - **Selection after reload:** the styles you apply are saved in the workflow with the node, so reopening the panel after a page reload, after switching between Style Grid nodes, or after undo shows exactly those styles. Before, the panel guessed from the tags in the text and could highlight a short style such as a single `1boy` tag whenever a larger style containing that tag was applied.
 - **Workflows saved with earlier versions:** the selection is still detected from the text, now without styles that are fully contained in another selected style. Your first apply, remove or clear stores it in the workflow.
 - **Shared workflows:** a style from a pack that is not installed on this machine stays selected while its text is in the prompt, and removing it takes out the text it added.
 - **Thumbnails of same-named packs:** `data/pack.csv` and `samples/pack.csv` no longer share one thumbnail. Existing thumbnails are linked to the new file names once and the old files are kept. On NTFS and most Linux file systems a link takes no extra disk space; elsewhere the file is copied. Styles whose content differs between such packs generate their thumbnail again once.
 - **Sticky category header:** the header now sits on the top edge of the grid; cards no longer show above or under it while scrolling.
+
 ### Changed
+
 - **Clear all** removes the text of the styles applied through Style Grid and the wildcard tokens; tags you typed yourself stay in the prompt.
+
 ### Security
+
 - **Panel messages:** the Style Grid panel and the ComfyUI page now accept messages only from each other (same origin, expected window, checked contents) and no longer send them to any origin.
+
 Compatibility: node inputs and outputs are unchanged and existing workflows load as before. The node's entry in a saved workflow gains a `sg_applied` field, which the backend ignores. Folder size tools may count linked thumbnail files twice.
 
 ## 0.0.15 - 2026-10-27
