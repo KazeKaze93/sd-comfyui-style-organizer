@@ -14,8 +14,8 @@ _THUMB_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif")
 _RENAME_MAP_BASENAME = "RELEASE_NOTES_RENAMES.csv"
 
 
-def _legacy_rel_hash_input(style_name, csv_path):
-    """Pre-source-id hash input: name + path relative to a styles dir."""
+def _legacy_rel_suffix(csv_path):
+    """Rel-path part of a pre-source-id hash key (after ``::``)."""
     resolved = coerce_source_ref(csv_path)
     if resolved:
         csv_path = resolved
@@ -32,21 +32,49 @@ def _legacy_rel_hash_input(style_name, csv_path):
             continue
     if rel is None:
         rel = os.path.basename(ap).replace("\\", "/")
-    return f"{style_name}::{rel}"
+    return rel
 
 
-def _thumbnail_hash_input(style_name, csv_path=""):
-    """Stable string for thumbnail filename hash; empty csv_path keeps legacy name-only hash."""
-    if not csv_path:
-        return style_name
+def _source_suffix(csv_path):
+    """Source-id (or legacy rel) part of a thumbnail hash key (after ``::``)."""
     resolved = coerce_source_ref(csv_path)
     if resolved is not None:
         sid = to_source_id(resolved)
     else:
         sid = to_source_id(os.path.normpath(os.path.abspath(csv_path)))
     if sid:
-        return f"{style_name}::{sid}"
-    return _legacy_rel_hash_input(style_name, csv_path)
+        return sid
+    return _legacy_rel_suffix(csv_path)
+
+
+def _legacy_rel_hash_input(style_name, csv_path):
+    """Pre-source-id hash input: name + path relative to a styles dir."""
+    return f"{style_name}::{_legacy_rel_suffix(csv_path)}"
+
+
+def _thumbnail_hash_input(style_name, csv_path=""):
+    """Stable string for thumbnail filename hash; empty csv_path keeps legacy name-only hash."""
+    if not csv_path:
+        return style_name
+    return f"{style_name}::{_source_suffix(csv_path)}"
+
+
+class _SuffixMemo:
+    """Per-call cache of source suffixes; one instance per batch operation."""
+
+    def __init__(self):
+        self._new = {}
+        self._legacy = {}
+
+    def new(self, source):
+        if source not in self._new:
+            self._new[source] = _source_suffix(source)
+        return self._new[source]
+
+    def legacy(self, source):
+        if source not in self._legacy:
+            self._legacy[source] = _legacy_rel_suffix(source)
+        return self._legacy[source]
 
 
 def _thumbnail_stem(style_name, csv_path=""):
@@ -55,7 +83,6 @@ def _thumbnail_stem(style_name, csv_path=""):
 
 def _legacy_rel_stem(name, source):
     return hashlib.md5(_legacy_rel_hash_input(name, source).encode("utf-8")).hexdigest()
-
 
 def thumbnail_hash_key(name: str, source: str) -> str:
     """Canonical thumbnail identity hash for (name, source)."""
@@ -257,7 +284,7 @@ def migrate_legacy_thumbnails(styles=None, renamed_old_names=None, legacy_names=
     }
 
 
-def migrate_rel_thumbnails(styles=None):
+def migrate_rel_thumbnails(styles=None, memo=None):
     """Link-or-copy rel-path stems onto source-id stems when safe.
 
     Non-destructive: old files are never moved, renamed, or deleted.
@@ -276,6 +303,8 @@ def migrate_rel_thumbnails(styles=None):
 
     if styles is None:
         styles = get_cached_styles()
+    if memo is None:
+        memo = _SuffixMemo()
 
     by_stem = {}
     for fname in os.listdir(THUMBNAILS_DIR):
@@ -290,7 +319,8 @@ def migrate_rel_thumbnails(styles=None):
         source = s.get("source_file") or ""
         if not name or not source:
             continue
-        groups.setdefault(_legacy_rel_stem(name, source), []).append(s)
+        old_stem = hashlib.md5(f"{name}::{memo.legacy(source)}".encode("utf-8")).hexdigest()
+        groups.setdefault(old_stem, []).append(s)
 
     linked = 0
     copied = 0
@@ -298,7 +328,12 @@ def migrate_rel_thumbnails(styles=None):
     skipped_existing = 0
     for old_stem, entries in groups.items():
         if all(
-            _thumbnail_stem(e.get("name") or "", e.get("source_file") or "") == old_stem
+            hashlib.md5(
+                f"{e.get('name') or ''}::{memo.new(e.get('source_file') or '')}".encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            == old_stem
             for e in entries
         ):
             continue
@@ -320,7 +355,7 @@ def migrate_rel_thumbnails(styles=None):
                 for e in entries
                 if (e.get("source_file") or "") == source
             )
-            new_stem = _thumbnail_stem(name, source)
+            new_stem = hashlib.md5(f"{name}::{memo.new(source)}".encode("utf-8")).hexdigest()
             if new_stem in by_stem:
                 skipped_existing += 1
                 continue
@@ -349,7 +384,9 @@ def migrate_rel_thumbnails(styles=None):
 def list_thumbnails():
     """Return [{name, source_file}, ...] for styles with a source-aware thumbnail."""
     migrate_legacy_thumbnails()
-    migrate_rel_thumbnails()
+    styles = get_cached_styles()
+    memo = _SuffixMemo()
+    migrate_rel_thumbnails(styles, memo=memo)
     if not os.path.isdir(THUMBNAILS_DIR):
         return []
     on_disk = {
@@ -358,19 +395,21 @@ def list_thumbnails():
         if os.path.splitext(f)[1].lower() in _THUMB_EXTS
     }
     result = []
-    for s in get_cached_styles():
+    for s in styles:
         source = s.get("source_file") or ""
         if not source:
             continue
-        if _thumbnail_stem(s["name"], source) in on_disk:
+        stem = hashlib.md5(f"{s['name']}::{memo.new(source)}".encode("utf-8")).hexdigest()
+        if stem in on_disk:
             result.append({"name": s["name"], "source_file": source})
     return result
 
 
 def valid_thumbnail_hashes():
     """Source-aware stems for every style currently in the catalog."""
+    memo = _SuffixMemo()
     return {
-        _thumbnail_stem(s["name"], s.get("source_file") or "")
+        hashlib.md5(f"{s['name']}::{memo.new(s.get('source_file') or '')}".encode("utf-8")).hexdigest()
         for s in get_cached_styles()
         if s.get("source_file")
     }
@@ -387,17 +426,21 @@ def cleanup_orphan_thumbnails():
     "orphaned": int, "skipped_existing": int, "ambiguous": int}``.
     """
     migration = migrate_legacy_thumbnails()
-    migrate_rel_thumbnails()
+    styles = get_cached_styles()
+    memo = _SuffixMemo()
+    migrate_rel_thumbnails(styles, memo=memo)
     if not os.path.isdir(THUMBNAILS_DIR):
         return {"removed": 0, **migration}
     valid = valid_thumbnail_hashes()
-    for s in get_cached_styles():
+    for s in styles:
         name = s.get("name") or ""
         source = s.get("source_file") or ""
         if name:
             valid.add(legacy_thumbnail_stem(name))
         if name and source:
-            valid.add(_legacy_rel_stem(name, source))
+            valid.add(
+                hashlib.md5(f"{name}::{memo.legacy(source)}".encode("utf-8")).hexdigest()
+            )
     removed = 0
     for fname in os.listdir(THUMBNAILS_DIR):
         ext = os.path.splitext(fname)[1].lower()

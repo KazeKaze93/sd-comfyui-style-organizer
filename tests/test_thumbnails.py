@@ -402,3 +402,47 @@ def test_cleanup_keeps_rel_stem_removes_orphan(rooted_thumbs, monkeypatch):
     assert not orphan.exists()
     assert result["removed"] == 1
     assert Path(sg_thumbs.get_thumbnail_path(name, src, ext=".png")).exists()
+
+
+def _four_source_styles(tmp_path, n=2000):
+    sources = [str(tmp_path / f"pack{i}.csv") for i in range(4)]
+    styles = []
+    for i in range(n):
+        styles.append(
+            {
+                "name": f"Style_{i}",
+                "source_file": sources[i % 4],
+                "prompt": "",
+                "negative_prompt": "",
+            }
+        )
+    return styles
+
+
+def test_migrate_rel_to_source_id_call_count(thumbs_dir, tmp_path, monkeypatch):
+    styles = _four_source_styles(tmp_path)
+    calls = {"n": 0}
+    real = sg_thumbs.to_source_id
+
+    def counting(path):
+        calls["n"] += 1
+        return real(path)
+
+    monkeypatch.setattr(sg_thumbs, "to_source_id", counting)
+    sg_thumbs.migrate_rel_thumbnails(styles)
+    assert calls["n"] <= 4 * 3, calls["n"]
+
+
+def test_list_thumbnails_to_source_id_call_count(thumbs_dir, tmp_path, monkeypatch):
+    styles = _four_source_styles(tmp_path)
+    monkeypatch.setattr(sg_thumbs, "get_cached_styles", lambda: styles)
+    calls = {"n": 0}
+    real = sg_thumbs.to_source_id
+
+    def counting(path):
+        calls["n"] += 1
+        return real(path)
+
+    monkeypatch.setattr(sg_thumbs, "to_source_id", counting)
+    sg_thumbs.list_thumbnails()
+    assert calls["n"] <= 4 * 3, calls["n"]
