@@ -7,17 +7,15 @@ import shutil
 
 from .cache import get_cached_styles
 from .config import DATA_DIR, EXT_DIR, THUMBNAILS_DIR, get_styles_dirs
-from .source_ids import coerce_source_ref
+from .source_ids import coerce_source_ref, to_source_id
 
 # Hash is the stem; extension matches on-disk bytes (honest naming, no re-encode).
 _THUMB_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif")
 _RENAME_MAP_BASENAME = "RELEASE_NOTES_RENAMES.csv"
 
 
-def _thumbnail_hash_input(style_name, csv_path=""):
-    """Stable string for thumbnail filename hash; empty csv_path keeps legacy name-only hash."""
-    if not csv_path:
-        return style_name
+def _legacy_rel_hash_input(style_name, csv_path):
+    """Pre-source-id hash input: name + path relative to a styles dir."""
     resolved = coerce_source_ref(csv_path)
     if resolved:
         csv_path = resolved
@@ -37,8 +35,26 @@ def _thumbnail_hash_input(style_name, csv_path=""):
     return f"{style_name}::{rel}"
 
 
+def _thumbnail_hash_input(style_name, csv_path=""):
+    """Stable string for thumbnail filename hash; empty csv_path keeps legacy name-only hash."""
+    if not csv_path:
+        return style_name
+    resolved = coerce_source_ref(csv_path)
+    if resolved is not None:
+        sid = to_source_id(resolved)
+    else:
+        sid = to_source_id(os.path.normpath(os.path.abspath(csv_path)))
+    if sid:
+        return f"{style_name}::{sid}"
+    return _legacy_rel_hash_input(style_name, csv_path)
+
+
 def _thumbnail_stem(style_name, csv_path=""):
     return hashlib.md5(_thumbnail_hash_input(style_name, csv_path).encode("utf-8")).hexdigest()
+
+
+def _legacy_rel_stem(name, source):
+    return hashlib.md5(_legacy_rel_hash_input(name, source).encode("utf-8")).hexdigest()
 
 
 def thumbnail_hash_key(name: str, source: str) -> str:
@@ -241,9 +257,99 @@ def migrate_legacy_thumbnails(styles=None, renamed_old_names=None, legacy_names=
     }
 
 
+def migrate_rel_thumbnails(styles=None):
+    """Link-or-copy rel-path stems onto source-id stems when safe.
+
+    Non-destructive: old files are never moved, renamed, or deleted.
+    Existence checks use a single listdir snapshot (stem -> filename).
+
+    Returns linked / copied / need_regeneration / skipped_existing.
+    """
+    empty = {
+        "linked": 0,
+        "copied": 0,
+        "need_regeneration": 0,
+        "skipped_existing": 0,
+    }
+    if not os.path.isdir(THUMBNAILS_DIR):
+        return empty
+
+    if styles is None:
+        styles = get_cached_styles()
+
+    by_stem = {}
+    for fname in os.listdir(THUMBNAILS_DIR):
+        ext = os.path.splitext(fname)[1].lower()
+        if ext not in _THUMB_EXTS:
+            continue
+        by_stem[os.path.splitext(fname)[0]] = fname
+
+    groups = {}
+    for s in styles:
+        name = s.get("name") or ""
+        source = s.get("source_file") or ""
+        if not name or not source:
+            continue
+        groups.setdefault(_legacy_rel_stem(name, source), []).append(s)
+
+    linked = 0
+    copied = 0
+    need_regeneration = 0
+    skipped_existing = 0
+    for old_stem, entries in groups.items():
+        if all(
+            _thumbnail_stem(e.get("name") or "", e.get("source_file") or "") == old_stem
+            for e in entries
+        ):
+            continue
+        old_fname = by_stem.get(old_stem)
+        if not old_fname:
+            continue
+
+        uniq_sources = list(dict.fromkeys(s.get("source_file") or "" for s in entries))
+        uniq_sources = [s for s in uniq_sources if s]
+        if len(uniq_sources) > 1 and not _content_identical_across_sources(entries):
+            need_regeneration += 1
+            continue
+
+        old_path = os.path.join(THUMBNAILS_DIR, old_fname)
+        ext = os.path.splitext(old_fname)[1].lower() or ".webp"
+        for source in uniq_sources:
+            name = next(
+                e.get("name") or ""
+                for e in entries
+                if (e.get("source_file") or "") == source
+            )
+            new_stem = _thumbnail_stem(name, source)
+            if new_stem in by_stem:
+                skipped_existing += 1
+                continue
+            new_fname = new_stem + ext
+            new_path = os.path.join(THUMBNAILS_DIR, new_fname)
+            try:
+                os.link(old_path, new_path)
+                linked += 1
+                by_stem[new_stem] = new_fname
+            except OSError:
+                try:
+                    shutil.copy2(old_path, new_path)
+                    copied += 1
+                    by_stem[new_stem] = new_fname
+                except OSError:
+                    pass
+
+    return {
+        "linked": linked,
+        "copied": copied,
+        "need_regeneration": need_regeneration,
+        "skipped_existing": skipped_existing,
+    }
+
+
 def list_thumbnails():
     """Return [{name, source_file}, ...] for styles with a source-aware thumbnail."""
     migrate_legacy_thumbnails()
+    migrate_rel_thumbnails()
     if not os.path.isdir(THUMBNAILS_DIR):
         return []
     on_disk = {
@@ -274,19 +380,24 @@ def cleanup_orphan_thumbnails():
     """Migrate safe legacy thumbs, then remove true orphans.
 
     Preserves name-only legacy files for styles still in the catalog so
-    migration stays rollback-friendly (copy, not delete).
+    migration stays rollback-friendly (copy, not delete). Also preserves
+    pre-source-id rel-path stems for catalog styles.
 
     Returns ``{"removed": int, "migrated": int, "need_regeneration": int,
     "orphaned": int, "skipped_existing": int, "ambiguous": int}``.
     """
     migration = migrate_legacy_thumbnails()
+    migrate_rel_thumbnails()
     if not os.path.isdir(THUMBNAILS_DIR):
         return {"removed": 0, **migration}
     valid = valid_thumbnail_hashes()
     for s in get_cached_styles():
         name = s.get("name") or ""
+        source = s.get("source_file") or ""
         if name:
             valid.add(legacy_thumbnail_stem(name))
+        if name and source:
+            valid.add(_legacy_rel_stem(name, source))
     removed = 0
     for fname in os.listdir(THUMBNAILS_DIR):
         ext = os.path.splitext(fname)[1].lower()
