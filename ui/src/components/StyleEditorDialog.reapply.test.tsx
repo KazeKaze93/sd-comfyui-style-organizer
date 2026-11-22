@@ -97,9 +97,31 @@ describe.runIf(PLATFORM.reapplyEditedStyles)('edit an applied style', () => {
     expect(messages()).toEqual([{ type: 'SG_REFRESH' }])
   })
 
-  it('applied and renamed: SG_STYLE_RENAMED only (the host moves its ledger entry)', async () => {
+  it('applied and renamed only: SG_STYLE_RENAMED, no reapply (the host moves its ledger entry)', async () => {
     await render(true)
     await setValue(field('Name'), 'Huge')
+    await click(save())
+    expect(messages()).toEqual([
+      { type: 'SG_STYLE_RENAMED', old_name: 'BODY_Tall', new_name: 'BODY_Huge', source_file: A },
+    ])
+  })
+
+  it('applied, renamed and content changed: SG_STYLE_RENAMED, then UNAPPLY / APPLY under the new name', async () => {
+    await render(true)
+    await setValue(field('Name'), 'Huge')
+    await setValue(field('Negative prompt'), 'tiny')
+    await click(save())
+    expect(messages()).toEqual([
+      { type: 'SG_STYLE_RENAMED', old_name: 'BODY_Tall', new_name: 'BODY_Huge', source_file: A },
+      { type: 'SG_UNAPPLY', styleId: 'BODY_Huge', source_file: A },
+      { type: 'SG_APPLY', styleId: 'BODY_Huge', prompt: 'tall', neg: 'tiny', source_file: A },
+    ])
+  })
+
+  it('not applied, renamed and content changed: SG_STYLE_RENAMED only', async () => {
+    await render(false)
+    await setValue(field('Name'), 'Huge')
+    await setValue(field('Prompt'), 'giant')
     await click(save())
     expect(messages()).toEqual([
       { type: 'SG_STYLE_RENAMED', old_name: 'BODY_Tall', new_name: 'BODY_Huge', source_file: A },

@@ -22,14 +22,18 @@ vi.mock('../bridge', async () => {
 const sendToHostMock = vi.mocked(sendToHost)
 const TOKEN = 'test-write-token'
 
+/** Default members: what both servers store for a plain snapshot (one pack). */
+const MEMBERS = ['category_order.json', 'favorites.json', 'presets.json', 'styles/a.csv']
+
 function snap(name: string, extra: Partial<Snapshot> = {}): Snapshot {
-  return { name, has_dir: true, has_zip: true, size: 2048, members: [], has_thumbnails: false, ...extra }
+  return { name, has_dir: true, has_zip: true, size: 2048, members: MEMBERS, has_thumbnails: false, ...extra }
 }
 
 const VERIFIED_TEXT = (date: string, thumbs: boolean, keep = 20) => [
   `Restore the snapshot from ${date}?`,
-  'Replaced from the snapshot: presets, favorites, recent, category order, and style CSVs in the ' +
-    `extension's styles folder${thumbs ? ', and thumbnails' : ''}.`,
+  thumbs
+    ? 'Replaced from the snapshot: presets, favorites, category order, 1 style CSV, and thumbnails.'
+    : 'Replaced from the snapshot: presets, favorites, category order, and 1 style CSV.',
   "Not touched: style CSVs outside the extension's styles folder, such as the packs in the " +
     `${PLATFORM.hostName} root folder and the bundled samples. Files that are not in the snapshot are kept.`,
   'A safety snapshot of the current state is created first, without thumbnails. Only the newest ' +
@@ -66,6 +70,42 @@ describe('backup helpers', () => {
       VERIFIED_TEXT('11 Oct 2026, 01:21', true),
     )
     expect(restoreConfirmationText(snap('20261011_012128'), 7)).toEqual(VERIFIED_TEXT('11 Oct 2026, 01:21', false, 7))
+  })
+
+  it('the restored list comes from the snapshot members: a ComfyUI snapshot (no recent.json)', () => {
+    const comfy = snap('20261011_012128', {
+      has_dir: false,
+      members: ['category_order.json', 'data/a.csv', 'favorites.json', 'imports/b.csv', 'presets.json', 'thumbnails/0123.webp'],
+      has_thumbnails: true,
+    })
+    expect(restoreConfirmationText(comfy)[1]).toBe(
+      'Replaced from the snapshot: presets, favorites, category order, 2 style CSVs, and thumbnails.',
+    )
+    expect(restoreConfirmationText(comfy).join(' ')).not.toContain('recent')
+  })
+
+  it('a WebUI snapshot names recent; samples/ and external/ copies are not counted', () => {
+    const webui = snap('20261011_012128', {
+      members: [
+        'category_order.json', 'favorites.json', 'presets.json', 'recent.json',
+        'styles/a.csv', 'samples/demo.csv', 'external/packs/old.csv',
+      ],
+    })
+    expect(restoreConfirmationText(webui)[1]).toBe(
+      'Replaced from the snapshot: presets, favorites, recent, category order, and 1 style CSV.',
+    )
+  })
+
+  it('short lists read naturally; an empty snapshot says so', () => {
+    expect(restoreConfirmationText(snap('20261011_012128', { members: ['presets.json'] }))[1]).toBe(
+      'Replaced from the snapshot: presets.',
+    )
+    expect(restoreConfirmationText(snap('20261011_012128', { members: ['presets.json', 'data/a.csv'] }))[1]).toBe(
+      'Replaced from the snapshot: presets and 1 style CSV.',
+    )
+    expect(restoreConfirmationText(snap('20261011_012128', { members: [] }))[1]).toBe(
+      'The snapshot holds nothing that a restore puts back.',
+    )
   })
 })
 

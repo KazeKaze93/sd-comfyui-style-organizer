@@ -182,6 +182,20 @@ export function StyleEditorDialog(props: Props) {
           new_name: outcome.name,
           source_file: style.source_file,
         })
+        const contentChanged = prompt !== (style.prompt ?? '') || negative !== (style.negative_prompt ?? '')
+        if (wasApplied && contentChanged && PLATFORM.reapplyEditedStyles) {
+          // The host handles messages in order and moves its ledger entry to the new
+          // name synchronously on SG_STYLE_RENAMED, so the UNAPPLY below finds the old
+          // text under the new name. A rename alone needs no reapply.
+          sendToHost({ type: 'SG_UNAPPLY', styleId: outcome.name, source_file: style.source_file })
+          sendToHost({
+            type: 'SG_APPLY',
+            styleId: outcome.name,
+            prompt,
+            neg: negative,
+            source_file: style.source_file,
+          })
+        }
       } else {
         if (style && wasApplied && PLATFORM.reapplyEditedStyles) {
           // The host keeps the apply-time text in the node and its ledger; nothing else

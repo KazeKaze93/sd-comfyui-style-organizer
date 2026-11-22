@@ -55,20 +55,55 @@ export function snapshotLabel(name: string): SnapshotLabel {
   return { date: `${day} ${MONTHS[month - 1]} ${y}, ${h}:${mi}`, parsed: true, suffix }
 }
 
+/** Snapshot metadata files and how the restore confirmation names them, in this order. */
+const METADATA_LABELS: ReadonlyArray<[string, string]> = [
+  ['presets.json', 'presets'],
+  ['favorites.json', 'favorites'],
+  ['recent.json', 'recent'],
+  ['category_order.json', 'category order'],
+]
+
+/** Joins "a", "a and b", "a, b, and c". */
+function listPhrase(parts: string[]): string {
+  if (parts.length <= 1) return parts.join('')
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
+}
+
 /**
- * The restore confirmation, checked against restore_from_backup and
- * _resolve_restore_dest (stylegrid/data_files.py) and _prune_old_backups,
- * which never deletes the snapshot being restored.
+ * What a restore puts back, read from the snapshot's own members (GET
+ * /style_grid/backups lists them), so the text fits whatever the server stored:
+ * metadata files it knows, style CSVs (bundled samples/ and drive-stripped
+ * external/ copies are never restored), and thumbnails.
+ */
+export function snapshotRestoreParts(snapshot: Pick<Snapshot, 'members' | 'has_thumbnails'>): string[] {
+  const members = snapshot.members ?? []
+  const present = new Set(members)
+  const parts = METADATA_LABELS.filter(([file]) => present.has(file)).map(([, label]) => label)
+  const csvs = members.filter(
+    (m) => m.toLowerCase().endsWith('.csv') && !m.startsWith('samples/') && !m.startsWith('external/'),
+  ).length
+  if (csvs) parts.push(csvs === 1 ? '1 style CSV' : `${csvs} style CSVs`)
+  if (snapshot.has_thumbnails || members.some((m) => m.startsWith('thumbnails/'))) parts.push('thumbnails')
+  return parts
+}
+
+/**
+ * The restore confirmation, checked against restore_from_backup and the
+ * restore whitelist (stylegrid/data_files.py) and the retention prune, which
+ * never deletes the snapshot being restored.
  */
 export function restoreConfirmationText(
-  snapshot: Pick<Snapshot, 'name' | 'has_thumbnails'>,
+  snapshot: Pick<Snapshot, 'name' | 'has_thumbnails' | 'members'>,
   keepSnapshots: number = DEFAULT_KEEP_SNAPSHOTS,
 ): string[] {
   const { date } = snapshotLabel(snapshot.name)
+  const parts = snapshotRestoreParts(snapshot)
   return [
     `Restore the snapshot from ${date}?`,
-    'Replaced from the snapshot: presets, favorites, recent, category order, and style CSVs in the ' +
-      `extension's styles folder${snapshot.has_thumbnails ? ', and thumbnails' : ''}.`,
+    parts.length
+      ? `Replaced from the snapshot: ${listPhrase(parts)}.`
+      : 'The snapshot holds nothing that a restore puts back.',
     "Not touched: style CSVs outside the extension's styles folder, such as the packs in the " +
       `${PLATFORM.hostName} root folder and the bundled samples. Files that are not in the snapshot are kept.`,
     'A safety snapshot of the current state is created first, without thumbnails. Only the newest ' +
