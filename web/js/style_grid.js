@@ -9,6 +9,8 @@ import {
     selectFromLedger,
     syntheticStyle,
 } from "./applied_ledger.js";
+import { parseFrameMessage } from "./frame_messages.js";
+import { clearNodePrompts, refreshCatalog, renameLedgerEntries, uploadPreview } from "./host_actions.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
 /** Target origin for host -> iframe messages; IFRAME_SRC is an absolute same-origin path. */
@@ -491,33 +493,6 @@ function reorderStylesInNode(node, styleIds) {
     node.graph?.setDirtyCanvas(true, true);
 }
 
-function clearAllStyles(node) {
-    ensureLedger(node);
-    const { text, neg } = getTextWidgets(node);
-    let currentText = text ? text.value || "" : "";
-    let currentNeg = neg ? neg.value || "" : "";
-
-    const stripWildcards = (s) =>
-        parseTags(s).filter((t) => !/^\{sgd?:[^}]+\}$/i.test(t)).join(", ");
-    currentText = stripWildcards(currentText);
-    currentNeg = stripWildcards(currentNeg);
-
-    for (const style of getActiveStyles(currentText, currentNeg, null, node)) {
-        currentText = removeStyleText(currentText, style.prompt || "", []);
-        currentNeg = removeStyleText(currentNeg, style.negative_prompt || "", []);
-    }
-
-    if (text) text.value = currentText;
-    if (neg) neg.value = currentNeg;
-    node.graph?.setDirtyCanvas(true, true);
-    syncWildcards(node);
-    // Keep an empty ledger so the node is no longer treated as legacy.
-    appliedByNode.set(node, new Map());
-    if (iframe?.contentWindow) {
-        postToIframe({ type: "SG_CLEAR_SELECTION" });
-    }
-}
-
 // Slice tokens contain commas inside their spec, so any naive .split(",") over prompt text shreds them.
 function splitTopLevelCommas(s) {
     if (!s || !String(s).trim()) return [];
@@ -803,6 +778,70 @@ function rehydrate() {
         });
 }
 
+/** Every Style Grid node in the graph (rename must reach nodes that are not open). */
+function styleGridNodes() {
+    const nodes = app.graph?._nodes || app.graph?.nodes || [];
+    return nodes.filter((n) => n?.comfyClass === "StyleGridNode");
+}
+
+function fetchCatalog() {
+    return fetch("/style_grid/check_update")
+        .catch(() => null)
+        .then(() => fetch("/style_grid/styles"))
+        .then((r) => r.json())
+        .then((data) => Object.values(data.categories || {}).flat());
+}
+
+/** SG_REFRESH / after SG_STYLE_RENAMED: new catalog to the panel, vanished styles out of the node. */
+function refreshFromServer(quietVanished) {
+    return refreshCatalog(
+        { quiet_vanished: quietVanished },
+        {
+            fetchStyles: fetchCatalog,
+            setCatalog: (styles) => { allStylesCache = styles; },
+            post: postToIframe,
+            currentNode: () => currentNode,
+            getLedger: (node) => appliedByNode.get(node),
+            unapply: unapplyStyleFromNode,
+            syncWildcards,
+            toast: postInfoToast,
+        },
+    ).catch((err) => {
+        console.warn("[Style Grid] refresh failed", err);
+        postToIframe({ type: "SG_TOAST", message: "Refresh failed", variant: "error" });
+    });
+}
+
+/** Native image picker in the host page; resolves null when cancelled. */
+function pickImageDataUrl() {
+    return new Promise((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.addEventListener("cancel", () => resolve(null));
+        input.addEventListener("change", () => {
+            const file = input.files && input.files[0];
+            if (!file) {
+                resolve(null);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+        });
+        input.click();
+    });
+}
+
+function postJson(url, body) {
+    return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    }).then((r) => r.json());
+}
+
 function ensureOverlay() {
     if (overlay) return;
 
@@ -866,8 +905,9 @@ function ensureOverlay() {
     window.addEventListener("message", (e) => {
         if (e.source !== iframe.contentWindow) return;
         if (e.origin !== IFRAME_ORIGIN) return;
-        const msg = e.data;
-        if (!msg || typeof msg.type !== "string") return;
+        // Allowlist + shape check (frame_messages.js); unknown or malformed → ignored.
+        const msg = parseFrameMessage(e.data);
+        if (!msg) return;
 
         if (msg.type === "SG_READY") {
             ready = true;
@@ -961,8 +1001,32 @@ function ensureOverlay() {
         if (msg.type === "SG_WILDCARD_SLICE" && currentNode) {
             insertWildcardCategory(currentNode, msg.category, msg.spec || "", msg.kind);
         }
-        if (msg.type === "SG_CLEAR_ALL" && currentNode) {
-            clearAllStyles(currentNode);
+        if (msg.type === "SG_CLEAR_ALL") {
+            // Empties both prompt widgets of the current node entirely (like WebUI's Clear).
+            clearNodePrompts(currentNode, {
+                setLedger: (node, ledger) => appliedByNode.set(node, ledger),
+                syncWildcards,
+                post: postToIframe,
+            });
+        }
+        if (msg.type === "SG_REFRESH") {
+            refreshFromServer(msg.quiet_vanished);
+        }
+        if (msg.type === "SG_STYLE_RENAMED") {
+            // Ledger first, then the catalog: refreshing first would see the old name gone.
+            renameLedgerEntries(styleGridNodes(), msg, {
+                getLedger: (node) => appliedByNode.get(node),
+                setLedger: (node, ledger) => appliedByNode.set(node, ledger),
+            });
+            refreshFromServer(false);
+        }
+        if (msg.type === "SG_UPLOAD_PREVIEW") {
+            uploadPreview(msg, {
+                pickImageDataUrl,
+                postJson,
+                post: postToIframe,
+                now: () => Date.now(),
+            }).catch((err) => console.warn("[Style Grid] preview upload failed", err));
         }
         if (msg.type === "SG_REMOVE_WILDCARD" && currentNode) {
             removeWildcardCategory(currentNode, msg.category, msg.spec || "", msg.kind);
@@ -973,6 +1037,7 @@ function ensureOverlay() {
             }
         }
         if (msg.type === "SG_REORDER_STYLES" && currentNode) {
+            // styleIds are styleRowKey strings, as the WebUI tray (SortableChips) sends them.
             reorderStylesInNode(currentNode, msg.styleIds);
         }
         if (msg.type === "SG_SOURCE_CHANGE" && currentNode) {
