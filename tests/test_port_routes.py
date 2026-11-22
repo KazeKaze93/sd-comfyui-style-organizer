@@ -93,7 +93,7 @@ def env(tmp_path, monkeypatch):
         "call": call, "data": data, "imports": imports, "samples": samples, "thumbs": thumbs,
         "backups": backups, "presets": presets, "favorites": favorites,
         "category_order": category_order, "tmp": tmp_path,
-        "sg_data": sg_data, "sg_thumbs": sg_thumbs, "sg_csv": sg_csv,
+        "sg_data": sg_data, "sg_thumbs": sg_thumbs, "sg_csv": sg_csv, "handlers": fake.handlers,
     }
 
 

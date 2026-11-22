@@ -252,8 +252,7 @@ BACKUP_KEEP_SNAPSHOTS = 20
 
 def _backup_zip_entries():
     """(abs_path, arcname) for user CSVs + presets. samples/ excluded; one collect.
-    Scope is packs+presets only — not category_order.json or thumbnails/
-    (that is POST /backup; snapshots add the rest in _snapshot_members).
+    Snapshots add favorites, category order and thumbnails in _snapshot_members.
     """
     entries = []
     for fp in _csvs_in(DATA_DIR):
@@ -265,44 +264,6 @@ def _backup_zip_entries():
     if os.path.isfile(PRESETS_FILE):
         entries.append((PRESETS_FILE, "presets.json"))
     return entries
-
-
-def _unique_backup_zip_path():
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    candidate = os.path.join(BACKUP_DIR, ts + ".zip")
-    if not os.path.exists(candidate):
-        return candidate
-    n = 1
-    while True:
-        candidate = os.path.join(BACKUP_DIR, f"{ts}_{n}.zip")
-        if not os.path.exists(candidate):
-            return candidate
-        n += 1
-
-
-def backup_csv_files():
-    entries = _backup_zip_entries()
-    if not entries:
-        return False
-
-    os.makedirs(BACKUP_DIR, exist_ok=True)
-    zip_path = _unique_backup_zip_path()
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fp, arcname in entries:
-            zf.write(fp, arcname=arcname)
-
-    zips = sorted(
-        name
-        for name in os.listdir(BACKUP_DIR)
-        if name.endswith(".zip") and os.path.isfile(os.path.join(BACKUP_DIR, name))
-    )
-    while len(zips) > BACKUP_KEEP_SNAPSHOTS:
-        old_name = zips.pop(0)
-        try:
-            os.remove(os.path.join(BACKUP_DIR, old_name))
-        except OSError:
-            pass
-    return os.path.basename(zip_path)
 
 
 # --- Favorites (server-side; the iframe's styleRowKey strings) -----------------

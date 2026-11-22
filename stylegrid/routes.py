@@ -18,7 +18,7 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import CATEGORY_ORDER_FILE, DATA_DIR, IMPORTS_DIR, PRESETS_FILE, logger
+from .config import CATEGORY_ORDER_FILE, DATA_DIR, IMPORTS_DIR, PRESETS_FILE, _csvs_in, logger
 from .csv_io import (
     FIELDNAMES,
     categorize_styles,
@@ -31,7 +31,6 @@ from .csv_io import (
 from .data_files import (
     BACKUP_KEEP_SNAPSHOTS,
     CorruptDataError,
-    backup_csv_files,
     create_snapshot,
     list_snapshots,
     load_favorites,
@@ -118,6 +117,57 @@ def _styles_from_csv_text(text):
             skipped += 1
             continue
     return styles, skipped
+
+
+def _library_duplicate_keys():
+    """(name, prompt, negative_prompt) of every row in data/ and imports/ (samples/ ignored)."""
+    keys = set()
+    for fp in _csvs_in(DATA_DIR) + _csvs_in(IMPORTS_DIR):
+        for row in parse_styles_csv(fp):
+            keys.add((row.get("name", ""), row.get("prompt", ""), row.get("negative_prompt", "")))
+    return keys
+
+
+def _split_import_rows(rows, existing):
+    """Split incoming style rows into ``(importable, collision_names, invalid_count)``.
+
+    A collision is a true duplicate: a row whose name, prompt and negative_prompt
+    are byte-identical to a row already in a data/ or imports/ pack (or to an
+    earlier row of the same import). The same name with a different prompt or
+    negative is a different style and is imported. source_file plays no part.
+    Rows that are not objects or have no name are invalid. *existing* is
+    extended with the rows accepted here.
+    """
+    importable = []
+    collisions = set()
+    invalid = 0
+    for s in rows:
+        if not isinstance(s, dict):
+            invalid += 1
+            continue
+        name = s.get("name", "")
+        if not isinstance(name, str) or not name.strip():
+            invalid += 1
+            continue
+        key = (name.strip(), s.get("prompt", "") or "", s.get("negative_prompt", "") or "")
+        if key in existing:
+            collisions.add(key[0])
+            continue
+        existing.add(key)
+        importable.append(s)
+    return importable, collisions, invalid
+
+
+def _import_response(imported, collisions, invalid, presets_imported, presets_skipped):
+    """WebUI's import contract plus ComfyUI's presets counters."""
+    return {
+        "ok": True,
+        "imported": imported,
+        "collisions": sorted(collisions),
+        "invalid": invalid,
+        "presets_imported": presets_imported,
+        "presets_skipped": presets_skipped,
+    }
 
 
 def _write_styles_to_new_import_csv(styles, name_hint):
@@ -294,32 +344,29 @@ def _register_style_routes(routes):
                             return _corrupt_response(exc)
 
                     imported = 0
-                    skipped = 0
+                    invalid = 0
+                    collisions = set()
+                    existing = _library_duplicate_keys() if csv_members else set()
                     for member in csv_members:
                         try:
                             text = zf.read(member).decode("utf-8-sig")
                         except UnicodeDecodeError:
-                            skipped += 1
+                            invalid += 1
                             continue
                         rows, row_skipped = _styles_from_csv_text(text)
-                        skipped += row_skipped
-                        if rows:
+                        invalid += row_skipped
+                        importable, member_collisions, member_invalid = _split_import_rows(rows, existing)
+                        collisions |= member_collisions
+                        invalid += member_invalid
+                        if importable:
                             imported += await asyncio.to_thread(
-                                _write_styles_to_new_import_csv, rows, member
+                                _write_styles_to_new_import_csv, importable, member
                             )
 
                     # Legacy backup zips may contain usage.json — ignore; do not restore.
-                    if imported == 0 and presets_imported == 0:
-                        return web.json_response(
-                            {"error": "No importable data found in file"}
-                        )
-                    return web.json_response({
-                        "ok": True,
-                        "imported": imported,
-                        "skipped": skipped,
-                        "presets_imported": presets_imported,
-                        "presets_skipped": presets_skipped,
-                    })
+                    return web.json_response(
+                        _import_response(imported, collisions, invalid, presets_imported, presets_skipped)
+                    )
             except BackupZipLimitError as e:
                 return web.json_response({"error": str(e)}, status=422)
             except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
@@ -344,62 +391,28 @@ def _register_style_routes(routes):
                         save_presets(p)
             except CorruptDataError as exc:
                 return _corrupt_response(exc)
-        imported = 0
-        skipped = 0
-        duplicate_import = False
-        if "styles" in data:
-            styles = data["styles"]
-            if not isinstance(styles, list):
-                return web.json_response({"error": "styles must be a list"})
-            valid = []
-            for s in styles:
-                if isinstance(s, dict):
-                    valid.append(s)
-                else:
-                    skipped += 1
-            if valid:
-                incoming_names = frozenset(
-                    (s.get("name") or "").strip()
-                    for s in valid
-                    if (s.get("name") or "").strip()
-                )
-                if incoming_names and os.path.isdir(IMPORTS_DIR):
-                    for fname in sorted(os.listdir(IMPORTS_DIR)):
-                        if not fname.lower().endswith(".csv"):
-                            continue
-                        existing = frozenset(
-                            row["name"]
-                            for row in parse_styles_csv(os.path.join(IMPORTS_DIR, fname))
-                            if row.get("name")
-                        )
-                        if existing == incoming_names:
-                            duplicate_import = True
-                            break
-                if not duplicate_import:
-                    imported = await asyncio.to_thread(
-                        _write_styles_to_new_import_csv, valid, "import.json"
-                    )
         # Legacy export JSON may include a "usage" key — ignore; do not fail or restore.
-        if (
-            duplicate_import
-            and imported == 0
-            and presets_imported == 0
-        ):
+        if "styles" not in data:
+            if "presets" not in data:
+                return web.json_response({"error": "No importable data found in file"})
+            # Presets only: no style counters, like WebUI (the iframe shows no style summary).
             return web.json_response({
-                "error": "This looks like a duplicate of an existing import",
+                "ok": True,
+                "presets_imported": presets_imported,
+                "presets_skipped": presets_skipped,
             })
-        if imported == 0 and presets_imported == 0:
-            return web.json_response({"error": "No importable data found in file"})
-        resp = {
-            "ok": True,
-            "imported": imported,
-            "skipped": skipped,
-            "presets_imported": presets_imported,
-            "presets_skipped": presets_skipped,
-        }
-        if duplicate_import:
-            resp["warning"] = "This looks like a duplicate of an existing import"
-        return web.json_response(resp)
+        styles = data["styles"]
+        if not isinstance(styles, list):
+            return web.json_response({"error": "styles must be a list"})
+        imported = 0
+        importable, collisions, invalid = _split_import_rows(styles, _library_duplicate_keys())
+        if importable:
+            imported = await asyncio.to_thread(
+                _write_styles_to_new_import_csv, importable, "import.json"
+            )
+        return web.json_response(
+            _import_response(imported, collisions, invalid, presets_imported, presets_skipped)
+        )
 
     @routes.get("/style_grid/category_order")
     async def api_get_category_order(request):
@@ -690,7 +703,8 @@ def _register_crud_routes(routes):
             }
         )
 
-    # /backup becomes an alias of this contract when the converged iframe lands (port batch 3).
+    # POST /backup is the path the iframe calls (WebUI's); /backups/create is the same handler.
+    @routes.post("/style_grid/backup")
     @routes.post("/style_grid/backups/create")
     async def api_create_snapshot(request):
         data = await _read_json(request)
@@ -717,15 +731,6 @@ def _register_crud_routes(routes):
         invalidate_styles_cache()
         return web.json_response(result)
 
-    @routes.post("/style_grid/backup")
-    async def api_backup(request):
-        try:
-            created = backup_csv_files()
-            if not created:
-                return web.json_response({"ok": False, "empty": True})
-            return web.json_response({"ok": True, "file": created})
-        except OSError as e:
-            return web.json_response({"error": str(e)})
 
 
 def _register_thumbnail_routes(routes):
