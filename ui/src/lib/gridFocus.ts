@@ -48,30 +48,6 @@ export function useFocusedCell(): GridCell | null {
   return useSyncExternalStore(subscribe, getFocusedCell, getFocusedCell)
 }
 
-/**
- * Row index only — VirtualStyleGrid rangeExtractor pins the focused row.
- * Col-only moves (toggle clicks across a row) skip the virtualizer re-render.
- */
-export function useFocusedRow(): number | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => focusedCell?.row ?? null,
-    () => null,
-  )
-}
-
-/**
- * Focused column for one virtual row, or null when focus is elsewhere.
- * CardsRow/CategoryHeaderRow subscribe per row so sibling rows bail out.
- */
-export function useFocusedColForRow(rowIndex: number): number | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => (focusedCell?.row === rowIndex ? focusedCell.col : null),
-    () => null,
-  )
-}
-
 /** Test helper — clear focus between cases. */
 export function __resetGridFocusForTests(): void {
   focusedCell = null

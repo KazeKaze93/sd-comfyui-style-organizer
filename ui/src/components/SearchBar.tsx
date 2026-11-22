@@ -1,5 +1,4 @@
 import { useId, useState, useRef } from 'react'
-import type { Style } from '../bridge'
 import {
   dedupeStylesByNameForAllSources,
   matchesSearch,
@@ -14,32 +13,31 @@ import {
 } from './ui/command'
 import { Popover, PopoverContent, PopoverAnchor } from './ui/popover'
 
-const SUGGESTION_LIMIT = 8
-const EMPTY_SELECTED: Style[] = []
-
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
-/** Pure: top name matches for a query against an already-scoped style list. */
-function computeSuggestions(styles: Style[], query: string): Style[] {
+type StyleRow = ReturnType<typeof useStylesStore.getState>['styles'][number]
+
+function topSuggestions(styles: StyleRow[], query: string): StyleRow[] {
   if (query.length === 0) return []
-  return styles.filter(s => matchesSearch(s, query)).slice(0, SUGGESTION_LIMIT)
+  return styles.filter(s => matchesSearch(s, query)).slice(0, 8)
 }
 
 export function SearchBar() {
-  // Atomic selectors — full-store subscribe re-rendered on every toggle (profile P).
-  const styles = useStylesStore((s) => s.styles)
-  const activeSource = useStylesStore((s) => s.activeSource)
-  const search = useStylesStore((s) => s.search)
-  const setSearch = useStylesStore((s) => s.setSearch)
+  const { styles, activeSource, search, setSearch, toggleStyle, selectedStyles } = useStylesStore()
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(search)
-  /** cmdk controlled highlight (Command value / onValueChange). */
-  const [highlight, setHighlight] = useState('')
+  // The store's search can change from outside (an empty state's "Clear search"):
+  // follow it, or the field would keep text the grid no longer filters by.
+  const [syncedSearch, setSyncedSearch] = useState(search)
+  if (search !== syncedSearch) {
+    setSyncedSearch(search)
+    setInputValue(search)
+  }
   const inputRef = useRef<HTMLInputElement>(null)
-  const listboxId = useId()
-  // When closed, return a stable empty ref so selection toggles skip this subtree.
-  const selectedStyles = useStylesStore((s) => (open ? s.selectedStyles : EMPTY_SELECTED))
+  const listId = useId()
+
+  useLayer(open, () => setOpen(false))
 
   // Autocomplete suggestions:
   // - specific source selected: search only in that CSV
@@ -48,24 +46,21 @@ export function SearchBar() {
     ? styles.filter(s => s.source_file === activeSource)
     : dedupeStylesByNameForAllSources(styles)
 
-  const suggestions = computeSuggestions(searchableStyles, inputValue)
-
-  useLayer(open, () => setOpen(false))
+  const suggestions = topSuggestions(searchableStyles, inputValue)
 
   const handleInput = (val: string) => {
-    const nextSuggestions = computeSuggestions(searchableStyles, val)
     setInputValue(val)
     setSearch(val)
-    setOpen(val.length > 0 && nextSuggestions.length > 0)
-    setHighlight(nextSuggestions[0]?.name ?? '')
+    const matches = topSuggestions(searchableStyles, val)
+    setOpen(val.length > 0 && matches.length > 0)
   }
 
-  const handleSelect = (style: Style) => {
+  const handleSelect = (style: typeof styles[0]) => {
     setOpen(false)
-    setHighlight('')
-    const { selectedStyles: current, toggleStyle: toggle } = useStylesStore.getState()
-    const isSelected = current.some(s => styleRowKey(s) === styleRowKey(style))
-    if (!isSelected) toggle(style)
+    // Apply immediately if not already selected. Query text is left as-is —
+    // picking a suggestion should not also wipe the search context.
+    const isSelected = selectedStyles.some(s => styleRowKey(s) === styleRowKey(style))
+    if (!isSelected) toggleStyle(style)
   }
 
   return (
@@ -76,50 +71,21 @@ export function SearchBar() {
             ref={inputRef}
             role="combobox"
             aria-expanded={open}
-            aria-controls={listboxId}
+            aria-controls={listId}
             aria-autocomplete="list"
             aria-label="Search styles"
             value={inputValue}
             onChange={e => handleInput(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Escape') {
-                if (open) {
-                  // Layer stack owns Escape while suggestions are open:
-                  // close the list only; leave query for the next Escape (App).
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setOpen(false)
-                  setHighlight('')
-                  return
-                }
-                return
-              }
-              if (!open || suggestions.length === 0) return
-
-              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                e.preventDefault()
-                const idx = suggestions.findIndex(
-                  s => s.name.toLowerCase() === highlight.toLowerCase()
-                )
-                const cur = idx < 0 ? 0 : idx
-                const next = e.key === 'ArrowDown'
-                  ? (cur + 1) % suggestions.length
-                  : (cur - 1 + suggestions.length) % suggestions.length
-                setHighlight(suggestions[next].name)
-                return
-              }
-
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                const style = suggestions.find(
-                  s => s.name.toLowerCase() === highlight.toLowerCase()
-                ) ?? suggestions[0]
-                handleSelect(style)
-              }
+              // Escape: layer stack closes the list first; App clears query next.
+              if (e.key === 'ArrowDown' && open) e.preventDefault()
             }}
             placeholder="Search styles..."
             className={cn(
-              'w-full h-9 px-3 pr-8 rounded border border-sg-border bg-sg-surface text-sg-text text-sm placeholder:text-sg-muted focus:border-sg-accent focus:outline-none transition-colors',
+              'w-full h-9 px-3 pr-8 rounded border border-sg-border',
+              'bg-sg-surface text-sg-text text-sm',
+              'placeholder:text-sg-muted focus:border-sg-accent',
+              'focus:outline-none transition-colors',
               FOCUS_RING,
             )}
           />
@@ -127,15 +93,10 @@ export function SearchBar() {
             <button
               type="button"
               aria-label="Clear search"
-              onClick={() => {
-                setInputValue('')
-                setSearch('')
-                setOpen(false)
-                setHighlight('')
-                inputRef.current?.focus()
-              }}
+              onClick={() => { setInputValue(''); setSearch(''); setOpen(false) }}
               className={cn(
-                'absolute right-2 top-1/2 -translate-y-1/2 text-sg-muted hover:text-sg-text text-xs rounded',
+                'absolute right-2 top-1/2 -translate-y-1/2',
+                'text-sg-muted hover:text-sg-text text-xs rounded',
                 FOCUS_RING,
               )}
             >✕</button>
@@ -143,20 +104,13 @@ export function SearchBar() {
         </div>
       </PopoverAnchor>
       <PopoverContent
-        id={listboxId}
-        role="listbox"
         className="p-0 w-72 bg-sg-popover border border-sg-border"
         align="start"
         onOpenAutoFocus={e => e.preventDefault()}
         onEscapeKeyDown={e => e.preventDefault()}
       >
-        <Command
-          shouldFilter={false}
-          value={highlight}
-          onValueChange={setHighlight}
-          className="bg-transparent"
-        >
-          <CommandList className="bg-transparent">
+        <Command shouldFilter={false} className="bg-transparent">
+          <CommandList id={listId} className="bg-transparent">
             <CommandEmpty className="text-sg-muted text-sm py-3 px-4">
               No styles found
             </CommandEmpty>

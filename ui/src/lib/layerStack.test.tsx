@@ -1,79 +1,85 @@
 /** @vitest-environment jsdom */
-import { act, useState, type ReactNode } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  __resetLayerStackForTests,
   closeTopLayer,
   hasOpenLayer,
   registerLayer,
-  resetLayerStackForTests,
   useLayer,
 } from './layerStack'
 
-beforeEach(() => {
-  resetLayerStackForTests()
-})
+describe('layerStack', () => {
+  beforeEach(() => {
+    __resetLayerStackForTests()
+  })
 
-afterEach(() => {
-  resetLayerStackForTests()
-})
+  afterEach(() => {
+    __resetLayerStackForTests()
+  })
 
-describe('layerStack register / close / LIFO', () => {
-  it('closes topmost layer first (LIFO)', () => {
-    const closes: string[] = []
-    registerLayer('a', () => {
-      closes.push('a')
-    })
-    registerLayer('b', () => {
-      closes.push('b')
-    })
-    registerLayer('c', () => {
-      closes.push('c')
-    })
+  it('closes layers LIFO', () => {
+    const a = vi.fn()
+    const b = vi.fn()
+    const c = vi.fn()
+    registerLayer('a', a)
+    registerLayer('b', b)
+    registerLayer('c', c)
 
     expect(hasOpenLayer()).toBe(true)
     expect(closeTopLayer()).toBe(true)
-    expect(closes).toEqual(['c'])
+    expect(c).toHaveBeenCalledOnce()
+    expect(b).not.toHaveBeenCalled()
+    expect(a).not.toHaveBeenCalled()
+
     expect(closeTopLayer()).toBe(true)
-    expect(closes).toEqual(['c', 'b'])
+    expect(b).toHaveBeenCalledOnce()
+    expect(a).not.toHaveBeenCalled()
+
     expect(closeTopLayer()).toBe(true)
-    expect(closes).toEqual(['c', 'b', 'a'])
-    expect(closeTopLayer()).toBe(false)
+    expect(a).toHaveBeenCalledOnce()
     expect(hasOpenLayer()).toBe(false)
+    expect(closeTopLayer()).toBe(false)
   })
 
-  it('unregister removes a middle layer without closing it', () => {
-    const closeA = vi.fn()
-    const closeB = vi.fn()
-    const closeC = vi.fn()
-    registerLayer('a', closeA)
-    const unregisterB = registerLayer('b', closeB)
-    registerLayer('c', closeC)
+  it('unregister removes a middle layer without closing others', () => {
+    const a = vi.fn()
+    const b = vi.fn()
+    const c = vi.fn()
+    registerLayer('a', a)
+    const unregisterB = registerLayer('b', b)
+    registerLayer('c', c)
 
     unregisterB()
-    expect(closeB).not.toHaveBeenCalled()
-
     expect(closeTopLayer()).toBe(true)
-    expect(closeC).toHaveBeenCalledOnce()
+    expect(c).toHaveBeenCalledOnce()
+    expect(b).not.toHaveBeenCalled()
     expect(closeTopLayer()).toBe(true)
-    expect(closeA).toHaveBeenCalledOnce()
-    expect(closeB).not.toHaveBeenCalled()
+    expect(a).toHaveBeenCalledOnce()
+    expect(hasOpenLayer()).toBe(false)
   })
 
-  it('unregister is idempotent', () => {
+  it('unregister after closeTopLayer is a no-op', () => {
     const close = vi.fn()
     const unregister = registerLayer('x', close)
-    unregister()
-    unregister()
+    expect(closeTopLayer()).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+    expect(() => unregister()).not.toThrow()
     expect(hasOpenLayer()).toBe(false)
-    expect(closeTopLayer()).toBe(false)
-    expect(close).not.toHaveBeenCalled()
   })
 })
 
 describe('useLayer', () => {
   let root: Root | null = null
   let host: HTMLDivElement | null = null
+
+  beforeEach(() => {
+    __resetLayerStackForTests()
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+  })
 
   afterEach(() => {
     act(() => {
@@ -82,17 +88,8 @@ describe('useLayer', () => {
     root = null
     host?.remove()
     host = null
-    resetLayerStackForTests()
+    __resetLayerStackForTests()
   })
-
-  function mount(ui: ReactNode) {
-    host = document.createElement('div')
-    document.body.appendChild(host)
-    root = createRoot(host)
-    act(() => {
-      root!.render(ui)
-    })
-  }
 
   it('registers while open and unregisters on unmount', () => {
     const close = vi.fn()
@@ -102,7 +99,9 @@ describe('useLayer', () => {
       return null
     }
 
-    mount(<Probe open />)
+    act(() => {
+      root!.render(<Probe open={true} />)
+    })
     expect(hasOpenLayer()).toBe(true)
 
     act(() => {
@@ -113,39 +112,47 @@ describe('useLayer', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
-  it('unregisters when open becomes false', () => {
+  it('unregisters when open becomes false without calling close', () => {
     const close = vi.fn()
 
-    function Probe() {
-      const [open, setOpen] = useState(true)
+    function Probe({ open }: { open: boolean }) {
       useLayer(open, close)
-      return (
-        <button type="button" onClick={() => setOpen(false)}>
-          close
-        </button>
-      )
+      return null
     }
 
-    mount(<Probe />)
+    act(() => {
+      root!.render(<Probe open={true} />)
+    })
     expect(hasOpenLayer()).toBe(true)
 
     act(() => {
-      host!.querySelector('button')!.click()
+      root!.render(<Probe open={false} />)
     })
     expect(hasOpenLayer()).toBe(false)
     expect(close).not.toHaveBeenCalled()
   })
 
-  it('closeTopLayer invokes the hook close callback', () => {
-    const close = vi.fn()
+  it('closeTopLayer invokes the live close callback from the hook', () => {
+    const onClose = vi.fn()
 
     function Probe() {
-      useLayer(true, close)
+      const [open, setOpen] = useState(true)
+      useLayer(open, () => {
+        onClose()
+        setOpen(false)
+      })
       return null
     }
 
-    mount(<Probe />)
-    expect(closeTopLayer()).toBe(true)
-    expect(close).toHaveBeenCalledOnce()
+    act(() => {
+      root!.render(<Probe />)
+    })
+    expect(hasOpenLayer()).toBe(true)
+
+    act(() => {
+      expect(closeTopLayer()).toBe(true)
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(hasOpenLayer()).toBe(false)
   })
 })

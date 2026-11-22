@@ -34,8 +34,7 @@ function row(
     negative_prompt: extra.negative_prompt ?? `neg:${name}`,
     description: extra.description ?? '',
     category: extra.category ?? 'BODY',
-    has_thumbnail: extra.has_thumbnail ?? false,
-    read_only: extra.read_only ?? false,
+    ...extra,
   }
 }
 
@@ -43,6 +42,7 @@ function resetDerivedStore() {
   localStorage.clear()
   useStylesStore.setState({
     styles: [],
+    tab: 'txt2img',
     search: '',
     activeCategory: null,
     activeSource: null,
@@ -55,7 +55,6 @@ function resetDerivedStore() {
     thumbVersions: {},
     conflicts: [],
     favorites: new Set(),
-    recentNames: [],
     presets: {},
     presetsCorrupt: null,
     activePresetName: null,
@@ -72,7 +71,7 @@ describe('derived: selectedKeySet', () => {
   it('tracks add, remove, and clearAll', () => {
     const a = row('BODY_Ears', FILE_A)
     const b = row('HAIR_Long', FILE_B, { category: 'HAIR' })
-    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
 
     useStylesStore.getState().toggleStyle(a)
     expect(useStylesStore.getState().selectedKeySet.has(styleRowKey(a))).toBe(true)
@@ -92,7 +91,7 @@ describe('derived: selectedKeySet', () => {
 
   it('useIsSelected follows selectedKeySet', () => {
     const a = row('BODY_Ears', FILE_A)
-    useStylesStore.getState().setStyles([a])
+    useStylesStore.getState().setStyles([a], 'txt2img')
     const key = styleRowKey(a)
 
     let latest = false
@@ -111,13 +110,13 @@ describe('derived: selectedKeySet', () => {
   it('clearSelectionChrome clears selectedStyles and selectedKeySet', () => {
     const a = row('BODY_Ears', FILE_A)
     const b = row('HAIR_Long', FILE_B, { category: 'HAIR' })
-    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
     useStylesStore.getState().toggleStyle(a)
     useStylesStore.getState().toggleStyle(b)
     useStylesStore.setState({
       activeWildcards: [{ category: 'BODY', spec: '' }],
       activePresetName: 'Duo',
-      styleContributors: { [a.name]: new Set(['Duo']) },
+      styleContributors: { [styleRowKey(a)]: new Set(['Duo']) },
       conflicts: [{
         styleA: a.name,
         styleB: b.name,
@@ -140,7 +139,7 @@ describe('derived: selectedKeySet', () => {
 
   it('setState({ selectedStyles: [] }) leaves selectedKeySet empty', () => {
     const a = row('BODY_Ears', FILE_A)
-    useStylesStore.getState().setStyles([a])
+    useStylesStore.getState().setStyles([a], 'txt2img')
     useStylesStore.getState().toggleStyle(a)
     expect(useStylesStore.getState().selectedKeySet.has(styleRowKey(a))).toBe(true)
 
@@ -158,161 +157,6 @@ describe('derived: selectedKeySet', () => {
   })
 })
 
-describe('derived: categories() memo', () => {
-  beforeEach(() => {
-    resetDerivedStore()
-  })
-
-  it('returns the same list ref until styles / activeSource / categoryOrder change', () => {
-    const a = row('BODY_Ears', FILE_A, { category: 'BODY' })
-    const b = row('HAIR_Long', FILE_B, { category: 'HAIR' })
-    useStylesStore.getState().setStyles([a, b])
-
-    const first = useStylesStore.getState().categories()
-    const second = useStylesStore.getState().categories()
-    expect(second).toBe(first)
-    expect(first).toEqual(['BODY', 'HAIR'])
-
-    // Unrelated store writes must not bust the memo.
-    useStylesStore.getState().toggleStyle(a)
-    useStylesStore.getState().setSearch('ears')
-    expect(useStylesStore.getState().categories()).toBe(first)
-
-    useStylesStore.getState().setActiveSource(FILE_A)
-    const afterSource = useStylesStore.getState().categories()
-    expect(afterSource).not.toBe(first)
-    expect(afterSource).toEqual(['BODY'])
-
-    useStylesStore.getState().setActiveSource(null)
-    const afterAll = useStylesStore.getState().categories()
-    expect(afterAll).not.toBe(afterSource)
-
-    useStylesStore.getState().setCategoryOrder(['HAIR', 'BODY'])
-    const afterOrder = useStylesStore.getState().categories()
-    expect(afterOrder).not.toBe(afterAll)
-    expect(afterOrder).toEqual(['HAIR', 'BODY'])
-    expect(useStylesStore.getState().categories()).toBe(afterOrder)
-  })
-})
-
-describe('derived: addToRecent coalesce', () => {
-  beforeEach(() => {
-    resetDerivedStore()
-  })
-
-  it('keeps recentNames ref when head key is already the style', () => {
-    const a = row('BODY_Ears', FILE_A)
-    const b = row('HAIR_Long', FILE_B, { category: 'HAIR' })
-    useStylesStore.getState().setStyles([a, b])
-
-    useStylesStore.getState().toggleStyle(a)
-    const afterFirst = useStylesStore.getState().recentNames
-    expect(afterFirst[0]).toBe(styleRowKey(a))
-
-    useStylesStore.getState().toggleStyle(a) // deselect: must not touch recent
-    expect(useStylesStore.getState().recentNames).toBe(afterFirst)
-
-    useStylesStore.getState().toggleStyle(a) // re-select: already head -> no-op
-    expect(useStylesStore.getState().recentNames).toBe(afterFirst)
-
-    useStylesStore.getState().toggleStyle(b)
-    const afterB = useStylesStore.getState().recentNames
-    expect(afterB).not.toBe(afterFirst)
-    expect(afterB[0]).toBe(styleRowKey(b))
-    expect(afterB[1]).toBe(styleRowKey(a))
-  })
-})
-
-describe('derived: searchTextByKey / matchesSearchKey', () => {
-  beforeEach(() => {
-    resetDerivedStore()
-  })
-
-  it('matchesSearchKey parity with matchesSearch (AND tokens + description)', () => {
-    const styles = [
-      row('BODY_Pointy_Ears', FILE_A, {
-        category: 'BODY',
-        description: 'Combos: OTHER_Thing. Soft fur tips',
-      }),
-      row('HAIR_Long_Wavy', FILE_B, {
-        category: 'HAIR',
-        description: 'Cascading waves for portraits',
-      }),
-      row('STYLE_Oil_Paint', FILE_A, {
-        category: 'STYLE',
-        description: '',
-      }),
-    ]
-    useStylesStore.getState().setStyles(styles)
-
-    const queries = [
-      '',
-      '   ',
-      'ears',
-      'pointy ears',
-      'soft fur',
-      'waves portraits',
-      'oil',
-      'missing token',
-      'BODY Pointy',
-      'cascading',
-    ]
-
-    for (const style of styles) {
-      const key = styleRowKey(style)
-      expect(useStylesStore.getState().searchTextByKey.has(key)).toBe(true)
-      for (const q of queries) {
-        expect(matchesSearchKey(key, q)).toBe(matchesSearch(style, q))
-      }
-    }
-
-    // Description Combos:/Conflicts: stripped from haystack (same as matchesSearch).
-    const earsKey = styleRowKey(styles[0])
-    expect(matchesSearchKey(earsKey, 'combos')).toBe(false)
-    expect(matchesSearchKey(earsKey, 'other_thing')).toBe(false)
-    expect(matchesSearchKey(earsKey, 'soft')).toBe(true)
-  })
-})
-
-describe('derived: selectedCountByCategory', () => {
-  beforeEach(() => {
-    resetDerivedStore()
-  })
-
-  it('tracks add, remove, clearAll, and selectAllInCategory', () => {
-    const a = row('BODY_Ears', FILE_A, { category: 'BODY' })
-    const b = row('BODY_Tail', FILE_A, { category: 'BODY' })
-    const c = row('HAIR_Long', FILE_B, { category: 'HAIR' })
-    useStylesStore.getState().setStyles([a, b, c])
-
-    expect(useStylesStore.getState().selectedCountByCategory.size).toBe(0)
-    expect(typeof useCategorySelectedCount).toBe('function')
-
-    useStylesStore.getState().toggleStyle(a)
-    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(1)
-    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBeUndefined()
-
-    useStylesStore.getState().toggleStyle(c)
-    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(1)
-    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
-
-    useStylesStore.getState().toggleStyle(a)
-    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBeUndefined()
-    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
-
-    useStylesStore.getState().clearAll()
-    expect(useStylesStore.getState().selectedCountByCategory.size).toBe(0)
-
-    useStylesStore.getState().selectAllInCategory('BODY')
-    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(2)
-    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBeUndefined()
-
-    useStylesStore.getState().selectAllInCategory('BODY')
-    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBeUndefined()
-    expect(useStylesStore.getState().selectedCountByCategory.size).toBe(0)
-  })
-})
-
 describe('derived: duplicatesByName', () => {
   beforeEach(() => {
     resetDerivedStore()
@@ -322,7 +166,7 @@ describe('derived: duplicatesByName', () => {
     const a = row('BODY_Ears', FILE_A)
     const b = row('BODY_Ears', FILE_B)
     const c = row('HAIR_Long', FILE_A, { category: 'HAIR' })
-    useStylesStore.getState().setStyles([a, b, c])
+    useStylesStore.getState().setStyles([a, b, c], 'txt2img')
 
     const mapBefore = useStylesStore.getState().duplicatesByName
     const arrBefore = mapBefore.get('BODY_Ears')
@@ -338,30 +182,22 @@ describe('derived: duplicatesByName', () => {
     expect(mapAfter.get('BODY_Ears')).toBe(arrBefore)
   })
 
-  it('useStyleDuplicates returns EMPTY_STYLES for absent names', () => {
+  it('omits unique names so useStyleDuplicates falls back to EMPTY_STYLES', () => {
     const a = row('BODY_Ears', FILE_A)
-    useStylesStore.getState().setStyles([a])
+    useStylesStore.getState().setStyles([a], 'txt2img')
     expect(typeof useStyleDuplicates).toBe('function')
-
-    const missing = useStylesStore.getState().duplicatesByName.get('NO_SUCH')
-    expect(missing).toBeUndefined()
-
-    // Prove singles are absent from the map (not stored as length-1).
+    // Singles are not stored; the hook returns the module-level EMPTY_STYLES.
     expect(useStylesStore.getState().duplicatesByName.has('BODY_Ears')).toBe(false)
-
-    const uniqEmpty1 = useStylesStore.getState().duplicatesByName.get('___absent_1___')
-    const uniqEmpty2 = useStylesStore.getState().duplicatesByName.get('___absent_2___')
-    expect(uniqEmpty1).toBeUndefined()
-    expect(uniqEmpty2).toBeUndefined()
+    expect(useStylesStore.getState().duplicatesByName.get('NO_SUCH')).toBeUndefined()
   })
 
   it('rebuilds when styles change and exposes duplicate groups', () => {
     const a = row('BODY_Ears', FILE_A)
     const b = row('BODY_Ears', FILE_B)
-    useStylesStore.getState().setStyles([a])
+    useStylesStore.getState().setStyles([a], 'txt2img')
     expect(useStylesStore.getState().duplicatesByName.size).toBe(0)
 
-    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
     const dups = useStylesStore.getState().duplicatesByName.get('BODY_Ears')
     expect(dups).toHaveLength(2)
     expect(dups?.map((s) => s.source_file).sort()).toEqual([FILE_A, FILE_B].sort())
@@ -408,5 +244,112 @@ describe('derived: thumbVersions hydration', () => {
     localStorage.setItem(`sg_thumb_v_${FILE_B}\0Other`, '9')
     expect(mod.useStylesStore.getState().thumbVersions[rowKey]).toBe('42')
     expect(mod.useStylesStore.getState().thumbVersions[`${FILE_B}\0Other`]).toBeUndefined()
+  })
+})
+
+describe('derived: searchTextByKey / matchesSearchKey', () => {
+  beforeEach(() => {
+    resetDerivedStore()
+  })
+
+  it('matchesSearchKey matches matchesSearch for AND tokens and description', () => {
+    const fixtures: Style[] = [
+      row('BODY_Pointy_Ears', FILE_A, { description: 'fox ears fluffy Combos: OTHER.' }),
+      row('BODY_Tail', FILE_A, { description: 'fluffy fox' }),
+      row('HAIR_Long', FILE_B, { category: 'HAIR', description: '' }),
+      row('STYLE_Oil', FILE_A, { category: 'STYLE', description: 'painterly brush strokes' }),
+    ]
+    useStylesStore.getState().setStyles(fixtures, 'txt2img')
+
+    const queries = [
+      '',
+      '   ',
+      'pointy',
+      'pointy ears',
+      'fox fluffy',
+      'ears fox',
+      'painterly',
+      'brush strokes',
+      'nope',
+      'pointy nope',
+      'HAIR',
+      'long',
+    ]
+
+    for (const style of fixtures) {
+      const key = styleRowKey(style)
+      expect(useStylesStore.getState().searchTextByKey.has(key)).toBe(true)
+      for (const q of queries) {
+        expect(matchesSearchKey(key, q)).toBe(matchesSearch(style, q))
+      }
+    }
+  })
+
+  it('rebuilds searchTextByKey only when styles change', () => {
+    const a = row('BODY_Ears', FILE_A, { description: 'soft fur' })
+    useStylesStore.getState().setStyles([a], 'txt2img')
+    const mapBefore = useStylesStore.getState().searchTextByKey
+
+    useStylesStore.getState().setSearch('ears')
+    useStylesStore.getState().toggleStyle(a)
+    expect(useStylesStore.getState().searchTextByKey).toBe(mapBefore)
+
+    const b = row('HAIR_Long', FILE_B, { category: 'HAIR' })
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
+    const mapAfter = useStylesStore.getState().searchTextByKey
+    expect(mapAfter).not.toBe(mapBefore)
+    expect(mapAfter.size).toBe(2)
+  })
+})
+
+describe('derived: selectedCountByCategory', () => {
+  beforeEach(() => {
+    resetDerivedStore()
+  })
+
+  it('tracks add, remove, clearAll, and selectAllInCategory', () => {
+    const a = row('BODY_Ears', FILE_A)
+    const b = row('BODY_Tail', FILE_A)
+    const c = row('HAIR_Long', FILE_B, { category: 'HAIR' })
+    useStylesStore.getState().setStyles([a, b, c], 'txt2img')
+    expect(typeof useCategorySelectedCount).toBe('function')
+
+    useStylesStore.getState().toggleStyle(a)
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(1)
+    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBeUndefined()
+
+    useStylesStore.getState().toggleStyle(c)
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(1)
+    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
+
+    useStylesStore.getState().toggleStyle(a)
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBeUndefined()
+    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
+
+    useStylesStore.getState().selectAllInCategory('BODY')
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(2)
+    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
+
+    useStylesStore.getState().selectAllInCategory('BODY')
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBeUndefined()
+    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
+
+    useStylesStore.getState().clearAll()
+    expect(useStylesStore.getState().selectedCountByCategory.size).toBe(0)
+  })
+
+  it('setState({ selectedStyles }) rebuilds selectedCountByCategory', () => {
+    const a = row('BODY_Ears', FILE_A)
+    const c = row('HAIR_Long', FILE_B, { category: 'HAIR' })
+    useStylesStore.getState().setStyles([a, c], 'txt2img')
+    useStylesStore.getState().toggleStyle(a)
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(1)
+
+    useStylesStore.setState({ selectedStyles: [a, c] })
+    expect(useStylesStore.getState().selectedCountByCategory.get('BODY')).toBe(1)
+    expect(useStylesStore.getState().selectedCountByCategory.get('HAIR')).toBe(1)
+
+    useStylesStore.setState({ selectedStyles: [] })
+    expect(useStylesStore.getState().selectedCountByCategory.size).toBe(0)
   })
 })

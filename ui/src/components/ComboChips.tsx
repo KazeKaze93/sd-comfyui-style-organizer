@@ -1,7 +1,6 @@
 import { startTransition } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useStylesStore, styleRowKey } from '../store/stylesStore'
-import { resolveCombosInSourceFile } from '../lib/styleIdentity'
+import { comboPartLabel, resolveCombosInSourceFile } from '../lib/styleIdentity'
 import type { Style } from '../bridge'
 
 interface Props {
@@ -12,19 +11,8 @@ interface Props {
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
 
-function chipLabel(token: string): string {
-  return token.includes('_') ? token.split('_').slice(1).join(' ') : token
-}
-
 export function ComboChips({ style, onBeforeToggle }: Props) {
-  const { styles, setCategory, toggleStyle, selectedStyles } = useStylesStore(
-    useShallow((s) => ({
-      styles: s.styles,
-      setCategory: s.setCategory,
-      toggleStyle: s.toggleStyle,
-      selectedStyles: s.selectedStyles,
-    })),
-  )
+  const { styles, setCategory, toggleStyle, selectedStyles } = useStylesStore()
 
   if (!style.description) return null
 
@@ -58,11 +46,11 @@ export function ComboChips({ style, onBeforeToggle }: Props) {
               aria-pressed={isSelected}
               className={`px-2 py-0.5 rounded text-xs border transition-colors ${FOCUS_RING}
                 ${isSelected
-                  ? 'bg-sg-accent/30 border-sg-accent/60 text-sg-text'
-                  : 'bg-sg-accent/10 border-sg-accent/30 text-sg-text hover:bg-sg-accent/20'}`}
+                  ? 'bg-sg-accent/30 border-sg-accent/60 text-sg-accent-text'
+                  : 'bg-sg-accent/10 border-sg-accent/30 text-sg-accent-text hover:bg-sg-accent/20'}`}
               title={title}
             >
-              {isSelected ? '✓ ' : ''}{chipLabel(token)}
+              {isSelected ? '✓ ' : ''}{comboPartLabel(resolved)}
             </button>
           )
         }
@@ -75,8 +63,8 @@ export function ComboChips({ style, onBeforeToggle }: Props) {
               type="button"
               onClick={() => startTransition(() => setCategory(resolved.category))}
               className={`px-2 py-0.5 rounded text-xs border transition-colors ${FOCUS_RING}
-                bg-sg-warning/10 border-sg-warning/30 text-sg-warning-text
-                hover:bg-sg-warning/20`}
+                bg-sg-warning-text/10 border-sg-warning-text/30 text-sg-warning-text
+                hover:bg-sg-warning-text/20`}
               title={title}
             >
               {resolved.token}
@@ -88,7 +76,7 @@ export function ComboChips({ style, onBeforeToggle }: Props) {
           <span
             key={`r:${resolved.token}:${index}`}
             className="px-2 py-0.5 rounded text-xs border
-              bg-sg-warning/10 border-sg-warning/30 text-sg-warning-text"
+              bg-sg-warning-text/10 border-sg-warning-text/30 text-sg-warning-text"
             title={resolved.token}
           >
             {resolved.token}

@@ -1,30 +1,41 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { useShallow } from 'zustand/react/shallow'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Save, Import, Eraser, Rows3, ChevronsUpDown, ChevronsDownUp, Plus,
-  Palette, AlertTriangle, Maximize2, Minimize2, X, Upload, Download,
-  type LucideIcon,
+  Import, History, MoreHorizontal, Plus, Globe,
+  Palette, Maximize2, Minimize2, X, Eraser,
 } from 'lucide-react'
-import { onHostMessage, sendToHost, type Style } from './bridge'
-import { appliedThemeMode, applyThemeMode, parseThemeMode } from './lib/themeMode'
-import { closeTopLayer, useLayer } from './lib/layerStack'
-import { styleRowKey, useStylesStore } from './store/stylesStore'
+import { useShallow } from 'zustand/react/shallow'
+import { onHostMessage, sendToHost } from './bridge'
+import { LORA_VIEW, styleRowKey, useStylesStore } from './store/stylesStore'
 import { SearchBar } from './components/SearchBar'
 import { SourceFilter } from './components/SourceFilter'
 import { Sidebar } from './components/Sidebar'
 import { StyleGrid } from './components/StyleGrid'
+import { GridScroller } from './components/grid/GridScroller'
+import { StyleEditorDialog } from './components/StyleEditorDialog'
+import { ImportExportDialog } from './components/ImportExportDialog'
+import { ViewModeToggle } from './components/ViewModeToggle'
+import { BackupRestoreDialog } from './components/BackupRestoreDialog'
+import { gridMinVisibleHeightPx } from './components/grid/constants'
 import { BottomPanel } from './components/BottomPanel'
+import { BatchAnnouncer } from './components/BatchAnnouncer'
+import { PLATFORM } from './lib/platform'
+import { setFrameFullscreen } from './lib/frameFullscreen'
+import { samplesCopyTarget } from './lib/styleActions'
 import { Toast } from './components/Toast'
-import { EditStyleDialog } from './components/EditStyleDialog'
 import { MenuItem, ViewportFixedMenu } from './components/ViewportFixedMenu'
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from './components/ui/popover'
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './components/ui/tooltip'
+import { closeTopLayer, hasOpenLayer } from './lib/layerStack'
 import { cn } from './lib/utils'
-
-const WINDOWED_SIZE_KEY = 'sg_windowed_size'
+import { styleGridPost } from './lib/styleGridFetch'
+import { applyThemeMode, appliedThemeMode } from './lib/themeMode'
+import { installFocusSourceTracking } from './lib/focusSource'
+import { useGatedTooltip } from './lib/useGatedTooltip'
+import { AppActionsContext, type AppActions } from './lib/appActions'
 
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
@@ -55,14 +66,34 @@ function clearSearchField(searchRoot: HTMLElement | null): boolean {
   return true
 }
 
-/** Response shape for `GET /style_grid/styles`. */
-type StylesResponse = { categories?: Record<string, Style[]> }
+/**
+ * Legacy key: the iframe used to save the windowed size here before it wrote
+ * fullscreen styles into the host wrapper. The host owns geometry now
+ * (sg_panel_geometry_v1); a stale value is deleted on startup.
+ */
+const LEGACY_WINDOWED_SIZE_KEY = 'sg_windowed_size'
+
+/** Search is the primary tool: it grows (flex-1) but never collapses below this. */
+const SEARCH_MIN_WIDTH_PX = 110
 
 /**
- * Native title only — Radix Tooltip + Floating UI getOverflowAncestors stack-overflows
- * when bench/host installs a fake `window.frameElement` that is an ancestor of #root
- * (body → frameElement → host → body). Focus/Tab into toolbar must not open Floating UI.
+ * Header breakpoint (iframe width == panel width: the iframe fills the host
+ * panel). At or below it the "Style Grid" text becomes sr-only and the tab
+ * badge is hidden (and the gap before Close shrinks), so the header stays one
+ * row down to the host's PANEL_MIN_WIDTH (600px). Raised from 719 (Grid /
+ * Gallery toggle) and from 759 (header Clear): the widest case (LoRA view +
+ * globe + a 24ch source label) no longer fits in wide mode below 800px.
+ * Tailwind only emits literal utilities, so the classes spell it out as
+ * `max-[799px]:`; keep them in step with this value.
  */
+export const HEADER_NARROW_MAX_PX = 799
+
+/** Gap between the More button and the top of its menu. */
+const MORE_MENU_OFFSET_PX = 4
+
+/** Top padding of the grid scroller content (the `pt-3` wrapper around the grid). */
+const GRID_PAD_TOP_PX = 12
+
 const ToolBtn = ({
   icon: Icon,
   label,
@@ -71,169 +102,182 @@ const ToolBtn = ({
   disabled,
   colorClassName,
   active,
+  ariaHasPopup,
+  expanded,
 }: {
-  icon: LucideIcon
+  icon: React.ComponentType<{ size?: number; 'aria-hidden'?: boolean }>
   label: string
   title?: string
-  onClick?: (e: MouseEvent<HTMLButtonElement>) => void
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
   colorClassName?: string
   active?: boolean
-}) => (
-  <button
-    type="button"
-    onClick={disabled ? undefined : onClick}
-    disabled={disabled}
-    title={title ?? label}
-    aria-label={label}
-    aria-pressed={active !== undefined ? active : undefined}
-    className={cn(
-      'w-8 h-8 flex items-center justify-center rounded transition-colors border',
-      FOCUS_RING,
-      disabled
-        ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
-        : active
-          ? 'bg-sg-accent/15 border-sg-accent/40 text-sg-text'
-          : cn(
-              colorClassName ?? 'text-sg-muted',
-              'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
-            ),
-    )}
-  >
-    <Icon size={16} aria-hidden />
-  </button>
-)
+  /** Opens a popup menu: sets aria-haspopup. */
+  ariaHasPopup?: 'menu'
+  /** Whether that popup is open: sets aria-expanded. */
+  expanded?: boolean
+}) => {
+  // Hover / Tab-focus only; closed while the button's own menu is open.
+  const tip = useGatedTooltip(expanded === true)
 
-function SelectedCountBadge() {
-  const selectedCount = useStylesStore((s) => s.selectedStyles.length)
-  if (selectedCount === 0) return null
-  return (
-    <span className="text-xs text-sg-muted">
-      {selectedCount} selected
-    </span>
+  const button = (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={label}
+      aria-pressed={active !== undefined ? active : undefined}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={expanded}
+      className={cn(
+        'w-8 h-8 flex items-center justify-center rounded transition-colors border',
+        FOCUS_RING,
+        disabled
+          ? 'opacity-45 cursor-not-allowed text-sg-muted border-transparent [filter:grayscale(0.35)]'
+          : active
+            ? 'bg-sg-accent/15 border-sg-accent/40 text-sg-text'
+            : cn(
+                colorClassName ?? 'text-sg-muted',
+                'hover:text-sg-text hover:bg-sg-surface border-transparent hover:border-sg-border',
+              ),
+      )}
+    >
+      <Icon size={16} aria-hidden />
+    </button>
   )
-}
-
-/** Isolated: conflicts set() must not re-render the whole App chrome (profile P). */
-function ConflictsChip() {
-  const [conflictsOpen, setConflictsOpen] = useState(false)
-  const conflicts = useStylesStore((s) => s.conflicts)
-  const toggleStyle = useStylesStore((s) => s.toggleStyle)
-  useLayer(conflictsOpen, () => setConflictsOpen(false))
-  if (conflicts.length === 0) return null
-
   return (
-    <Popover open={conflictsOpen} onOpenChange={setConflictsOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`${conflicts.length} style conflicts`}
-          className={cn(
-            'flex items-center gap-1 px-2 py-1 rounded',
-            'bg-sg-danger/20 border border-sg-danger/40',
-            'text-sg-danger-text text-xs',
-            'motion-safe:animate-pulse',
-            FOCUS_RING,
-          )}
-        >
-          <AlertTriangle size={14} aria-hidden />
-          {conflicts.length}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        onEscapeKeyDown={(e) => e.preventDefault()}
-        className="w-auto min-w-64 max-w-[min(20rem,calc(100vw-2.5rem))] p-3 bg-sg-popover border border-sg-border rounded-lg shadow-xl"
-      >
-        <div className="text-xs font-semibold text-sg-text mb-2">
-          Style Conflicts
-        </div>
-        {conflicts.map((c, i) => {
-          const { selectedStyles, styles } = useStylesStore.getState()
-          const conflictingStyle = selectedStyles.find(s => styleRowKey(s) === c.styleBKey)
-            ?? styles.find(s => styleRowKey(s) === c.styleBKey)
-          return (
-            <div key={i} className="flex items-start justify-between gap-2 py-0.5">
-              <span className="text-xs text-sg-danger-text min-w-0 flex-1 break-words">
-                {c.reason}
-              </span>
-              {conflictingStyle && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    toggleStyle(conflictingStyle)
-                    setConflictsOpen(false)
-                  }}
-                  className={cn(
-                    'text-xs px-1.5 py-0.5 rounded border',
-                    'border-sg-danger/40 text-sg-danger-text hover:bg-sg-danger/20',
-                    'transition-colors shrink-0',
-                    FOCUS_RING,
-                  )}
-                  title={`Remove "${c.styleB}"`}
-                  aria-label={`Remove "${c.styleB}"`}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </PopoverContent>
-    </Popover>
+    // While the button's own menu is open the tooltip stays closed.
+    <Tooltip open={tip.open} onOpenChange={tip.onOpenChange}>
+      <TooltipTrigger asChild {...tip.triggerProps}>
+        {disabled ? (
+          <span className="inline-flex rounded">{button}</span>
+        ) : (
+          button
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <p className="text-xs max-w-[240px] whitespace-pre-line">{label}</p>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
 export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [newStyleOpen, setNewStyleOpen] = useState(false)
-  const [ieMenu, setIeMenu] = useState<{
+  const [importExportOpen, setImportExportOpen] = useState(false)
+  const [backupOpen, setBackupOpen] = useState(false)
+  const [moreMenu, setMoreMenu] = useState<{
     x: number
     y: number
-    restore: HTMLElement
+    restoreFocusTo: HTMLElement
   } | null>(null)
-  const importFileInputRef = useRef<HTMLInputElement>(null)
   const searchRootRef = useRef<HTMLDivElement>(null)
-  // Narrow slice — avoid selectedStyles/conflicts fan-out on every toggle (profile P).
+  const [loraFetchStatus, setLoraFetchStatus] = useState<{
+    status: string; done: number; total: number; errors: number
+  } | null>(null)
+  // P: App 17 hits — bare useStylesStore() re-rendered whole tree on toggle.
   const {
     setStyles,
+    tab,
     styles,
-    toggleCompact,
-    compactMode,
-    collapsedCategories,
-    collapseAll,
-    expandAll,
-    showToast,
-    fetchPresets,
     activeSource,
-    setActiveSource,
-    categories,
+    activeCategory,
+    showToast,
     presetsCorrupt,
+    setThemeMode,
   } = useStylesStore(
     useShallow((s) => ({
       setStyles: s.setStyles,
+      tab: s.tab,
       styles: s.styles,
-      toggleCompact: s.toggleCompact,
-      compactMode: s.compactMode,
-      collapsedCategories: s.collapsedCategories,
-      collapseAll: s.collapseAll,
-      expandAll: s.expandAll,
-      showToast: s.showToast,
-      fetchPresets: s.fetchPresets,
       activeSource: s.activeSource,
-      setActiveSource: s.setActiveSource,
-      categories: s.categories,
+      activeCategory: s.activeCategory,
+      showToast: s.showToast,
       presetsCorrupt: s.presetsCorrupt,
+      setThemeMode: s.setThemeMode,
     })),
   )
+
+  const headerTitle = PLATFORM.hostTabs ? `Style Grid — ${tab}` : 'Style Grid'
+
   const activeSourceIsReadOnly = !!activeSource &&
     styles.some(s => s.source_file === activeSource && s.read_only)
+  /** Openers for the grid's empty states; canCreateStyle is the header + button's rule. */
+  const appActions = useMemo<AppActions>(() => ({
+    openImportExport: () => setImportExportOpen(true),
+    openNewStyle: () => setNewStyleOpen(true),
+    canCreateStyle: !!activeSource && (!activeSourceIsReadOnly || PLATFORM.samplesCopyToData),
+  }), [activeSource, activeSourceIsReadOnly])
+
+  const fetchLoraTitles = async () => {
+    if (!PLATFORM.lora) return
+    try {
+      const res = await styleGridPost('/style_grid/lora/fetch_titles', {})
+      const data = await res.json()
+      if (data.error) {
+        showToast(`⚠️ ${data.error}`, 'error')
+        return
+      }
+      showToast('🌐 Fetching titles from CivitAI…', 'info')
+      setLoraFetchStatus({ status: 'running', done: 0, total: data.total_candidates || 0, errors: 0 })
+    } catch {
+      showToast('⚠️ Could not start title fetch', 'error')
+    }
+  }
 
   useEffect(() => {
-    void useStylesStore.getState().loadCategoryOrder()
-    useStylesStore.getState().setThemeMode(appliedThemeMode())
+    if (loraFetchStatus?.status !== 'running') return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/style_grid/lora/fetch_titles/status')
+        const data = await res.json()
+        setLoraFetchStatus(data)
+        if (data.status !== 'running') {
+          showToast(
+            data.errors > 0
+              ? `🌐 Titles: ${data.done - data.errors}/${data.total} ok, ${data.errors} failed. Reopen the panel to see updates.`
+              : `🌐 Titles fetched: ${data.done}/${data.total}. Reopen the panel to see updates.`,
+            data.errors > 0 ? 'info' : 'success'
+          )
+        }
+      } catch {
+        // transient poll failure — next tick will retry
+      }
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [loraFetchStatus?.status, showToast])
+
+  useEffect(() => {
+    setThemeMode(appliedThemeMode())
+  }, [setThemeMode])
+
+  // Toolbar tooltips need to know whether focus came from Tab (see ToolBtn).
+  useEffect(() => installFocusSourceTracking(), [])
+
+  useEffect(() => {
+    // The key is live geometry when the iframe resizes its own frame (frame-element).
+    if (PLATFORM.fullscreenMode !== 'host-message') return
+    try {
+      localStorage.removeItem(LEGACY_WINDOWED_SIZE_KEY)
+    } catch (err) {
+      // Storage can be blocked; nothing else is expected to fail here.
+      if (!(err instanceof DOMException)) throw err
+    }
+  }, [])
+
+  useEffect(() => {
+    void useStylesStore.getState().hydrateFavorites()
     const unsub = onHostMessage((msg) => {
-      if (msg.type === 'SG_INIT') {
+      if (msg.type === 'SG_THEME') {
+        applyThemeMode(msg.mode)
+        setThemeMode(msg.mode)
+      }
+      if (msg.type === 'SG_FULLSCREEN_STATE') {
+        setIsFullscreen(msg.fullscreen)
+      }
+      if (msg.type === 'SG_INIT' || msg.type === 'SG_STYLES_UPDATE') {
         const raw: unknown = (msg as { styles?: unknown }).styles
         const arr = Array.isArray(raw)
           ? raw
@@ -242,13 +286,25 @@ export default function App() {
             : (raw as { categories?: Record<string, unknown[]> } | null)?.categories
               ? Object.values((raw as { categories: Record<string, unknown[]> }).categories).flat()
               : []
-        setStyles(arr)
+        setStyles(
+          arr,
+          // A host without tabs sends SG_INIT without one: keep the store's tab.
+          msg.type === 'SG_INIT' && msg.tab
+            ? msg.tab
+            : useStylesStore.getState().tab,
+        )
         void useStylesStore.getState().fetchPresets()
+        // Every catalog push (init, refresh after a save / import / restore /
+        // rename, a CSV change on disk) also reloads which styles have thumbnails.
+        void useStylesStore.getState().fetchThumbKeys()
       }
-      if (msg.type === 'SG_THEME') {
-        const mode = parseThemeMode(msg.mode)
-        applyThemeMode(mode)
-        useStylesStore.getState().setThemeMode(mode)
+      if (msg.type === 'SG_DECK_STATE' && PLATFORM.deck) {
+        useStylesStore.getState().setDeckState({ seed: msg.seed, index: msg.index })
+      }
+      if (msg.type === 'SG_HOST_TAB') {
+        // Intentionally ignored for tab identity: host broadcasts which Forge
+        // main tab is visible to BOTH iframes. This iframe's tab is fixed at
+        // SG_INIT (txt2img | img2img) and must not be overwritten.
       }
       if (msg.type === 'SG_CLOSE') {
         sendToHost({ type: 'SG_CLOSE_REQUEST' })
@@ -267,18 +323,38 @@ export default function App() {
       if (msg.type === 'SG_WILDCARDS_ACTIVE') {
         useStylesStore.getState().setActiveWildcards(msg.categories)
       }
-      if (msg.type === 'SG_DECK_STATE') {
-        useStylesStore.getState().setDeckState({ seed: msg.seed, index: msg.index })
+      if (msg.type === 'SG_THUMB_PROGRESS') {
+        const jobKey = styleRowKey({ name: msg.styleId, source_file: msg.source_file })
+        useStylesStore.getState().applyPreviewProgress(jobKey, msg.status)
+      }
+      if (msg.type === 'SG_BATCH_PROGRESS') {
+        useStylesStore.getState().applyBatchProgress({
+          category: msg.category,
+          source: msg.source,
+          status: msg.status,
+          total: msg.total,
+          processed: msg.processed,
+          newCount: msg.newCount,
+          alreadyHad: msg.alreadyHad,
+          skipped: msg.skipped,
+          failed: msg.failed,
+        })
+      }
+      if (msg.type === 'SG_THUMB_DONE') {
+        // A generated or uploaded preview for this style now exists.
+        const thumbKey = styleRowKey({ name: msg.styleId, source_file: msg.source_file })
+        useStylesStore.getState().bumpThumbVersion(thumbKey, String(msg.version))
+        useStylesStore.getState().markThumb(thumbKey, true)
       }
     })
     sendToHost({ type: 'SG_READY' })
     return unsub
-  }, [setStyles])
+  }, [setStyles, setThemeMode])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (closeTopLayer()) {
+        if (hasOpenLayer() && closeTopLayer()) {
           e.preventDefault()
           e.stopPropagation()
           return
@@ -324,180 +400,157 @@ export default function App() {
     }
   }, [])
 
+  // 'host-message': the host owns the panel frame. Ask; isFullscreen changes only
+  // when the host answers with SG_FULLSCREEN_STATE (see the host message effect).
+  // 'frame-element': resize our own host wrapper (lib/frameFullscreen.ts).
   const toggleFullscreen = () => {
-    const iframe = window.frameElement as HTMLElement
-    if (!iframe) return
-    const wrapper = iframe.parentElement as HTMLElement
-    if (!wrapper) return
-
-    if (isFullscreen) {
-      let saved: { top?: string; right?: string; width?: string; height?: string } = {}
-      try {
-        const raw = localStorage.getItem(WINDOWED_SIZE_KEY)
-        if (raw) saved = JSON.parse(raw)
-      } catch { /* ignore malformed/unavailable storage */ }
-
-      // Windowed mode (master-like): centered and readable
-      wrapper.style.top = saved.top || '80px'
-      wrapper.style.right = saved.right || '16px'
-      wrapper.style.left = 'auto'
-      wrapper.style.transform = 'none'
-      wrapper.style.width = saved.width || '1000px'
-      wrapper.style.height = saved.height || '650px'
-      wrapper.style.minWidth = '600px'
-      wrapper.style.minHeight = '400px'
-      wrapper.style.maxWidth = '95vw'
-      wrapper.style.maxHeight = '90vh'
-      wrapper.style.borderRadius = '12px'
-      wrapper.style.boxShadow = '0 25px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)'
-      wrapper.style.resize = 'both'
-      setIsFullscreen(false)
+    if (PLATFORM.fullscreenMode === 'frame-element') {
+      const next = setFrameFullscreen(!isFullscreen)
+      if (next !== null) setIsFullscreen(next)
       return
     }
-
-    try {
-      localStorage.setItem(WINDOWED_SIZE_KEY, JSON.stringify({
-        top: wrapper.style.top,
-        right: wrapper.style.right,
-        width: wrapper.style.width,
-        height: wrapper.style.height,
-      }))
-    } catch { /* ignore storage unavailable */ }
-
-    // Fullscreen mode
-    wrapper.style.top = '0'
-    wrapper.style.right = 'auto'
-    wrapper.style.left = '0'
-    wrapper.style.transform = 'none'
-    wrapper.style.width = '100vw'
-    wrapper.style.height = '100vh'
-    wrapper.style.minWidth = ''
-    wrapper.style.minHeight = ''
-    wrapper.style.maxWidth = ''
-    wrapper.style.maxHeight = ''
-    wrapper.style.borderRadius = '0'
-    wrapper.style.boxShadow = 'none'
-    wrapper.style.resize = 'none'
-    setIsFullscreen(true)
+    sendToHost({ type: 'SG_SET_FULLSCREEN', fullscreen: !isFullscreen })
   }
 
   return (
+    <AppActionsContext.Provider value={appActions}>
     <div className="flex flex-col bg-sg-bg text-sg-text"
       style={{ height: '100vh', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="shrink-0 flex items-center gap-3 px-4 py-2.5
-                    border-b border-sg-border">
-        <span className="text-sg-accent font-semibold inline-flex items-center gap-1.5">
+      {/* One row, never wraps: at or below HEADER_NARROW_MAX_PX the title text and the tab badge give way. */}
+      <div
+        className="shrink-0 flex flex-nowrap items-center gap-3 px-4 py-2.5 min-w-0
+                   border-b border-sg-border"
+        data-sg-header="true"
+      >
+        <div
+          role="group"
+          aria-label={headerTitle}
+          title={headerTitle}
+          className="shrink-0 text-sg-accent font-semibold inline-flex items-center gap-1.5"
+          data-sg-header-title="true"
+        >
           <Palette size={16} aria-hidden />
-          Style Grid
-        </span>
+          <span className="max-[799px]:sr-only">Style Grid</span>
+        </div>
+        {PLATFORM.hostTabs && (
+          <span
+            className="shrink-0 text-xs text-sg-muted border border-sg-border/50
+                       px-1.5 py-0.5 rounded font-mono max-[799px]:hidden"
+            data-sg-tab-badge="true"
+          >
+            {tab}
+          </span>
+        )}
         <SourceFilter />
-        <div className="flex-1" ref={searchRootRef}>
+        <div
+          className="flex-1 min-w-0"
+          style={{ minWidth: SEARCH_MIN_WIDTH_PX }}
+          ref={searchRootRef}
+        >
           <SearchBar />
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <ToolBtn
-            icon={Save}
-            label="Backup (CSVs + presets)"
-            onClick={async () => {
-              try {
-                const res = await fetch('/style_grid/backup', { method: 'POST' })
-                const data = await res.json().catch(() => ({}))
-                if (data.empty === true) {
-                  showToast('Nothing to back up', 'info')
-                  return
-                }
-                if (!res.ok || data.ok === false || data.error) {
-                  showToast(
-                    typeof data.error === 'string' && data.error
-                      ? data.error
-                      : 'Backup failed',
-                    'error',
-                  )
-                  return
-                }
-                const file =
-                  typeof data.file === 'string' && data.file ? data.file : ''
-                showToast(
-                  file ? `Backup created: ${file}` : 'Backup created',
-                  'success',
-                )
-              } catch {
-                showToast('Backup failed', 'error')
-              }
-            }}
-          />
-          <ToolBtn
-            icon={Import}
-            label="Import/Export"
-            onClick={(e) => {
-              const opener = e.currentTarget
-              const rect = opener.getBoundingClientRect()
-              setIeMenu({ x: rect.left, y: rect.bottom + 4, restore: opener })
-            }}
-          />
-          <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
-          <ToolBtn
-            icon={Eraser}
-            label="Clear all selected styles"
-            colorClassName="text-sg-danger-text"
-            onClick={() => {
-              sendToHost({ type: 'SG_CLEAR_ALL' })
-            }}
-          />
-          <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
-          <ToolBtn
-            icon={Rows3}
-            label="Compact mode"
-            active={compactMode}
-            onClick={() => toggleCompact()}
-          />
-          <ToolBtn
-            icon={collapsedCategories.size > 0 ? ChevronsUpDown : ChevronsDownUp}
-            label={collapsedCategories.size > 0 ? 'Expand all' : 'Collapse all'}
-            onClick={() =>
-              collapsedCategories.size > 0 ? expandAll() : collapseAll()
-            }
-          />
-          <div className="w-px h-5 bg-sg-border mx-0.5 self-center" />
-          <ToolBtn
-            icon={Plus}
-            label={
-              !activeSource
-                ? 'Select a specific CSV source before creating a style'
-                : activeSourceIsReadOnly
-                  ? 'This source is read-only (bundled samples). Pick or import another CSV to add styles.'
-                  : 'New style'
-            }
-            colorClassName="text-sg-accent-text"
-            disabled={!activeSource || activeSourceIsReadOnly}
-            onClick={() => {
-              // samples/ is write-protected — style/save rematerializes to
-              // data/<basename>.csv. Tell the user before they fill the form.
-              setNewStyleOpen(true)
-            }}
-          />
-          <SelectedCountBadge />
-          <ConflictsChip />
-          <ToolBtn
-            icon={isFullscreen ? Minimize2 : Maximize2}
-            label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            onClick={toggleFullscreen}
-          />
-          <span className="ml-3 inline-flex">
+        <TooltipProvider>
+          <ViewModeToggle />
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {/* Host clearAll(): empties the positive and negative prompt fields and
+                the selection. Always enabled: the prompts can hold text with
+                nothing selected here. */}
             <ToolBtn
-              icon={X}
-              label="Close Style Grid"
-              onClick={() => sendToHost({ type: 'SG_CLOSE_REQUEST' })}
+              icon={Eraser}
+              label="Clear prompts and selection"
+              colorClassName="text-sg-danger-text"
+              onClick={() => sendToHost({ type: 'SG_CLEAR_ALL' })}
             />
-          </span>
-        </div>
+            {PLATFORM.lora && activeCategory === LORA_VIEW && (
+              <ToolBtn
+                icon={Globe}
+                label={
+                  loraFetchStatus?.status === 'running'
+                    ? `Fetching titles from CivitAI… ${loraFetchStatus.done}/${loraFetchStatus.total}`
+                    : 'Fetch LoRA titles from CivitAI\n(reads modelId already in each LoRA\'s local .json; nothing sent to CivitAI beyond the request itself)'
+                }
+                disabled={loraFetchStatus?.status === 'running'}
+                onClick={fetchLoraTitles}
+              />
+            )}
+            <ToolBtn
+              icon={Plus}
+              label={
+                !activeSource
+                  ? 'Select a specific CSV source before creating a style'
+                  : activeSourceIsReadOnly && !PLATFORM.samplesCopyToData
+                    ? 'This source is read-only (bundled samples). Pick or import another CSV to add styles.'
+                    : 'New style'
+              }
+              colorClassName="text-sg-accent-text"
+              disabled={!activeSource || (activeSourceIsReadOnly && !PLATFORM.samplesCopyToData)}
+              onClick={() => setNewStyleOpen(true)}
+            />
+            <ToolBtn
+              icon={MoreHorizontal}
+              label="More"
+              ariaHasPopup="menu"
+              expanded={moreMenu !== null}
+              onClick={(e) => {
+                const opener = e.currentTarget
+                const rect = opener.getBoundingClientRect()
+                setMoreMenu({
+                  x: rect.left,
+                  y: rect.bottom + MORE_MENU_OFFSET_PX,
+                  restoreFocusTo: opener,
+                })
+              }}
+            />
+            <ToolBtn
+              icon={isFullscreen ? Minimize2 : Maximize2}
+              label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              onClick={toggleFullscreen}
+            />
+            <span className="ml-3 max-[799px]:ml-2 inline-flex" data-sg-close-wrap="true">
+              <ToolBtn
+                icon={X}
+                label="Close Style Grid"
+                onClick={() => sendToHost({ type: 'SG_CLOSE_REQUEST' })}
+              />
+            </span>
+          </div>
+        </TooltipProvider>
+        {moreMenu && (
+          <ViewportFixedMenu
+            x={moreMenu.x}
+            y={moreMenu.y}
+            onClose={() => setMoreMenu(null)}
+            restoreFocusTo={moreMenu.restoreFocusTo}
+          >
+            <MenuItem
+              className="flex items-center gap-2"
+              onSelect={() => {
+                setMoreMenu(null)
+                setImportExportOpen(true)
+              }}
+            >
+              <Import className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Import / Export…
+            </MenuItem>
+            <MenuItem
+              className="flex items-center gap-2"
+              onSelect={() => {
+                setMoreMenu(null)
+                setBackupOpen(true)
+              }}
+            >
+              <History className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Backup &amp; restore…
+            </MenuItem>
+          </ViewportFixedMenu>
+        )}
       </div>
 
       {presetsCorrupt && (
         <div
           role="alert"
-          className="shrink-0 px-4 py-3 border-b border-sg-danger/50 bg-sg-danger/90 text-white text-sm"
+          className="shrink-0 px-4 py-3 border-b border-red-500/50 bg-red-950/90 text-red-100 text-sm"
         >
           <div className="font-semibold">presets.json is corrupt — preset saves are disabled</div>
           <div className="mt-1 font-mono text-xs break-all opacity-90">
@@ -515,161 +568,59 @@ export default function App() {
       )}
 
       {/* Body */}
-      <div className="flex min-h-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
+      {/* minHeight: the grid keeps a header and two card rows; the tray shrinks first. */}
+      <div
+        className="relative flex"
+        data-sg-body="true"
+        style={{
+          flex: '1 1 0',
+          overflow: 'hidden',
+          minHeight: GRID_PAD_TOP_PX + gridMinVisibleHeightPx(!isFullscreen),
+        }}
+      >
         {/* Sidebar */}
-        <div className="shrink-0 border-r border-sg-border p-2 min-h-0"
-          style={{ width: isFullscreen ? '210px' : '210px', overflowY: 'auto', overflowX: 'auto' }}>
+        {/* The sidebar scrolls its own list and keeps a footer line under it. */}
+        <div className="shrink-0 border-r border-sg-border min-h-0 flex flex-col"
+          style={{ width: '210px' }}>
           <Sidebar />
         </div>
 
-        {/* Grid */}
-        <div className="px-3 pb-3 min-h-0"
+        {/* Grid — GridScroller is the scroll element the virtualized grid measures. */}
+        <GridScroller className="px-3 pb-3 min-h-0"
           style={{ flex: '1 1 0', overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
-          <div className="pt-3">
+          {/* Flex column at least as tall as the visible scroller, so an empty
+              state (flex-1) centers in view; the grid itself keeps its own height. */}
+          <div className="pt-3 min-h-full flex flex-col" data-sg-grid-host="true">
             <StyleGrid windowed={!isFullscreen} />
           </div>
-        </div>
+        </GridScroller>
+
+        {/* Bottom-center of the body: clipped to it, so never over the header toolbar or the tray. */}
+        <Toast />
       </div>
 
-      {/* Bottom panel — single height transition */}
-      <div className="shrink-0">
+      {/* Bottom panels — capped in BottomPanel; may shrink so the grid keeps its minimum. */}
+      <div className="min-h-0 flex flex-col" style={{ flex: '0 1 auto' }}>
         <BottomPanel />
       </div>
+      <BatchAnnouncer />
       {newStyleOpen && (
-        <EditStyleDialog
+        <StyleEditorDialog
+          mode="create"
           open
-          nameEditable
-          style={{ name: '', description: '', category: '', prompt: '', negative_prompt: '' }}
-          categories={categories()}
-          onCancel={() => setNewStyleOpen(false)}
-          onSave={async (fields) => {
-            if (styles.some((s) => s.name === fields.name)) {
-              showToast(`A style named "${fields.name}" already exists`, 'error')
-              return
-            }
-            // style/save returns {ok} only — resolve the real write target
-            // from the created row after refetch (samples → data/<basename>).
-            const fromSamples = styles.some(
-              (s) => s.source_file === activeSource && s.read_only,
-            )
-            const result = await useStylesStore.getState().saveStyle({
-              name: fields.name,
-              prompt: fields.prompt,
-              negative_prompt: fields.negative_prompt,
-              description: fields.description,
-              category: fields.category,
-              source: activeSource,
-            })
-            if (!result.ok) {
-              showToast(
-                typeof result.error === 'string' && result.error ? result.error : 'Create failed',
-                'error',
-              )
-              return
-            }
-            showToast(`Created "${fields.name}"`, 'success')
-            if (fromSamples) {
-              const created =
-                result.styles.find((s) => s.name === fields.name && !s.read_only) ??
-                result.styles.find((s) => s.name === fields.name)
-              if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
-                setActiveSource(created.source_file)
-                const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
-                  .replace(/\.csv$/i, '')
-                showToast(`Created in ${base} (data/) — switched source`, 'info')
-              }
-            }
-            setNewStyleOpen(false)
-          }}
+          defaultSource={
+            activeSource && activeSourceIsReadOnly && PLATFORM.samplesCopyToData
+              ? samplesCopyTarget(activeSource)
+              : activeSource
+          }
+          onClose={() => setNewStyleOpen(false)}
         />
       )}
-      {ieMenu && (
-        <ViewportFixedMenu
-          x={ieMenu.x}
-          y={ieMenu.y}
-          onClose={() => setIeMenu(null)}
-          restoreFocusTo={ieMenu.restore}
-        >
-          <MenuItem
-            onSelect={() => {
-              setIeMenu(null)
-              void (async () => {
-                try {
-                  const res = await fetch('/style_grid/export')
-                  const data = await res.json().catch(() => ({}))
-                  if (!res.ok || data.error) {
-                    showToast(
-                      typeof data.error === 'string' && data.error ? data.error : 'Export failed',
-                      'error',
-                    )
-                    return
-                  }
-                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `style_grid_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-                  document.body.appendChild(a)
-                  a.click()
-                  a.remove()
-                  URL.revokeObjectURL(url)
-                  showToast('Exported styles', 'success')
-                } catch {
-                  showToast('Export failed', 'error')
-                }
-              })()
-            }}
-          >
-            <span className="inline-flex items-center gap-2">
-              <Download size={14} aria-hidden />
-              Export
-            </span>
-          </MenuItem>
-          <MenuItem
-            onSelect={() => {
-              setIeMenu(null)
-              importFileInputRef.current?.click()
-            }}
-          >
-            <span className="inline-flex items-center gap-2">
-              <Upload size={14} aria-hidden />
-              Import from file...
-            </span>
-          </MenuItem>
-        </ViewportFixedMenu>
+      {importExportOpen && (
+        <ImportExportDialog open onClose={() => setImportExportOpen(false)} />
       )}
-      <input
-        ref={importFileInputRef}
-        type="file"
-        accept=".json,.zip,application/json,application/zip"
-        className="hidden"
-        onChange={async (e) => {
-          const file = e.target.files?.[0]
-          e.target.value = ''
-          if (!file) return
-          try {
-            const res = await fetch('/style_grid/import', { method: 'POST', body: file })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || data.ok === false || data.error) {
-              showToast(
-                typeof data.error === 'string' && data.error ? data.error : 'Import failed',
-                'error',
-              )
-              return
-            }
-            const stylesN = Number(data.imported) || 0
-            const presetsN = Number(data.presets_imported) || 0
-            const fresh: StylesResponse = await fetch('/style_grid/styles').then((r) => r.json())
-            const flat = Object.values(fresh.categories || {}).flat()
-            setStyles(flat)
-            await fetchPresets()
-            showToast(`Imported ${stylesN} styles, ${presetsN} presets`, 'success')
-          } catch {
-            showToast('Import failed', 'error')
-          }
-        }}
-      />
-      <Toast />
+      {backupOpen && <BackupRestoreDialog open onClose={() => setBackupOpen(false)} />}
     </div>
+    </AppActionsContext.Provider>
   )
 }

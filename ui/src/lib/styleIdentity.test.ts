@@ -2,13 +2,45 @@ import { describe, expect, it } from 'vitest'
 import type { Style } from '../bridge'
 import {
   findStyleBySourceAndName,
+  isSourceId,
   parseComboPart,
   parseComboParts,
   parseComboTokens,
   resolveCombosInSourceFile,
   resolveSelectedStyleRow,
+  sourceLeaf,
   splitOutsideParens,
 } from './styleIdentity'
+import { PLATFORM } from './platform'
+
+describe('isSourceId / sourceLeaf (PLATFORM.sourceIdPrefixes)', () => {
+  it('accepts <prefix>/<leaf.csv> for every platform prefix', () => {
+    for (const prefix of PLATFORM.sourceIdPrefixes) {
+      expect(isSourceId(`${prefix}/pack.csv`)).toBe(true)
+    }
+  })
+
+  it('shared/<dir>/<leaf.csv> only where the platform has shared ids', () => {
+    expect(isSourceId('shared/extra/pack.csv')).toBe(PLATFORM.sharedSourceIds)
+    expect(isSourceId('shared/extra~abc123/pack.csv')).toBe(PLATFORM.sharedSourceIds)
+  })
+
+  it('rejects abs paths, bare leaves, bad shared shape, and forbidden chars', () => {
+    const prefix = PLATFORM.sourceIdPrefixes[0]
+    expect(isSourceId('D:/packs/styles.csv')).toBe(false)
+    expect(isSourceId('pack.csv')).toBe(false)
+    expect(isSourceId('unknown/pack.csv')).toBe(false)
+    expect(isSourceId('shared/pack.csv')).toBe(false)
+    expect(isSourceId(`${prefix}/nested/pack.csv`)).toBe(false)
+    expect(isSourceId(`${prefix}/pack.csv\0x`)).toBe(false)
+    expect(isSourceId(`${prefix}\\pack.csv`)).toBe(false)
+  })
+
+  it('sourceLeaf lowercases the final segment', () => {
+    expect(sourceLeaf('styles/Pack.CSV')).toBe('pack.csv')
+    expect(sourceLeaf('D:\\old\\Pack.CSV')).toBe('pack.csv')
+  })
+})
 
 function row(
   name: string,
@@ -22,8 +54,6 @@ function row(
     negative_prompt: extra.negative_prompt ?? `neg:${source_file}:${name}`,
     description: extra.description ?? '',
     category: extra.category ?? 'BODY',
-    has_thumbnail: false,
-    read_only: false,
   }
 }
 

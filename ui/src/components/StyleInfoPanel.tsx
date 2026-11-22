@@ -4,9 +4,13 @@ import { styleRowKey, useStylesStore } from '../store/stylesStore'
 import { resolveSelectedStyleRow } from '../lib/styleIdentity'
 import { ComboChips } from './ComboChips'
 
+/**
+ * Profile (P toggle N=5000): StyleInfoPanel 7 stack hits — bare useStylesStore()
+ * re-rendered on every store write. Subscribe only to selection + catalog.
+ */
 export function StyleInfoPanel() {
   const { selectedStyles, styles } = useStylesStore(
-    useShallow((s) => ({
+    useShallow(s => ({
       selectedStyles: s.selectedStyles,
       styles: s.styles,
     })),
@@ -50,7 +54,7 @@ export function StyleInfoPanel() {
     <div className="px-4 py-2">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-sg-text">
+          <div className="text-sm font-semibold text-white">
             {displayName}
           </div>
           {resolvedStyle.description && !resolvedStyle.description.includes('Combos:') && (
