@@ -1,6 +1,3 @@
-// React 19 act() in vitest/jsdom
-;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-
 /** Minimal localStorage for store modules that read it at import time. */
 const data: Record<string, string> = {}
 
@@ -29,6 +26,9 @@ Object.defineProperty(globalThis, 'localStorage', {
   writable: true,
   configurable: true,
 })
+
+// React 19 act() / concurrent updates under Vitest.
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /** jsdom lacks ResizeObserver; grid virtualizer observes container width. */
 if (typeof globalThis.ResizeObserver === 'undefined') {
