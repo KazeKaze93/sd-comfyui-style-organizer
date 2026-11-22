@@ -25,16 +25,28 @@ from .csv_io import (
     delete_style_from_csv,
     load_all_styles,
     parse_styles_csv,
+    rename_style_in_csv,
     save_style_to_csv,
 )
 from .data_files import (
+    BACKUP_KEEP_SNAPSHOTS,
     CorruptDataError,
     backup_csv_files,
+    create_snapshot,
+    list_snapshots,
+    load_favorites,
     load_presets,
+    migrate_favorites,
     migrate_presets_source_ids_once,
     preset_styles_payload_ok,
+    rename_favorite_keys,
+    rename_preset_members,
+    restore_snapshot,
+    save_favorites,
     save_presets,
+    thumbnails_dir_size,
 )
+from .source_ids import is_samples_ref, to_source_id
 from .http_limits import (
     IMPORT_BODY_MAX_BYTES,
     JSON_BODY_MAX_BYTES,
@@ -50,8 +62,11 @@ from .thumbnails import (
     find_thumbnail_path,
     get_thumbnail_path,
     list_thumbnails,
+    move_thumbnail_files,
 )
 from .zip_limits import BackupZipLimitError, validate_backup_zip_limits
+
+SAMPLES_READ_ONLY_ERROR = "Cannot modify styles from the read-only samples/ pack."
 
 
 def _zip_csv_member_names(namelist):
@@ -561,6 +576,43 @@ def _register_preset_routes(routes):
         except CorruptDataError as exc:
             return _corrupt_response(exc)
 
+    # WebUI's path for the same list (the iframe port reads this one).
+    routes.get("/style_grid/presets")(api_list_presets)
+
+
+def _register_favorites_routes(routes):
+    """Server-side favorites: ``{"items": ["<source id>\\0<name>", ...]}``."""
+
+    @routes.get("/style_grid/favorites")
+    async def api_get_favorites(request):
+        try:
+            items, persisted = load_favorites()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        # Only full (source, name) keys are stored, so nothing is ambiguous.
+        return web.json_response({"items": items, "persisted": persisted, "ambiguous": []})
+
+    @routes.post("/style_grid/favorites/save")
+    async def api_save_favorites(request):
+        data = await _read_json(request)
+        try:
+            items = save_favorites(data.get("items"))
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        return web.json_response({"ok": True, "items": items})
+
+    @routes.post("/style_grid/favorites/migrate")
+    async def api_migrate_favorites(request):
+        """Merge the iframe's localStorage favorites (sg_v2_favorites) once; idempotent."""
+        data = await _read_json(request)
+        try:
+            result = migrate_favorites(data.get("items"))
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        return web.json_response({"ok": True, **result})
+
 
 def _register_crud_routes(routes):
     @routes.post("/style_grid/style/save")
@@ -589,6 +641,81 @@ def _register_crud_routes(routes):
         if deleted:
             clear_thumbnail_files(name, (data.get("source") or "").strip())
         return web.json_response({"ok": deleted})
+
+    @routes.post("/style_grid/style/rename")
+    async def api_rename_style(request):
+        data = await _read_json(request)
+        old_name = (data.get("old_name") or "").strip()
+        new_name = (data.get("new_name") or "").strip()
+        if not old_name:
+            return web.json_response({"error": "old_name required"})
+        if not new_name:
+            return web.json_response({"error": "new_name required"})
+        source = (data.get("source") or "").strip()
+        if not source:
+            return web.json_response(
+                {"ok": False, "error": "source is required to rename a style"}, status=400
+            )
+        if is_samples_ref(source):
+            return web.json_response({"ok": False, "error": SAMPLES_READ_ONLY_ERROR}, status=403)
+        fields = {k: data[k] for k in ("prompt", "negative_prompt", "description", "category") if k in data}
+        try:
+            target_path = rename_style_in_csv(old_name, new_name, source, **fields)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        # The CSV rename is committed: the follow-ups are best effort and never undo it.
+        source_id = to_source_id(target_path)
+        try:
+            move_thumbnail_files(old_name, new_name, target_path)
+        except OSError:
+            logger.exception("[Style Grid] rename: thumbnail move failed")
+        if source_id:
+            try:
+                rename_preset_members(old_name, new_name, source_id)
+            except (CorruptDataError, OSError):
+                logger.exception("[Style Grid] rename: presets update failed")
+            try:
+                rename_favorite_keys(old_name, new_name, source_id)
+            except (CorruptDataError, OSError):
+                logger.exception("[Style Grid] rename: favorites update failed")
+        return web.json_response({"ok": True})
+
+    @routes.get("/style_grid/backups")
+    async def api_list_backups(request):
+        return web.json_response(
+            {
+                "backups": list_snapshots(),
+                "thumbnails_bytes": thumbnails_dir_size(),
+                "keep_snapshots": BACKUP_KEEP_SNAPSHOTS,
+            }
+        )
+
+    # /backup becomes an alias of this contract when the converged iframe lands (port batch 3).
+    @routes.post("/style_grid/backups/create")
+    async def api_create_snapshot(request):
+        data = await _read_json(request)
+        include_thumbnails = bool(data.get("include_thumbnails")) if isinstance(data, dict) else False
+        try:
+            return web.json_response(create_snapshot(include_thumbnails=include_thumbnails))
+        except (OSError, ValueError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+
+    @routes.post("/style_grid/restore")
+    async def api_restore(request):
+        data = await _read_json(request)
+        name = (data.get("id") or data.get("snapshot") or data.get("name") or "").strip()
+        if not name:
+            return web.json_response({"ok": False, "error": "snapshot name required"}, status=400)
+        try:
+            result = restore_snapshot(name, create_safety=True)
+        except FileNotFoundError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=404)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except (OSError, zipfile.BadZipFile) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        invalidate_styles_cache()
+        return web.json_response(result)
 
     @routes.post("/style_grid/backup")
     async def api_backup(request):
@@ -694,5 +821,6 @@ def register_api(routes):
         )
     _register_style_routes(routes)
     _register_preset_routes(routes)
+    _register_favorites_routes(routes)
     _register_crud_routes(routes)
     _register_thumbnail_routes(routes)

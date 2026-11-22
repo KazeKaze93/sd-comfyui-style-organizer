@@ -317,3 +317,87 @@ def delete_style_from_csv(name, source_file=None):
         _write_csv_atomic(target_path, header or FIELDNAMES, rows)
     invalidate_styles_cache()
     return True
+
+
+def rename_style_in_csv(old_name, new_name, source_file, **fields):
+    """Rename one style row in place in *source_file* only; optionally update fields.
+
+    *source_file* is required: a style is (source, name) and is never looked up
+    by name alone. Row order and extra columns are kept. Raises ``ValueError``
+    when the source is missing or not writable (samples/), the row is missing,
+    the name appears in more than one row of that file, or *new_name* already
+    exists there. Returns the absolute path of the file written.
+    """
+    old_name = (old_name or "").strip()
+    new_name = (new_name or "").strip()
+    if not old_name:
+        raise ValueError("old_name is required")
+    if not new_name:
+        raise ValueError("new_name is required")
+    source = source_file.strip() if isinstance(source_file, str) else ""
+    if not source:
+        raise ValueError("source is required")
+
+    target_path = _resolve_write_target(source)
+    if not target_path or not os.path.isfile(target_path):
+        raise ValueError(f"Style not found: {old_name}")
+
+    with locked_path(target_path):
+        rows = []
+        header = None
+        with open(target_path, "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if header is None and row and row[0].strip().lower() == "name":
+                    header = row
+                    continue
+                rows.append(row)
+        if not header:
+            header = list(FIELDNAMES)
+
+        match_indices = [i for i, row in enumerate(rows) if row and row[0].strip() == old_name]
+        if not match_indices:
+            raise ValueError(f"Style not found: {old_name}")
+        if len(match_indices) > 1:
+            raise ValueError(
+                f"Ambiguous rename: {len(match_indices)} rows named {old_name!r} "
+                f"in {os.path.basename(target_path)}; refuse to rename duplicates"
+            )
+        idx = match_indices[0]
+        if old_name != new_name:
+            for i, row in enumerate(rows):
+                if i != idx and row and row[0].strip() == new_name:
+                    raise ValueError(
+                        f"Name collision: {new_name!r} already exists in "
+                        f"{os.path.basename(target_path)}"
+                    )
+
+        existing = rows[idx]
+
+        def cell(i, default=""):
+            return existing[i].strip() if i < len(existing) and existing[i] is not None else default
+
+        prompt = fields["prompt"] if "prompt" in fields else cell(1)
+        negative_prompt = fields["negative_prompt"] if "negative_prompt" in fields else cell(2)
+        description = fields["description"] if "description" in fields else cell(3)
+        if "category" in fields:
+            cat_cell = str(fields["category"]).strip() if fields["category"] is not None else ""
+            cat_cell = _sanitize_csv_cell(cat_cell) if cat_cell else ""
+        else:
+            cat_cell = cell(4)
+
+        base = [
+            new_name,
+            prompt,
+            negative_prompt,
+            _sanitize_csv_cell(description) if description else "",
+            cat_cell,
+        ]
+        extra = list(existing[5:]) if len(existing) > 5 else []
+        while len(base) + len(extra) < len(header):
+            extra.append("")
+        rows[idx] = base + extra
+
+        _write_csv_atomic(target_path, header, rows)
+    invalidate_styles_cache()
+    return target_path
