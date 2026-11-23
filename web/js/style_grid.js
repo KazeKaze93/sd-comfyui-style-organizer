@@ -680,31 +680,48 @@ function postAppliedStyles(node) {
 }
 
 /**
- * The catalog the panel and the chips share. A filled cache is used as it is
- * (SG_REFRESH is what reloads it) unless a reload failed; otherwise one
- * GET /style_grid/styles, shared by every caller while it is in flight.
+ * The catalog the panel and the chips share. One GET /style_grid/styles,
+ * shared by every caller while it is in flight. A filled cache is revalidated
+ * with its ETag (If-None-Match): 304 keeps it, 200 replaces it, so a CSV edited
+ * on disk shows on the next panel open. /style_grid/check_update cannot say
+ * that per client: it reports a change once, to whoever asks first (the node
+ * reads the catalog on every queue run).
  */
 let catalogInFlight = null;
 /** A reload failed after the library changed: the cache may be stale, the next load fetches. */
 let catalogStale = false;
+/** ETag of the catalog in allStylesCache (GET /style_grid/styles), null when unknown. */
+let catalogEtag = null;
+
+/** Read a 200 catalog response and remember its ETag. */
+function readCatalogResponse(r) {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    catalogEtag = r.headers?.get("ETag") || null;
+    return r.json();
+}
+
 function loadCatalog() {
-    if (allStylesCache.length && !catalogStale) return Promise.resolve(allStylesCache);
-    if (!catalogInFlight) {
-        catalogInFlight = fetch("/style_grid/styles")
-            .then((r) => {
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return r.json();
-            })
-            .then((data) => {
-                if (!allStylesCache.length || catalogStale) {
-                    setStylesCache(Object.values(data.categories || {}).flat());
-                }
+    if (catalogInFlight) return catalogInFlight;
+    const revalidate = allStylesCache.length > 0 && !catalogStale && !!catalogEtag;
+    if (allStylesCache.length && !catalogStale && !revalidate) return Promise.resolve(allStylesCache);
+    const init = revalidate ? { cache: "no-store", headers: { "If-None-Match": catalogEtag } } : undefined;
+    catalogInFlight = fetch("/style_grid/styles", init)
+        .then((r) => {
+            if (revalidate && r.status === 304) return allStylesCache;
+            return readCatalogResponse(r).then((data) => {
+                setStylesCache(Object.values(data.categories || {}).flat());
                 return allStylesCache;
-            })
-            .finally(() => {
-                catalogInFlight = null;
             });
-    }
+        })
+        .catch((err) => {
+            // A failed revalidation keeps the copy we have: the panel still opens.
+            if (!revalidate) throw err;
+            console.warn("[Style Grid] style library check failed", err);
+            return allStylesCache;
+        })
+        .finally(() => {
+            catalogInFlight = null;
+        });
     return catalogInFlight;
 }
 
@@ -763,7 +780,7 @@ function fetchCatalog() {
     return fetch("/style_grid/check_update")
         .catch(() => null)
         .then(() => fetch("/style_grid/styles"))
-        .then((r) => r.json())
+        .then(readCatalogResponse)
         .then((data) => Object.values(data.categories || {}).flat());
 }
 
