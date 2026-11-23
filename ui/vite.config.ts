@@ -7,6 +7,11 @@ export default defineConfig({
   base: './',
   test: {
     setupFiles: ['./vitest.setup.ts'],
+    // Host tests import web/js/style_grid.js, which imports ComfyUI's frontend modules.
+    alias: {
+      '/scripts/app.js': path.resolve(__dirname, './test-stubs/comfy-app.js'),
+      '/scripts/api.js': path.resolve(__dirname, './test-stubs/comfy-api.js'),
+    },
   },
   build: {
     outDir: '../web/ui',

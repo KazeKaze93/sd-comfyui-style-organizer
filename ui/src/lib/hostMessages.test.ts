@@ -2,9 +2,6 @@
  * Extension host (web/js): message validation (frame_messages.js) and the
  * actions behind Clear, refresh, rename and preview upload (host_actions.js).
  */
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { FRAME_MESSAGE_TYPES, parseFrameMessage } from '../../../web/js/frame_messages.js'
 import {
@@ -19,9 +16,6 @@ import {
 type Entry = { name: string; source_file: string; prompt: string; negative_prompt: string }
 type Widget = { name: string; value: string }
 type FakeNode = { id: number; widgets: Widget[]; graph: { setDirtyCanvas: ReturnType<typeof vi.fn> } }
-
-const HERE = path.dirname(fileURLToPath(import.meta.url))
-const HOST_SRC = fs.readFileSync(path.resolve(HERE, '../../../web/js/style_grid.js'), 'utf8')
 
 function makeNode(id: number, text: string, neg = ''): FakeNode {
   return {
@@ -117,20 +111,14 @@ describe('parseFrameMessage', () => {
   ])('rejects %j', (data) => {
     expect(parseFrameMessage(data)).toBeNull()
   })
-
-  it('the dispatcher runs every message through the validator after the origin checks', () => {
-    expect(HOST_SRC).toMatch(
-      /if \(e\.origin !== IFRAME_ORIGIN\) return;[\s\S]{0,200}const msg = parseFrameMessage\(e\.data\);\s*if \(!msg\) return;/,
-    )
-  })
 })
 
+// The host's handling of these messages is covered against the real
+// style_grid.js in hostBehavior.test.ts.
 describe('reorder payloads (WebUI tray)', () => {
-  it('SG_REORDER_STYLES carries styleRowKey strings the host parses by (source, name)', () => {
+  it('SG_REORDER_STYLES carries styleRowKey strings', () => {
     const msg = parseFrameMessage({ type: 'SG_REORDER_STYLES', styleIds: [ledgerKey('A', 'data/a.csv')] })!
     expect(msg.styleIds).toEqual(['data/a.csv\0A'])
-    expect(HOST_SRC).toMatch(/const parsed = parseStyleKey\(id\);/)
-    expect(HOST_SRC).toMatch(/reorderStylesInNode\(currentNode, msg\.styleIds\);/)
   })
 
   it('SG_REORDER_WILDCARDS carries {category, spec, kind} refs', () => {
@@ -142,9 +130,6 @@ describe('reorder payloads (WebUI tray)', () => {
       type: 'SG_REORDER_WILDCARDS',
       categories,
     })
-    expect(HOST_SRC).toMatch(/const cat = String\(item\.category \|\| ""\)\.trim\(\);/)
-    expect(HOST_SRC).toMatch(/const sp = item\.spec == null \? "" : String\(item\.spec\);/)
-    expect(HOST_SRC).toMatch(/const kind = normalizeWildcardKind\(item\.kind\);/)
   })
 })
 
@@ -174,11 +159,6 @@ describe('clearNodePrompts (SG_CLEAR_ALL)', () => {
     expect(clearNodePrompts(null, deps)).toBe(false)
     expect(deps.setLedger).not.toHaveBeenCalled()
     expect(deps.post).not.toHaveBeenCalled()
-  })
-
-  it('SG_CLEAR_ALL is dispatched to clearNodePrompts with the current node (no node guard needed)', () => {
-    expect(HOST_SRC).toMatch(/if \(msg\.type === "SG_CLEAR_ALL"\) \{[\s\S]{0,160}clearNodePrompts\(currentNode, \{/)
-    expect(HOST_SRC).not.toContain('function clearAllStyles(')
   })
 })
 
@@ -224,12 +204,6 @@ describe('renameLedgerEntries (SG_STYLE_RENAMED)', () => {
       }),
     ).toEqual([])
     expect(setLedger).not.toHaveBeenCalled()
-  })
-
-  it('the host remaps every Style Grid node, then refreshes', () => {
-    expect(HOST_SRC).toMatch(
-      /if \(msg\.type === "SG_STYLE_RENAMED"\) \{[\s\S]{0,200}renameLedgerEntries\(styleGridNodes\(\), msg, \{[\s\S]{0,200}refreshFromServer\(false\);/,
-    )
   })
 })
 
