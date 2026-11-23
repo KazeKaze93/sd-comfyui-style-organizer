@@ -1,7 +1,9 @@
+import { ROW_GAP_NORMAL_PX, cardRowHeightPx } from '../../src/components/grid/constants.ts'
+
 /**
  * Grid layout invariants (bench-only).
  *
- * Row metrics are read from ui/src/components/grid/constants.ts (Node strips its types).
+ * Metrics come from ui/src/components/grid/constants.ts (Node strips the types).
  *
  * For every density × (top | after 3 screens):
  *   (1) card height <= CARD_ROW_HEIGHT - ROW_GAP + 0.5
@@ -11,8 +13,6 @@
  *
  * Failures collect up to MAX_OFFENDERS details.
  */
-
-import { ROW_GAP_NORMAL_PX, cardRowHeightPx } from '../../src/components/grid/constants.ts'
 
 export const TOLERANCE_PX = 0.5
 export const MAX_OFFENDERS = 10

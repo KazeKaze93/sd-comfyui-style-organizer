@@ -345,8 +345,10 @@ export const StyleCard = memo(function StyleCard({
                 </div>
               </>
             ) : (
+              // Two lines at most; pr-4 keeps the name clear of the dot, star and status on the right.
               <div
-                className={`${windowed ? 'text-xs leading-[14px]' : 'text-sm leading-4'} min-w-0 line-clamp-2 break-words pr-4 font-medium text-sg-text`}
+                className={`${windowed ? 'text-xs leading-[14px]' : 'text-sm leading-4'} min-w-0 flex-1 line-clamp-2 break-words pr-4 font-medium text-sg-text`}
+                data-sg-grid-label="true"
               >
                 {displayName}
               </div>
