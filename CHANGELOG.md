@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.0.17 - 2026-11-23
+
+### Added
+
+- **Chips on the node:** between the seed and **Browse Styles** the Style Grid node shows a chip for each style applied to it and each wildcard token in its text. ✕ on a chip removes that style or token from the node (one undo step); clicking a chip or **+N** opens the panel for that node. The row grows and shrinks with the node and is not saved in the workflow. Workflows from older versions show chips too.
+- **The new panel** (the same one as in the WebUI extension): a one-row header with Grid / Gallery and ⋯ More, a **Gallery** view with each style's preview, presets as cards (**Apply**, **Applied · Remove**, a ⋯ menu, a tile that saves the current selection), a conflicts popover with **Remove** / **Keep both** per pair, and empty views that say why nothing is shown.
+- **Edit with a new name:** the style is renamed in its own pack; its preview, favorite and preset entries follow, and if it is applied on the node the node text is updated to the saved version.
+- **Favorites on the server** (`user/style_grid/favorites.json`). Favorites kept in the browser by older versions are moved there once, on the first open.
+- **Backup & restore** (⋯ More): zip snapshots of your packs, presets, favorites and category order under `user/style_grid/backups/`, optionally with thumbnails. **Restore** writes a safety snapshot first; the newest 20 snapshots are kept.
+- **Long names on grid tiles:** tiles stay one line high. Hovering a tile whose name is cut off, or reaching it with Tab or the arrow keys, shows the whole name on top of its neighbours without moving the grid. The gallery and the slice mode do not expand tiles.
+
+### Changed
+
+- **Clear prompts and selection** empties both text fields of the node completely, your own text included, and clears the selection, the active wildcards and the applied-styles record.
+- **Import** skips a style only when it is a true duplicate: the same name and an identical prompt and negative prompt as a style already in a pack (or earlier in the same file). A style that only shares a name is imported. Re-importing your own export adds nothing.
+- **Reordering styles in the tray** reorders the node text and the chips on the node.
+- **Style library:** the panel and the node chips share one copy. Each time the panel opens it asks the server whether the library changed, with a small conditional request: a CSV file edited on disk shows on the next open, and an unchanged library is not downloaded again.
+- **Opening the panel** no longer puts keyboard focus on the first card, which showed a focus ring on the first open. Arrow keys work after one Tab or a click into the grid.
+
+### Removed
+
+- The preview popup on hover over a tile. Previews show in the **Gallery** view.
+
+Compatibility: node inputs and outputs are unchanged and existing workflows load as before; `widgets_values` of saved workflows do not change. **Clear prompts and selection** now also removes text you typed yourself.
+
 ## 0.0.16 - 2026-10-28
 
 ### Fixed
