@@ -2,11 +2,15 @@
 
 Searchable, categorized visual card grid for browsing and applying prompt styles in ComfyUI. A ComfyUI node port of the [WebUI extension](https://github.com/KazeKaze93/sd-webui-style-organizer) with the same idea: search, favorites, presets, and a visual grid instead of a flat dropdown.
 
+*Screenshots are taken from the real panel on a local test page with a neutral demo library; previews are placeholder gradients (see `docs/screenshots/README.md`).*
+
 ## Features
 
 ![Style Grid overview](docs/screenshots/grid-overview.png)
 
 - Search and category filtering across your style packs
+- Chips on the node: every style and wildcard applied to a Style Grid node shows as a chip on the node itself (see **Chips on the node**)
+- Grid tiles keep long names on one line; hovering a tile, or reaching it with Tab or the arrow keys, shows the whole name
 - Multi-select with conflict detection (per-pair **Remove** / **Keep both**)
 - Grid and Gallery views; the gallery shows each style's preview image
 - Favorites, saved on the server (`user/style_grid/favorites.json`)
@@ -16,7 +20,7 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 - Import and export styles and presets as JSON
 - Backup & restore: zip snapshots under `user/style_grid/backups/`, restored from the panel
 - Wildcard support: `{sg:category}` picks a random style from that category at node execution, driven by the node's **seed**; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob). Shuffle wildcards `{sgd:category}` / `{sgd:category:spec}` draw without repeats, one step per queue run
-- Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
+- Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid (press Tab or click a tile first: nothing is focused when the panel opens); Enter/Space toggles the focused style
 - Combos: styles can list related names in their description (`Combos: …`); the card shows clickable “Works with” chips to select those styles or jump to a category
 
 ![Wildcard category](docs/screenshots/wildcards.png)
@@ -105,6 +109,28 @@ In current ComfyUI, drag a STRING output onto the text widget (or its
 socket) to convert that widget into an input — you no longer need a
 separate "Convert text to input" menu step.
 
+### Chips on the node
+
+Between the seed and **Browse Styles** the node shows what is applied to
+it: one chip per style whose text is still in the node's prompt, and one
+purple chip per wildcard token (🎲 for `{sg:…}`, the deck icon for
+`{sgd:…}`). Nothing is shown when nothing is applied, and the node grows and
+shrinks with the row; a height you set by resizing the node is kept.
+
+![Chips on the node](docs/screenshots/node-chips.png)
+
+- **✕** on a style chip takes that style out of the node, the same way as
+  in the panel; **✕** on a wildcard chip removes the token. Both register
+  an undo step.
+- A click on a chip, or on **+N** when more chips than two rows hold, opens
+  the panel for this node.
+- Delete or Backspace removes a chip only when the chip was reached with the
+  keyboard, so canvas shortcuts keep working after a mouse click.
+- Reordering styles in the panel's tray reorders the node text and the chips.
+- The chips are built from the workflow (load, undo, paste) and are not saved
+  into it. Nodes from workflows saved before the applied-style record existed
+  get their chips from the style library.
+
 ## Working with styles
 
 **Header** (one row): source filter, search, the **Grid / Gallery** toggle,
@@ -123,6 +149,15 @@ one's tags, a warning shows the count. Click it for the list of pairs;
 each pair offers **Remove** for either style or **Keep both**.
 
 Favorite styles show a **star**; selected tiles are highlighted.
+
+**Long names:** grid tiles keep one line and cut a long name with an
+ellipsis. Hovering such a tile, or reaching it with Tab or the arrow keys,
+shows the tile with its whole name on top of its neighbours, without moving
+the grid; a name wider than the grid wraps. Clicks and right-clicks still go
+to the tile underneath. The gallery and the **Pick styles…** slice mode do
+not expand tiles.
+
+![Expanded tile name](docs/screenshots/tile-expand.png)
 Right-click a style card (or press Shift+F10) for Select/Deselect,
 Add/Remove favorites, Copy prompt, Edit…, Duplicate, Move to category…,
 Upload preview…, Remove preview (when one exists) and Delete…. In the
@@ -184,8 +219,16 @@ categories, import a CSV…).
 **Gallery** view shows them. Style Grid does not generate previews. Preview
 files are keyed by **style name + source CSV**, so the same UNIVERSAL name in two packs keeps independent previews. Older name-only files migrate when the name maps to one pack, or when every pack that shares the name has **byte-identical** `prompt` and `negative_prompt`. If the same name appears in multiple packs with **diverging** content, upload each preview again.
 
+![Gallery view](docs/screenshots/gallery-view.png)
+
 **Favorites** are stored on the server. Favorites kept in the browser by
 older versions are moved there once, on the first open.
+
+**Style library loading:** the panel and the node chips share one copy of
+the library, loaded once per page. Changes made in the panel (edit, create,
+duplicate, move, delete, import, restore) reload it at once. A CSV file
+edited outside the panel shows after the next such change or after
+reloading the ComfyUI page.
 
 The panel supports fullscreen for browsing large packs:
 
@@ -266,6 +309,9 @@ npm run lint
 # Rebuild the committed panel bundle into web/ui/
 npm run build
 git diff --exit-code -- web/ui
+
+# Retake the README screenshots (docs/screenshots/README.md)
+node bench/screenshots/capture.mjs
 ```
 
 ## License
