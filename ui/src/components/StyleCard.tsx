@@ -267,7 +267,7 @@ export const StyleCard = memo(function StyleCard({
             }}
             className={`
               relative overflow-hidden cursor-pointer rounded-lg border
-              ${gallery ? 'p-0 flex flex-col' : windowed ? 'p-2' : 'p-3'}
+              ${gallery ? 'p-0 flex flex-col' : windowed ? 'p-2 flex items-center' : 'p-3 flex items-center'}
               select-none transition-colors w-full text-left
               transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]
               motion-reduce:transition-none motion-reduce:transform-none
@@ -346,7 +346,7 @@ export const StyleCard = memo(function StyleCard({
               </>
             ) : (
               <div
-                className={`${windowed ? 'text-xs' : 'text-sm'} min-w-0 truncate pr-4 font-medium text-sg-text`}
+                className={`${windowed ? 'text-xs leading-[14px]' : 'text-sm leading-4'} min-w-0 line-clamp-2 break-words pr-4 font-medium text-sg-text`}
               >
                 {displayName}
               </div>
