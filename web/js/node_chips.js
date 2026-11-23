@@ -87,8 +87,48 @@ const CSS = `
 .sg-chip-icon{width:12px;height:12px;flex-shrink:0}
 .sg-chips button:focus-visible{outline:2px solid var(--p-primary-color,#60a5fa);outline-offset:-2px;border-radius:10px}
 .sg-chip:hover,.sg-chip-more:hover{filter:brightness(1.15)}
+.sg-chips [hidden]{display:none!important}
 .sg-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 `;
+
+/** Row geometry, matching the CSS below: 20px chips, 4px gap, 2px top and bottom padding. */
+export const CHIP_HEIGHT = 20;
+export const CHIP_ROW_GAP = 4;
+export const CHIP_ROW_PADDING = 2;
+
+/**
+ * Height of the chip widget for a row count (0 → 0), including the DOM
+ * widget's margin above and below.
+ *
+ * @param {number} rows
+ * @param {number} margin the DOM widget's margin
+ */
+export function chipRowsHeight(rows, margin) {
+    if (!rows) return 0;
+    return rows * CHIP_HEIGHT + (rows - 1) * CHIP_ROW_GAP + 2 * CHIP_ROW_PADDING + 2 * margin;
+}
+
+/**
+ * The node height after the chip row changed from prevRowsHeight to
+ * newRowsHeight: null when it did not change (no setSize); otherwise the
+ * current height moved by the difference, never below the node's minimum.
+ * Extra height the user added by resizing stays.
+ *
+ * fit: the row was rebuilt from a loaded workflow or a fresh catalog, not by
+ * an edit, so the saved size may already hold it. Only grow to the minimum;
+ * never move by the difference (a reload must not grow the node again).
+ *
+ * @param {{currentHeight: number, minHeight: number, prevRowsHeight: number, newRowsHeight: number, fit?: boolean}} input
+ * @returns {number|null}
+ */
+export function nextNodeHeight({ currentHeight, minHeight, prevRowsHeight, newRowsHeight, fit }) {
+    if (fit) return currentHeight < minHeight ? minHeight : null;
+    if (prevRowsHeight === newRowsHeight) return null;
+    const delta = newRowsHeight - prevRowsHeight;
+    return delta > 0
+        ? Math.max(currentHeight + delta, minHeight)
+        : Math.max(currentHeight - Math.abs(delta), minHeight);
+}
 
 function injectStyles(doc) {
     if (doc.getElementById(STYLE_ELEMENT_ID)) return;

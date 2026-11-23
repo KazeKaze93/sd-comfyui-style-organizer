@@ -26,6 +26,7 @@ import {
     styleIsPresent,
     tagKey,
 } from "./prompt_text.js";
+import { chipRowsHeight, createChipRow, nextNodeHeight, nodeChipModel } from "./node_chips.js";
 
 const IFRAME_SRC = "/extensions/sd-comfyui-style-organizer/ui/index.html";
 /** Target origin for host -> iframe messages; IFRAME_SRC is an absolute same-origin path. */
@@ -376,7 +377,10 @@ function applyStyleToNode(node, style, options = { record: true }) {
     if (neg) neg.value = applyStyleText(currentNeg, style.negative_prompt || "");
     node.graph?.setDirtyCanvas(true, true);
 
-    if (options.record === false) return;
+    if (options.record === false) {
+        refreshNodeChips(node);
+        return;
+    }
 
     const byKey = ensureLedger(node);
     byKey.set(styleKey(style.name, style.source_file), {
@@ -386,6 +390,7 @@ function applyStyleToNode(node, style, options = { record: true }) {
         negative_prompt: style.negative_prompt || "",
     });
     node.graph?.setDirtyCanvas(true, true);
+    refreshNodeChips(node);
 }
 
 function unapplyStyleFromNode(node, style) {
@@ -407,6 +412,7 @@ function unapplyStyleFromNode(node, style) {
 
     appliedByNode.get(node)?.delete(key);
     node.graph?.setDirtyCanvas(true, true);
+    refreshNodeChips(node);
 }
 
 // Reorders the tag-blocks belonging to currently-applied plain-tag styles to
@@ -486,6 +492,7 @@ function insertWildcardCategory(node, category, spec, kind) {
     text.value = mergeTagsIntoText(text.value || "", token);
     node.graph?.setDirtyCanvas(true, true);
     syncWildcards(node);
+    refreshNodeChips(node);
 }
 
 function syncWildcards(node) {
@@ -510,6 +517,7 @@ function removeWildcardCategory(node, category, spec, kind) {
     if (neg) neg.value = strip(neg.value || "");
     node.graph?.setDirtyCanvas(true, true);
     syncWildcards(node);
+    refreshNodeChips(node);
 }
 
 function reorderWildcardCategories(node, newOrder) {
@@ -574,6 +582,7 @@ function reorderWildcardCategories(node, newOrder) {
     }
     node.graph?.setDirtyCanvas(true, true);
     syncWildcards(node);
+    refreshNodeChips(node);
 }
 
 function setActiveSource(node, source) {
@@ -620,11 +629,55 @@ function collapsePresentStyles(present, activeSource) {
     return [...byContent.values()];
 }
 
+/** Catalog rows present in a node without a ledger (legacy workflow): one per content, subsumed. Read-only. */
+function legacyPresentStyles(node) {
+    const { text, neg } = getTextWidgets(node);
+    const currentText = text ? text.value || "" : "";
+    const currentNeg = neg ? neg.value || "" : "";
+    const present = allStylesCache.filter((s) => styleIsPresent(currentText, currentNeg, s));
+    const activeW = node.widgets?.find((w) => w.name === "active_source");
+    const collapsed = collapsePresentStyles(
+        present,
+        activeW ? String(activeW.value || "") : "",
+    );
+    return subsumePresent(collapsed, styleKeysOf);
+}
+
+function ledgerEntryOf(s) {
+    return {
+        name: s.name,
+        source_file: s.source_file || "",
+        prompt: s.prompt || "",
+        negative_prompt: s.negative_prompt || "",
+    };
+}
+
+/** SG_STYLE_APPLIED for each style applied to the node: ledger entries still in its text, or (legacy) catalog matches. */
+function postAppliedStyles(node) {
+    const { text, neg } = getTextWidgets(node);
+    const currentText = text ? text.value || "" : "";
+    const currentNeg = neg ? neg.value || "" : "";
+    if (appliedByNode.has(node)) {
+        for (const entry of appliedByNode.get(node).values()) {
+            if (!styleIsPresent(currentText, currentNeg, entry)) continue;
+            const r = resolveStyleRow(entry.name, entry.source_file || "");
+            const toPost = r.row || syntheticStyle(entry);
+            postToIframe({ type: "SG_STYLE_APPLIED", style: toPost });
+        }
+        return;
+    }
+    const collapsed = legacyPresentStyles(node);
+    legacyShown.set(node, collapsed.map(ledgerEntryOf));
+    for (const style of collapsed) {
+        postToIframe({ type: "SG_STYLE_APPLIED", style });
+    }
+}
+
 function rehydrate() {
     return fetch("/style_grid/styles")
         .then((r) => r.json())
         .then((data) => {
-            allStylesCache = Object.values(data.categories || {}).flat();
+            setStylesCache(Object.values(data.categories || {}).flat());
             postToIframe({
                 type: "SG_INIT",
                 styles: allStylesCache,
@@ -638,7 +691,7 @@ function rehydrate() {
 
             if (appliedByNode.has(currentNode)) {
                 const byKey = appliedByNode.get(currentNode);
-                const { kept, dropped } = selectFromLedger(
+                const { dropped } = selectFromLedger(
                     [...byKey.values()],
                     (entry) => styleIsPresent(currentText, currentNeg, entry),
                 );
@@ -648,34 +701,23 @@ function rehydrate() {
                     ledgerChanged = true;
                 }
                 if (ledgerChanged) currentNode.graph?.setDirtyCanvas(true, true);
-                for (const entry of kept) {
-                    const r = resolveStyleRow(entry.name, entry.source_file || "");
-                    const toPost = r.row || syntheticStyle(entry);
-                    postToIframe({ type: "SG_STYLE_APPLIED", style: toPost });
-                }
-            } else {
-                const present = allStylesCache.filter((s) => styleIsPresent(currentText, currentNeg, s));
-                const activeW = currentNode.widgets?.find((w) => w.name === "active_source");
-                let collapsed = collapsePresentStyles(
-                    present,
-                    activeW ? String(activeW.value || "") : "",
-                );
-                collapsed = subsumePresent(collapsed, styleKeysOf);
-                legacyShown.set(
-                    currentNode,
-                    collapsed.map((s) => ({
-                        name: s.name,
-                        source_file: s.source_file || "",
-                        prompt: s.prompt || "",
-                        negative_prompt: s.negative_prompt || "",
-                    })),
-                );
-                for (const style of collapsed) {
-                    postToIframe({ type: "SG_STYLE_APPLIED", style });
-                }
             }
+            postAppliedStyles(currentNode);
             syncWildcards(currentNode);
+            refreshNodeChips(currentNode);
         });
+}
+
+function isPanelOpen() {
+    return !!(ready && overlay && overlay.style.display === "block");
+}
+
+/** The panel's tray for this node, rebuilt as rehydrate does; only when the panel is open for it. */
+function syncPanelForNode(node) {
+    if (!shouldSyncPanel(node, currentNode) || !isPanelOpen()) return;
+    postToIframe({ type: "SG_CLEAR_SELECTION" });
+    postAppliedStyles(node);
+    syncWildcards(node);
 }
 
 /** Every Style Grid node in the graph (rename must reach nodes that are not open). */
@@ -698,7 +740,7 @@ function refreshFromServer(quietVanished) {
         { quiet_vanished: quietVanished },
         {
             fetchStyles: fetchCatalog,
-            setCatalog: (styles) => { allStylesCache = styles; },
+            setCatalog: setStylesCache,
             post: postToIframe,
             currentNode: () => currentNode,
             getLedger: (node) => appliedByNode.get(node),
@@ -706,10 +748,252 @@ function refreshFromServer(quietVanished) {
             syncWildcards,
             toast: postInfoToast,
         },
-    ).catch((err) => {
+    ).then(() => {
+        if (currentNode) refreshNodeChips(currentNode);
+    }).catch((err) => {
         console.warn("[Style Grid] refresh failed", err);
         postToIframe({ type: "SG_TOAST", message: "Refresh failed", variant: "error" });
     });
+}
+
+// ---------------------------------------------------------------------------
+// Applied-style chips on the node (web/js/node_chips.js renders them).
+
+const CHIP_WIDGET = "sg_chips";
+/** DOM widget margin above and below the row (the frontend default is 10). */
+const CHIP_WIDGET_MARGIN = 4;
+const CHIP_INPUT_DEBOUNCE_MS = 150;
+
+/**
+ * node → { row, widget, signature, height, pending, pendingFit, timer, frame, cleanup }.
+ * height: the widget's current height (0 when hidden); pending: the last render
+ * could not be measured (element not laid out yet), re-measured on the next draw.
+ */
+const chipsByNode = new WeakMap();
+/** Lazy catalog load for legacy nodes: started at most once per page. */
+let catalogLoad = null;
+let catalogKeysOf = null;
+let catalogKeys = null;
+
+/** Replace the catalog the panel and the chips share, then rebuild every node's chips. */
+function setStylesCache(styles) {
+    allStylesCache = styles;
+    for (const node of styleGridNodes()) refreshNodeChips(node, { fit: true });
+}
+
+function catalogKeySet() {
+    if (!allStylesCache.length) return null;
+    if (catalogKeysOf !== allStylesCache) {
+        catalogKeysOf = allStylesCache;
+        catalogKeys = new Set(allStylesCache.map((s) => styleKey(s.name, s.source_file)));
+    }
+    return catalogKeys;
+}
+
+/** The host's own toast (ComfyUI), for messages that are not about the open panel. */
+function hostToast(severity, detail) {
+    const toast = app.extensionManager?.toast;
+    if (toast?.add) toast.add({ severity, summary: "Style Grid", detail, life: 8000 });
+    else console.warn("[Style Grid]", detail);
+}
+
+/** Legacy nodes need the catalog to show chips; load it once, into the panel's cache. */
+function ensureCatalogLoaded() {
+    if (catalogLoad || allStylesCache.length) return;
+    catalogLoad = fetch("/style_grid/styles")
+        .then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        })
+        .then((data) => {
+            if (!allStylesCache.length) setStylesCache(Object.values(data.categories || {}).flat());
+        })
+        .catch((err) => {
+            console.warn("[Style Grid] style library load failed", err);
+            hostToast("warn", "Could not load the style library; chips are not shown for nodes from older workflows.");
+        });
+}
+
+/** Ledger entries for the chips; legacy nodes derive them from the catalog without writing anything. */
+function chipLedgerEntries(node) {
+    if (appliedByNode.has(node)) return [...appliedByNode.get(node).values()];
+    if (!allStylesCache.length) {
+        ensureCatalogLoaded();
+        return [];
+    }
+    return legacyPresentStyles(node).map(ledgerEntryOf);
+}
+
+function isLaidOut(el) {
+    return el.isConnected && el.getClientRects().length > 0 && el.clientWidth > 0;
+}
+
+function resizeForChips(node, state, height, fit) {
+    const prev = state.height;
+    state.height = height;
+    const next = nextNodeHeight({
+        currentHeight: node.size[1],
+        minHeight: node.computeSize()[1],
+        prevRowsHeight: prev,
+        newRowsHeight: height,
+        fit,
+    });
+    if (next !== null) node.setSize([node.size[0], next]);
+    node.graph?.setDirtyCanvas(true, true);
+}
+
+/**
+ * Rebuild the node's chip row from its ledger and text. Skips the DOM when
+ * nothing shown changed. fit: rebuilt from a load or a new catalog (only grow
+ * to the minimum); otherwise an edit (move the node height by the row's change).
+ */
+function refreshNodeChips(node, { force = false, fit = false } = {}) {
+    const state = chipsByNode.get(node);
+    if (!state) return;
+    const { text, neg } = getTextWidgets(node);
+    const model = nodeChipModel({
+        ledgerEntries: chipLedgerEntries(node),
+        text: text ? text.value || "" : "",
+        negativeText: neg ? neg.value || "" : "",
+        catalogKeys: catalogKeySet(),
+    });
+    if (!force && !state.pending && model.signature === state.signature) return;
+    const useFit = state.pending ? state.pendingFit : fit;
+    const empty = !model.styles.length && !model.wildcards.length;
+    state.widget.hidden = empty;
+    const { rows } = state.row.render(model);
+    state.signature = model.signature;
+    let height;
+    if (empty) {
+        height = 0;
+        state.pending = false;
+    } else if (isLaidOut(state.row.el)) {
+        height = chipRowsHeight(rows, CHIP_WIDGET_MARGIN);
+        state.pending = false;
+    } else {
+        // Not laid out yet (just unhidden, zoomed out, off screen): keep a one-row
+        // height so the frontend lays it out, and measure again on the next draw.
+        height = state.height || chipRowsHeight(1, CHIP_WIDGET_MARGIN);
+        state.pending = true;
+        state.pendingFit = useFit;
+    }
+    resizeForChips(node, state, height, useFit);
+}
+
+function scheduleChipRemeasure(node) {
+    const state = chipsByNode.get(node);
+    if (!state || state.frame) return;
+    state.frame = requestAnimationFrame(() => {
+        state.frame = 0;
+        refreshNodeChips(node, { force: true });
+    });
+}
+
+/** Register an undo step for a chip action (1.58.5: captureCanvasState; checkState is its deprecated alias). */
+function captureUndoStep() {
+    const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
+    if (typeof tracker?.captureCanvasState === "function") tracker.captureCanvasState();
+    else if (typeof tracker?.checkState === "function") tracker.checkState();
+}
+
+/** ✕ on a style chip: the SG_UNAPPLY path for (source_file, name). */
+function removeStyleChip(node, { source_file, name }) {
+    if (!appliedByNode.has(node)) {
+        // Legacy node: seed the ledger from what the chips show, as opening the panel would.
+        legacyShown.set(node, chipLedgerEntries(node));
+    }
+    const toPanel = shouldSyncPanel(node, currentNode) && isPanelOpen();
+    unapplyFromMessage(
+        node,
+        { type: "SG_UNAPPLY", styleId: name, source_file },
+        toPanel ? postInfoToast : (message) => hostToast("info", message),
+    );
+    syncPanelForNode(node);
+    captureUndoStep();
+}
+
+/** ✕ on a wildcard chip: the SG_REMOVE_WILDCARD path for (category, spec, kind). */
+function removeWildcardChip(node, { category, spec, kind }) {
+    removeWildcardCategory(node, category, spec || "", kind);
+    syncPanelForNode(node);
+    captureUndoStep();
+}
+
+function hookChipInputs(node, state) {
+    const { text, neg } = getTextWidgets(node);
+    for (const widget of [text, neg]) {
+        const el = widget?.element || widget?.inputEl;
+        if (!el?.addEventListener) continue;
+        const onInput = () => {
+            clearTimeout(state.timer);
+            state.timer = setTimeout(() => {
+                state.timer = 0;
+                refreshNodeChips(node);
+            }, CHIP_INPUT_DEBOUNCE_MS);
+        };
+        el.addEventListener("input", onInput);
+        state.cleanup.push(() => el.removeEventListener("input", onInput));
+    }
+}
+
+function destroyNodeChips(node) {
+    const state = chipsByNode.get(node);
+    if (!state) return;
+    clearTimeout(state.timer);
+    if (state.frame) cancelAnimationFrame(state.frame);
+    for (const undo of state.cleanup) undo();
+    state.row.destroy();
+    chipsByNode.delete(node);
+}
+
+/** The chip row widget, added before the Browse Styles button. Frontends without DOM widgets get no chips. */
+function addNodeChips(node) {
+    if (typeof node.addDOMWidget !== "function") return;
+    const state = {
+        row: null,
+        widget: null,
+        signature: null,
+        height: 0,
+        pending: false,
+        pendingFit: false,
+        timer: 0,
+        frame: 0,
+        cleanup: [],
+    };
+    state.row = createChipRow({
+        doc: document,
+        onOpen: () => showStyleBrowserFor(node),
+        onRemoveStyle: (style) => removeStyleChip(node, style),
+        onRemoveWildcard: (wildcard) => removeWildcardChip(node, wildcard),
+    });
+    const widget = node.addDOMWidget(CHIP_WIDGET, "sg-chips", state.row.el, {
+        serialize: false,
+        hideOnZoom: true,
+        margin: CHIP_WIDGET_MARGIN,
+        getMinHeight: () => state.height,
+        getMaxHeight: () => state.height,
+        afterResize: () => scheduleChipRemeasure(node),
+    });
+    // serialiseWidgetValues (1.58.5) skips widget.serialize === false; graphToPrompt checks options.serialize.
+    widget.serialize = false;
+    widget.hidden = true;
+    state.widget = widget;
+    chipsByNode.set(node, state);
+    hookChipInputs(node, state);
+
+    const prevDraw = node.onDrawForeground;
+    node.onDrawForeground = function (...args) {
+        const result = prevDraw?.apply(this, args);
+        const s = chipsByNode.get(this);
+        if (s?.pending && isLaidOut(s.row.el)) scheduleChipRemeasure(this);
+        return result;
+    };
+    const prevRemoved = node.onRemoved;
+    node.onRemoved = function (...args) {
+        const result = prevRemoved?.apply(this, args);
+        destroyNodeChips(this);
+        return result;
+    };
 }
 
 /** Native image picker in the host page; resolves null when cancelled. */
@@ -849,51 +1133,7 @@ function ensureOverlay() {
             }
         }
         if (msg.type === "SG_UNAPPLY" && currentNode) {
-            const name = msg.styleId || "style";
-            let recorded = null;
-            let cached = null;
-            if (msg.source_file) {
-                recorded = appliedByNode.get(currentNode)?.get(styleKey(name, msg.source_file));
-                cached = resolveStyleRow(name, msg.source_file).row;
-            } else {
-                const ledgerHits = [];
-                const byKey = appliedByNode.get(currentNode);
-                if (byKey) {
-                    for (const entry of byKey.values()) {
-                        if (entry.name === name) ledgerHits.push(entry);
-                    }
-                }
-                if (ledgerHits.length === 1) {
-                    recorded = ledgerHits[0];
-                } else {
-                    const r = resolveStyleRow(name, "");
-                    if (r.status === "unique") {
-                        cached = r.row;
-                    } else if (r.status === "ambiguous") {
-                        postInfoToast(
-                            `Could not remove "${name}": the same name exists in several packs; select a source in the panel and remove it there.`
-                        );
-                        return;
-                    }
-                }
-            }
-            if (recorded || cached) {
-                unapplyStyleFromNode(currentNode, {
-                    name,
-                    source_file: recorded
-                        ? (recorded.source_file || "")
-                        : (cached.source_file || ""),
-                    prompt: recorded ? recorded.prompt : (cached.prompt || ""),
-                    negative_prompt: recorded
-                        ? recorded.negative_prompt
-                        : (cached.negative_prompt || ""),
-                });
-            } else {
-                const message =
-                    `Could not remove ${name}: style data not found; check the prompt text manually`;
-                console.warn(`[Style Grid] ${message}`);
-                postInfoToast(message);
-            }
+            unapplyFromMessage(currentNode, msg, postInfoToast);
         }
         if (msg.type === "SG_WILDCARD_CATEGORY" && currentNode) {
             insertWildcardCategory(currentNode, msg.category, "", msg.kind);
@@ -908,17 +1148,20 @@ function ensureOverlay() {
                 syncWildcards,
                 post: postToIframe,
             });
+            if (currentNode) refreshNodeChips(currentNode);
         }
         if (msg.type === "SG_REFRESH") {
             refreshFromServer(msg.quiet_vanished);
         }
         if (msg.type === "SG_STYLE_RENAMED") {
             // Ledger first, then the catalog: refreshing first would see the old name gone.
-            renameLedgerEntries(styleGridNodes(), msg, {
+            const renamed = renameLedgerEntries(styleGridNodes(), msg, {
                 getLedger: (node) => appliedByNode.get(node),
                 setLedger: (node, ledger) => appliedByNode.set(node, ledger),
             });
             refreshFromServer(false);
+            // The fetch above is async: the renamed chips update now, the catalog after it.
+            for (const n of renamed) refreshNodeChips(n);
         }
         if (msg.type === "SG_UPLOAD_PREVIEW") {
             uploadPreview(msg, {
@@ -976,6 +1219,68 @@ function openStyleBrowser(node) {
     }
 }
 
+/** Chip body / +N: show the panel for this node; never closes it (the Browse Styles button still toggles). */
+function showStyleBrowserFor(node) {
+    if (overlay && overlay.style.display === "block" && currentNode === node) {
+        iframe?.focus();
+        return;
+    }
+    openStyleBrowser(node);
+}
+
+/**
+ * SG_UNAPPLY: take one style out of the node by (source_file, name). With no
+ * source_file the name must resolve to one ledger entry or one catalog row.
+ * toast: where failures are reported (the panel, or the host for a chip on a node the panel is not showing).
+ */
+function unapplyFromMessage(node, msg, toast) {
+    const name = msg.styleId || "style";
+    let recorded = null;
+    let cached = null;
+    if (msg.source_file) {
+        recorded = appliedByNode.get(node)?.get(styleKey(name, msg.source_file));
+        cached = resolveStyleRow(name, msg.source_file).row;
+    } else {
+        const ledgerHits = [];
+        const byKey = appliedByNode.get(node);
+        if (byKey) {
+            for (const entry of byKey.values()) {
+                if (entry.name === name) ledgerHits.push(entry);
+            }
+        }
+        if (ledgerHits.length === 1) {
+            recorded = ledgerHits[0];
+        } else {
+            const r = resolveStyleRow(name, "");
+            if (r.status === "unique") {
+                cached = r.row;
+            } else if (r.status === "ambiguous") {
+                toast(
+                    `Could not remove "${name}": the same name exists in several packs; select a source in the panel and remove it there.`
+                );
+                return;
+            }
+        }
+    }
+    if (recorded || cached) {
+        unapplyStyleFromNode(node, {
+            name,
+            source_file: recorded
+                ? (recorded.source_file || "")
+                : (cached.source_file || ""),
+            prompt: recorded ? recorded.prompt : (cached.prompt || ""),
+            negative_prompt: recorded
+                ? recorded.negative_prompt
+                : (cached.negative_prompt || ""),
+        });
+    } else {
+        const message =
+            `Could not remove ${name}: style data not found; check the prompt text manually`;
+        console.warn(`[Style Grid] ${message}`);
+        toast(message);
+    }
+}
+
 let sgWarningsListenerRegistered = false;
 
 app.registerExtension({
@@ -1010,6 +1315,7 @@ app.registerExtension({
         hideWidget(index);
         hookDeckWidgetCallbacks(node);
         guardDeckWidgetSerialization(node);
+        addNodeChips(node);
         node.addWidget("button", "Browse Styles", null, () => openStyleBrowser(node));
 
         // User-created nodes only get nodeCreated (not loadedGraphNode). Give them an
@@ -1038,6 +1344,8 @@ app.registerExtension({
             } else {
                 this.__sgLedgerFromWorkflow = false;
             }
+            // Load, undo/redo (a graph reload), paste and clone all configure the node.
+            refreshNodeChips(this, { fit: true });
         };
     },
     loadedGraphNode(node) {
@@ -1048,5 +1356,7 @@ app.registerExtension({
         if (!node.__sgLedgerFromWorkflow) {
             appliedByNode.delete(node);
         }
+        // onConfigure ran before the legacy demotion above; legacy nodes derive their chips from the catalog.
+        refreshNodeChips(node, { fit: true });
     },
 });
