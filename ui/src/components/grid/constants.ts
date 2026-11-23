@@ -1,85 +1,78 @@
 /** Min card widths matching today's CSS `minmax(W, 1fr)` grid tracks. */
 export const MIN_CARD_WIDTH_NORMAL_PX = 150
 export const MIN_CARD_WIDTH_WINDOWED_PX = 110
-export const MIN_CARD_WIDTH_COMPACT_PX = 110
-export const MIN_CARD_WIDTH_COMPACT_WINDOWED_PX = 80
 
-/** Tailwind `gap-2` / `gap-1` in px (default root font size). Column gap = row gap. */
+/** Tailwind `gap-2` in px (default root font size). Same on both axes. */
 export const GRID_GAP_NORMAL_PX = 8
-export const GRID_GAP_COMPACT_PX = 4
+
+/** Row gap equals column gap (phase A CSS `gap-*`). */
+export const ROW_GAP_NORMAL_PX = GRID_GAP_NORMAL_PX
 
 /** Named rect so jsdom virtualizer tests have a stable layout box. */
 export const VIRTUALIZER_TEST_INITIAL_RECT = { width: 800, height: 600 } as const
 
 /**
- * Card chrome heights (border + padding + one truncated line), excluding row gap.
- * Windowed uses `p-2`/`text-xs` (measured 34px @ 1280 bench); normal/compact
- * use `p-3`/`text-sm` (measured ~46–48px).
+ * StyleCard chrome height (border-box), excluding inter-row gap.
+ * Measured in bench (N=500): windowed `p-2`+`text-xs` = 34; panel fullscreen
+ * `p-3`+`text-sm` = 46.
  */
-export const CARD_HEIGHT_WINDOWED_PX = 34
 export const CARD_HEIGHT_NORMAL_PX = 46
+export const CARD_HEIGHT_WINDOWED_PX = 34
 
 /**
- * Virtualizer card-row sizes = card height + ROW_GAP (padding-bottom).
- * ROW_GAP matches column gap: normal fullscreen `gap-2`, compact/windowed `gap-1`.
+ * Virtualizer card-row size = card height + ROW_GAP.
+ * Padding-bottom on the row element carries the gap so v-spacing matches h-gap.
  */
-export const CARD_ROW_HEIGHT_NORMAL_PX =
-  CARD_HEIGHT_NORMAL_PX + GRID_GAP_NORMAL_PX
-export const CARD_ROW_HEIGHT_COMPACT_PX =
-  CARD_HEIGHT_NORMAL_PX + GRID_GAP_COMPACT_PX
-export const CARD_ROW_HEIGHT_WINDOWED_PX =
-  CARD_HEIGHT_WINDOWED_PX + GRID_GAP_COMPACT_PX
+export const CARD_ROW_HEIGHT_NORMAL_PX = CARD_HEIGHT_NORMAL_PX + ROW_GAP_NORMAL_PX
+export const CARD_ROW_HEIGHT_WINDOWED_PX = CARD_HEIGHT_WINDOWED_PX + ROW_GAP_NORMAL_PX
 
-/**
- * Header content (py-1 + label/chevron; measured ~28px). estimateSize adds
- * ROW_GAP via padding-bottom so vertical rhythm matches phase-A CSS gap.
- */
-export const HEADER_ROW_HEIGHT = 28
+/** Category header content (py-1 + label/button line) + ROW_GAP via padding-bottom. */
+export const HEADER_CONTENT_HEIGHT_PX = 32
+export const HEADER_ROW_HEIGHT_NORMAL_PX = HEADER_CONTENT_HEIGHT_PX + ROW_GAP_NORMAL_PX
 
-/** Profile (scroll N=5000): StyleCard/ThumbnailPreview remounts dominate — keep overscan tight. */
-export const GRID_VIRTUAL_OVERSCAN = 2
-
-/** Token focus ring — keyboard-only (`:focus-visible`), matches slice overlay buttons. */
-export const GRID_FOCUS_RING_CLASS =
-  'focus:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent'
-
-/** @deprecated Prefer CARD_ROW_HEIGHT_* / HEADER_ROW_HEIGHT. */
-export const GRID_HEADER_ROW_ESTIMATE_PX = HEADER_ROW_HEIGHT + GRID_GAP_NORMAL_PX
-/** @deprecated Prefer CARD_ROW_HEIGHT_COMPACT_PX. */
-export const GRID_CARD_ROW_ESTIMATE_COMPACT_PX = CARD_ROW_HEIGHT_COMPACT_PX
-/** @deprecated Prefer CARD_ROW_HEIGHT_NORMAL_PX. */
+/** @deprecated Prefer HEADER_ROW_HEIGHT_NORMAL_PX / cardRowHeightPx(). */
+export const GRID_HEADER_ROW_ESTIMATE_PX = HEADER_ROW_HEIGHT_NORMAL_PX
+/** @deprecated Prefer CARD_ROW_HEIGHT_* / cardRowHeightPx(). */
 export const GRID_CARD_ROW_ESTIMATE_NORMAL_PX = CARD_ROW_HEIGHT_NORMAL_PX
+/** @deprecated Prefer CARD_ROW_HEIGHT_WINDOWED_PX. */
+export const GRID_CARD_ROW_ESTIMATE_WINDOWED_PX = CARD_ROW_HEIGHT_WINDOWED_PX
 
-export function minCardWidthPx(compactMode: boolean, windowed: boolean): number {
-  if (compactMode && windowed) return MIN_CARD_WIDTH_COMPACT_WINDOWED_PX
-  if (compactMode) return MIN_CARD_WIDTH_COMPACT_PX
-  if (windowed) return MIN_CARD_WIDTH_WINDOWED_PX
-  return MIN_CARD_WIDTH_NORMAL_PX
+/** Card rows the grid area always keeps visible, whatever the selection tray holds. */
+export const GRID_MIN_VISIBLE_CARD_ROWS = 2
+
+/** Keep ≤5 — profile: each overscan row remounts StyleCards on scroll. */
+export const GRID_VIRTUAL_OVERSCAN = 4
+
+export function minCardWidthPx(windowed: boolean): number {
+  return windowed ? MIN_CARD_WIDTH_WINDOWED_PX : MIN_CARD_WIDTH_NORMAL_PX
 }
 
-/**
- * Gap matches StyleGrid CSS: `gap-2` only for normal+fullscreen;
- * compact or windowed use `gap-1`.
- */
-export function gridGapPx(compactMode: boolean, windowed: boolean): number {
-  return compactMode || windowed ? GRID_GAP_COMPACT_PX : GRID_GAP_NORMAL_PX
+export function gridGapPx(): number {
+  return GRID_GAP_NORMAL_PX
 }
 
-/** Alias — row gap equals column gap for phase-A parity. */
-export function rowGapPx(compactMode: boolean, windowed: boolean): number {
-  return gridGapPx(compactMode, windowed)
+export function rowGapPx(): number {
+  return gridGapPx()
+}
+
+/** Exact virtualizer size for a card row (content + ROW_GAP). */
+export function cardRowHeightPx(windowed: boolean): number {
+  return windowed ? CARD_ROW_HEIGHT_WINDOWED_PX : CARD_ROW_HEIGHT_NORMAL_PX
+}
+
+/** Exact virtualizer size for a header row (content + ROW_GAP). */
+export function headerRowHeightPx(): number {
+  return HEADER_ROW_HEIGHT_NORMAL_PX
+}
+
+/** Height of one category header plus GRID_MIN_VISIBLE_CARD_ROWS card rows. */
+export function gridMinVisibleHeightPx(windowed: boolean): number {
+  return headerRowHeightPx() + GRID_MIN_VISIBLE_CARD_ROWS * cardRowHeightPx(windowed)
 }
 
 /** CSS gap utility matching {@link gridGapPx}. */
-export function gridGapClass(compactMode: boolean, windowed: boolean): string {
-  return compactMode || windowed ? 'gap-1' : 'gap-2'
-}
-
-/** Fixed card-row estimateSize for the active density. */
-export function cardRowHeightPx(compactMode: boolean, windowed: boolean): number {
-  if (windowed) return CARD_ROW_HEIGHT_WINDOWED_PX
-  if (compactMode) return CARD_ROW_HEIGHT_COMPACT_PX
-  return CARD_ROW_HEIGHT_NORMAL_PX
+export function gridGapClass(): string {
+  return 'gap-2'
 }
 
 /**
@@ -101,14 +94,42 @@ export function columnsForWidth(
  * was never generated and slice mode collapsed into a single-column list.
  * The pixel values mirror minCardWidthPx; autoFillGridClass.test.ts enforces that.
  */
-function autoFillColumnsClass(compactMode: boolean, windowed: boolean): string {
-  if (compactMode && windowed) return 'grid-cols-[repeat(auto-fill,minmax(80px,1fr))]'
-  if (compactMode) return 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))]'
+function autoFillColumnsClass(windowed: boolean): string {
   if (windowed) return 'grid-cols-[repeat(auto-fill,minmax(110px,1fr))]'
   return 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]'
 }
 
 /** `auto-fill` CSS grid for the non-virtualized path (slice-selection mode). */
-export function autoFillGridClass(compactMode: boolean, windowed: boolean): string {
-  return ['grid', 'content-start', autoFillColumnsClass(compactMode, windowed), gridGapClass(compactMode, windowed)].join(' ')
+export function autoFillGridClass(windowed: boolean): string {
+  return ['grid', 'content-start', autoFillColumnsClass(windowed), gridGapClass()].join(' ')
+}
+
+/** Gallery tiles: minimum card width (fullscreen / windowed panel). */
+export const GALLERY_MIN_CARD_WIDTH_PX = 150
+export const GALLERY_MIN_CARD_WIDTH_WINDOWED_PX = 130
+/** Name block under a gallery thumbnail: two `text-xs` lines (2 × 16) + `py-1.5` (12). */
+export const GALLERY_LABEL_HEIGHT_PX = 44
+
+/** Minimum card width for the view: grid keeps minCardWidthPx, gallery its own minimum. */
+export function minCardWidthForViewPx(windowed: boolean, viewMode: 'grid' | 'gallery'): number {
+  if (viewMode === 'gallery') {
+    return windowed ? GALLERY_MIN_CARD_WIDTH_WINDOWED_PX : GALLERY_MIN_CARD_WIDTH_PX
+  }
+  return minCardWidthPx(windowed)
+}
+
+/** Width of one gallery card: the container split into `columns` with `gapPx` between; ≥ 1. */
+export function galleryCardWidthPx(containerWidth: number, columns: number, gapPx: number): number {
+  const cols = Math.max(1, Math.floor(columns))
+  return Math.max(1, Math.floor((containerWidth - gapPx * (cols - 1)) / cols))
+}
+
+/** Gallery card height: a square thumbnail box plus the name block. */
+export function galleryCardHeightPx(cardWidth: number): number {
+  return cardWidth + GALLERY_LABEL_HEIGHT_PX
+}
+
+/** Virtualizer size of a gallery card row: card height + ROW_GAP. */
+export function galleryRowHeightPx(cardWidth: number): number {
+  return galleryCardHeightPx(cardWidth) + rowGapPx()
 }

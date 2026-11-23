@@ -1,12 +1,16 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
-  Clipboard,
+  Check,
   Copy,
+  CopyPlus,
   FolderInput,
+  ImageMinus,
+  ImageOff,
   ImagePlus,
-  Lock,
+  Loader2,
+  MoreHorizontal,
   Pencil,
+  Sparkles,
   Star,
   Trash2,
 } from 'lucide-react'
@@ -14,93 +18,133 @@ import { useShallow } from 'zustand/react/shallow'
 import type { Style } from '../bridge'
 import { setFocusedCell } from '../lib/gridFocus'
 import {
-  getCategoryColor,
+  LORA_SOURCE,
   styleRowKey,
+  useCategoryColor,
+  useIsSelected,
+  useStyleDuplicates,
+  useHasThumbnail,
+  usePreviewJob,
   useStylesStore,
+  useThumbVersion,
+  type ViewMode,
 } from '../store/stylesStore'
 import { sendToHost } from '../bridge'
-import { ThumbnailPreview } from './ThumbnailPreview'
-import { MenuItem, ViewportFixedMenu } from './ViewportFixedMenu'
-import { ConfirmDialog } from './ConfirmDialog'
-import { ConfirmInputDialog } from './ConfirmInputDialog'
-import { EditStyleDialog } from './EditStyleDialog'
+import { styleGridDelete } from '../lib/styleGridFetch'
 import {
-  CARD_HEIGHT_NORMAL_PX,
-  CARD_HEIGHT_WINDOWED_PX,
-  GRID_FOCUS_RING_CLASS,
+  duplicateStyleRequest,
+  samplesCopyTarget,
+  samplesCopyToast,
+  sourceFileLeaf,
+} from '../lib/styleActions'
+import { thumbnailUrl } from '../lib/thumbnailUrl'
+import { PLATFORM } from '../lib/platform'
+import { cn } from '../lib/utils'
+import {
+  CARD_ROW_HEIGHT_NORMAL_PX,
+  CARD_ROW_HEIGHT_WINDOWED_PX,
+  GALLERY_LABEL_HEIGHT_PX,
+  ROW_GAP_NORMAL_PX,
 } from './grid/constants'
+import { DeleteStyleDialog } from './DeleteStyleDialog'
+import { MoveToCategoryDialog } from './MoveToCategoryDialog'
+import { StyleEditorDialog } from './StyleEditorDialog'
+import { MenuItem, ViewportFixedMenu } from './ViewportFixedMenu'
 
-const MENU_ICON_SIZE = 14
-const EMPTY_DUPLICATES: readonly Style[] = []
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg'
+
+/** Gap between the ⋯ button (or a keyboard-opened card) and the menu under it. */
+const MENU_OFFSET_PX = 4
+
+/** Star and ⋯ on the tile: 24×24 pointer affordances, out of the tab order. */
+const TILE_ACTION_CLASS =
+  'relative h-6 w-6 flex items-center justify-center rounded transition-colors hover:bg-sg-accent/20'
+
+/**
+ * Shown on tile hover and on visible (keyboard) focus inside the tile; never
+ * display:none (focus may return into the tile). Not :focus-within: the menu
+ * returns focus to the card after a mouse action too, and the actions would
+ * then stay up without hover.
+ */
+const TILE_HOVER_SHOW =
+  'opacity-0 pointer-events-none group-hover/tile:opacity-100 group-hover/tile:pointer-events-auto ' +
+  'group-has-[:focus-visible]/tile:opacity-100 group-has-[:focus-visible]/tile:pointer-events-auto'
+
+/** The favorite indicator gives its place to the Star button while the actions show. */
+const TILE_HOVER_HIDE = 'group-hover/tile:opacity-0 group-has-[:focus-visible]/tile:opacity-0'
+
+/** Card chrome height = virtualizer row size minus inter-row gap. */
+const CARD_HEIGHT_NORMAL = CARD_ROW_HEIGHT_NORMAL_PX - ROW_GAP_NORMAL_PX
+const CARD_HEIGHT_WINDOWED = CARD_ROW_HEIGHT_WINDOWED_PX - ROW_GAP_NORMAL_PX
 
 interface Props {
   style: Style
   windowed?: boolean
-  /** Virtual grid cell coords — attrs only; keyboard handled on the grid. */
+  /** Text tile (grid, default) or square preview tile (gallery). */
+  viewMode?: ViewMode
+  /** Gallery card height = thumbnail box + label (set by the virtualized grid). */
+  galleryCardHeightPx?: number
   cellRow?: number
   cellCol?: number
-  /** Roving tabindex from CardsRow (0 for the focused cell, else -1). */
   tabIndex?: number
+  /** Star and ⋯ buttons on hover, gallery tiles only; off for slice-mode tiles. */
+  hoverActions?: boolean
 }
 
-const Portal = ({ children }: { children: React.ReactNode }) =>
-  createPortal(children, document.body)
+const READ_ONLY_PREVIEW_TOAST =
+  'This style is from the protected samples pack (read-only). Duplicate it into a data source to manage your own preview.'
+/** The server refuses writes to samples/ (403); say so instead of sending the request. */
+const READ_ONLY_DELETE_TOAST =
+  'This style is from the protected samples pack (read-only) and cannot be deleted.'
+const READ_ONLY_DUPLICATE_TOAST =
+  'This style is from the protected samples pack (read-only); a copy cannot be saved into it.'
+const READ_ONLY_MOVE_TOAST =
+  'This style is from the protected samples pack (read-only) and cannot be moved.'
+const READ_ONLY_EDIT_TOAST =
+  'This style is from the protected samples pack (read-only) and cannot be edited. Duplicate it into a data source to change it.'
 
-/** Suggest `${name} copy`, then `copy 2`, `copy 3`, … — same global name scope as the Duplicate collision check. */
-function nextDuplicateName(baseName: string, catalog: Style[]): string {
-  const taken = new Set(catalog.map((s) => s.name))
-  const first = `${baseName} copy`
-  if (!taken.has(first)) return first
-  let n = 2
-  while (taken.has(`${baseName} copy ${n}`)) n += 1
-  return `${baseName} copy ${n}`
-}
-
+/** Skip re-render when row identity + chrome mode + roving tab stop unchanged. */
 function styleCardPropsEqual(prev: Props, next: Props): boolean {
   return (
     prev.windowed === next.windowed &&
+    prev.viewMode === next.viewMode &&
+    prev.galleryCardHeightPx === next.galleryCardHeightPx &&
     prev.style === next.style &&
     prev.cellRow === next.cellRow &&
     prev.cellCol === next.cellCol &&
-    prev.tabIndex === next.tabIndex
+    prev.tabIndex === next.tabIndex &&
+    prev.hoverActions === next.hoverActions
   )
 }
 
 export const StyleCard = memo(function StyleCard({
   style,
   windowed = false,
+  viewMode = 'grid',
+  galleryCardHeightPx,
   cellRow,
   cellCol,
   tabIndex = -1,
+  hoverActions = true,
 }: Props) {
-  const isGridCell = cellRow !== undefined && cellCol !== undefined
   const key = useMemo(() => styleRowKey(style), [style])
-  // One shallow subscription for scroll-remount path (profile: useStore ×N).
-  // Actions + activeSource read via getState — no per-card action subscriptions.
-  const { isSelected, duplicates, fav, borderColor } = useStylesStore(
-    useShallow((s) => ({
-      isSelected: s.selectedKeySet.has(key),
-      duplicates: s.duplicatesByName.get(style.name) ?? EMPTY_DUPLICATES,
-      fav: s.favorites.has(styleRowKey(style)),
-      borderColor: getCategoryColor(style.category || 'OTHER', s.themeMode),
-    })),
+  const isSelected = useIsSelected(key)
+  const duplicates = useStyleDuplicates(style.name)
+  const fav = useStylesStore(s => s.favorites.has(key))
+  const activeSource = useStylesStore(s => s.activeSource)
+  const showToast = useStylesStore(s => s.showToast)
+  const { toggleStyle, toggleFavorite } = useStylesStore(
+    useShallow(s => ({ toggleStyle: s.toggleStyle, toggleFavorite: s.toggleFavorite }))
   )
-  // CARD_HEIGHT_* === CARD_ROW_HEIGHT_<mode> - ROW_GAP (gap lives on the virtual row).
-  const cardHeightPx = windowed ? CARD_HEIGHT_WINDOWED_PX : CARD_HEIGHT_NORMAL_PX
   const cardRef = useRef<HTMLButtonElement>(null)
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null)
   const [pickerPos, setPickerPos] = useState<{ x: number, y: number } | null>(null)
   const [restoreFocusEl, setRestoreFocusEl] = useState<HTMLElement | null>(null)
-  const [duplicateOpen, setDuplicateOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState(false)
-  /** Hidden file input is mount-heavy (profile initInput); arm only on upload click. */
-  const [fileInputArmed, setFileInputArmed] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  // Grid prop is the catalog row; saveStyle refetches styles[] so post-edit
-  // fields stay fresh without a selectedStyles subscription.
-  const displayStyle = style
+  const isLora = style.source_file === LORA_SOURCE
   const hasMultipleSources = duplicates.length > 1
   const sourceLabels = useMemo(
     () =>
@@ -115,18 +159,31 @@ export const StyleCard = memo(function StyleCard({
     return Math.min(48, Math.max(18, maxSourceLabelLen + 4))
   }, [sourceLabels])
 
-  const displayName = displayStyle.name.includes('_')
-    ? displayStyle.name.split('_').slice(1).join(' ')
-    : displayStyle.name
+  const displayName = style.display_name || (style.name.includes('_')
+    ? style.name.split('_').slice(1).join(' ')
+    : style.name)
+
   const accessibleName = fav ? `${displayName} favorite` : displayName
+  const menuHeadingId = useId()
+  const menuSourceLabel = `${isLora ? 'LoRA' : sourceFileLeaf(style.source_file)}${style.read_only ? ' · read-only' : ''}`
 
-  // Stable action refs — no subscription (scroll remount fan-out).
-  const { showToast, toggleStyle, setActiveSource } = useStylesStore.getState()
-
-  useEffect(() => {
-    if (!fileInputArmed) return
-    fileInputRef.current?.click()
-  }, [fileInputArmed])
+  const borderColor = useCategoryColor(style.category || 'OTHER')
+  const gallery = viewMode === 'gallery'
+  /** ★ / ⋯ on hover: gallery tiles only. Grid tiles keep the plain look (right-click for the menu). */
+  const showActions = hoverActions && gallery
+  const thumbVersion = useThumbVersion(key)
+  /** Single preview generation for this tile (SG_THUMB_PROGRESS): a status, not an action. */
+  const previewJob = usePreviewJob(key)
+  const generating = previewJob === 'generating'
+  const thumbSrc = thumbnailUrl(style, activeSource, thumbVersion)
+  /** URL whose image failed to load; a new thumb version gives a new URL, so it retries. */
+  const [failedThumbSrc, setFailedThumbSrc] = useState<string | null>(null)
+  // LoRA previews may or may not exist next to the model: try, and fall back on error.
+  const hasThumb = useHasThumbnail(style)
+  const showThumb = gallery && hasThumb !== false && failedThumbSrc !== thumbSrc
+  const previewReadOnlyClass = style.read_only
+    ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
+    : 'text-sg-text hover:bg-sg-accent/20'
 
   useEffect(() => {
     if (!menuPos) return
@@ -159,27 +216,24 @@ export const StyleCard = memo(function StyleCard({
     setMenuPos({ x, y })
   }
 
-  const closeMenu = () => setMenuPos(null)
-  const closePicker = () => setPickerPos(null)
-
-  const readOnlyClass = displayStyle.read_only
-    ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-    : undefined
-
   return (
     <>
-      <div role={isGridCell ? 'gridcell' : undefined}>
-        <ThumbnailPreview style={displayStyle}>
+      <div
+        role={cellRow != null ? 'gridcell' : undefined}
+        className={showActions ? 'group/tile relative' : undefined}
+      >
+        {/* The card and, in the gallery, its ★ / ⋯ actions as siblings. */}
+        <div className="relative">
           <button
             ref={cardRef}
             type="button"
             data-sg-card="true"
-            data-cell-row={isGridCell ? cellRow : undefined}
-            data-cell-col={isGridCell ? cellCol : undefined}
+            data-cell-row={cellRow}
+            data-cell-col={cellCol}
             tabIndex={tabIndex}
             aria-pressed={isSelected}
             aria-label={accessibleName}
-            title={`${displayStyle.name}\nRight-click for options`}
+            aria-busy={generating || undefined}
             onFocus={() => {
               if (cellRow != null && cellCol != null) {
                 setFocusedCell({ row: cellRow, col: cellCol })
@@ -188,248 +242,463 @@ export const StyleCard = memo(function StyleCard({
             onContextMenu={(e) => {
               e.preventDefault()
               e.stopPropagation()
+              // ContextMenu key / Shift+F10 is not a right button press: anchor to the card.
+              const keyboard = e.nativeEvent.button !== 2 || (e.clientX === 0 && e.clientY === 0)
+              if (keyboard) {
+                const rect = e.currentTarget.getBoundingClientRect()
+                openMenuAt(rect.left, rect.bottom + MENU_OFFSET_PX)
+                return
+              }
               openMenuAt(e.clientX, e.clientY)
             }}
             onClick={(e) => {
-              const store = useStylesStore.getState()
-              if (hasMultipleSources && !store.activeSource && !isSelected) {
+              if (hasMultipleSources && !activeSource && !isSelected) {
                 const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
                 setRestoreFocusEl(cardRef.current)
                 setPickerPos({ x: rect.right + 8, y: rect.top })
                 return
               }
-              store.toggleStyle(style)
+              toggleStyle(style)
+            }}
+            style={{
+              height: gallery
+                ? galleryCardHeightPx
+                : windowed ? CARD_HEIGHT_WINDOWED : CARD_HEIGHT_NORMAL,
             }}
             className={`
-              relative overflow-hidden cursor-pointer rounded-lg border ${windowed ? 'p-2' : 'p-3'}
+              relative overflow-hidden cursor-pointer rounded-lg border
+              ${gallery ? 'p-0 flex flex-col' : windowed ? 'p-2' : 'p-3'}
               select-none transition-colors w-full text-left
               transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]
               motion-reduce:transition-none motion-reduce:transform-none
-              ${GRID_FOCUS_RING_CLASS}
+              ${FOCUS_RING}
               ${isSelected
                 ? 'border-sg-accent bg-sg-accent/10'
                 : 'border-sg-border bg-sg-surface hover:border-sg-accent/50'}
             `}
-            style={{
-              height: cardHeightPx,
-              borderLeftColor: isSelected ? undefined : borderColor,
-              borderLeftWidth: '3px',
-            }}
           >
-            {/* One truncated name line; star/dot are absolute so they never share the line. */}
-            <div
-              className={`truncate font-medium text-sg-text pr-5 ${windowed ? 'text-xs' : 'text-sm'}`}
-            >
-              {displayName}
-            </div>
-
-            {/* Selected indicator: accent border/tint + corner dot (0.0.7) */}
-            {isSelected && (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="absolute bottom-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-sg-accent"
-                />
-                <span className="sr-only">Selected</span>
-              </>
+            {/* Category accent — separate strip avoids asymmetric border-radius bleed onto the name */}
+            {!isSelected && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 left-0 z-10 w-[3px]"
+                style={{ backgroundColor: borderColor }}
+              />
             )}
-            {fav && (
-              <span className="absolute top-1.5 right-2 text-sg-warning-text">
-                <Star size={12} fill="currentColor" aria-hidden="true" />
-                <span className="sr-only">Favorite</span>
+            {gallery ? (
+              <>
+                <div className="relative min-h-0 flex-1 overflow-hidden" data-sg-gallery-thumb="true">
+                  {showThumb ? (
+                    <img
+                      src={thumbSrc}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="block h-full w-full object-cover"
+                      onError={() => setFailedThumbSrc(thumbSrc)}
+                    />
+                  ) : (
+                    <div
+                      className="flex h-full w-full flex-col items-center justify-center gap-1
+                                 border-b border-dashed border-sg-border text-sg-muted"
+                      data-sg-gallery-placeholder="true"
+                    >
+                      <ImageOff size={20} aria-hidden="true" />
+                      <span className="text-xs text-sg-muted">No preview</span>
+                    </div>
+                  )}
+                  {fav && (
+                    <Star
+                      size={12}
+                      fill="currentColor"
+                      className={cn(
+                        'absolute top-1.5 right-1.5 text-sg-warning-text',
+                        showActions && (menuPos ? 'opacity-0' : TILE_HOVER_HIDE),
+                      )}
+                      aria-hidden="true"
+                    />
+                  )}
+                  {isSelected && (
+                    <div
+                      aria-hidden="true"
+                      className="absolute bottom-2 right-2 h-1.5 w-1.5 rounded-full bg-sg-accent"
+                    />
+                  )}
+                  {generating && (
+                    <div
+                      aria-hidden="true"
+                      data-sg-preview-generating="true"
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-1
+                                 bg-sg-bg/60 text-sg-wildcard-text"
+                    >
+                      <Loader2 size={20} className="animate-spin motion-reduce:animate-none" />
+                      <span className="text-xs font-medium">Generating</span>
+                    </div>
+                  )}
+                </div>
+                <div
+                  className="shrink-0 px-2 py-1.5 text-xs font-medium text-sg-text text-left line-clamp-2 break-words"
+                  style={{ height: GALLERY_LABEL_HEIGHT_PX }}
+                  data-sg-gallery-label="true"
+                >
+                  {displayName}
+                </div>
+              </>
+            ) : (
+              <div
+                className={`${windowed ? 'text-xs' : 'text-sm'} min-w-0 truncate pr-4 font-medium text-sg-text`}
+              >
+                {displayName}
+              </div>
+            )}
+
+            {!gallery && previewJob && (
+              <span
+                aria-hidden="true"
+                data-sg-preview-status={previewJob}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 flex text-sg-wildcard-text"
+              >
+                {generating ? (
+                  <Loader2 size={12} className="animate-spin motion-reduce:animate-none" />
+                ) : (
+                  <Check size={12} />
+                )}
               </span>
             )}
+
+            {/* The status above takes the favorite indicator's place while it shows. */}
+            {!gallery && fav && !previewJob && (
+              <Star
+                size={12}
+                fill="currentColor"
+                className={cn(
+                  'absolute top-1.5 right-1.5 text-sg-warning-text',
+                  showActions && (menuPos ? 'opacity-0' : TILE_HOVER_HIDE),
+                )}
+                aria-hidden="true"
+              />
+            )}
+
+            {/* Selected indicator */}
+            {!gallery && isSelected && (
+              <div
+                aria-hidden="true"
+                className="absolute bottom-2 right-2 h-1.5 w-1.5 rounded-full bg-sg-accent"
+              />
+            )}
           </button>
-        </ThumbnailPreview>
+          {showActions && (
+            <div
+              data-sg-tile-actions="true"
+              className={cn(
+                'absolute z-20 flex items-center gap-0.5 rounded-md transition-opacity',
+                gallery ? 'top-1 right-1 p-0.5 bg-sg-bg/85' : 'right-1.5 top-1/2 -translate-y-1/2',
+                !gallery && (isSelected ? 'bg-sg-bg' : 'bg-sg-surface'),
+                menuPos ? 'opacity-100' : TILE_HOVER_SHOW,
+              )}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                openMenuAt(e.clientX, e.clientY)
+              }}
+            >
+              {/* Same tint as a selected tile (accent/10 over the page background). */}
+              {!gallery && isSelected && (
+                <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-md bg-sg-accent/10" />
+              )}
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={fav ? `Remove ${displayName} from favorites` : `Add ${displayName} to favorites`}
+                data-sg-tile-favorite="true"
+                // Keep focus where it is (the card or elsewhere): a focused action
+                // would leave arrow navigation starting from the wrong element.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleFavorite(style)
+                }}
+                className={cn(
+                  TILE_ACTION_CLASS,
+                  FOCUS_RING,
+                  fav ? 'text-sg-warning-text' : 'text-sg-muted hover:text-sg-text',
+                )}
+              >
+                <Star size={14} fill={fav ? 'currentColor' : 'none'} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={`More actions for ${displayName}`}
+                aria-haspopup="menu"
+                aria-expanded={menuPos !== null}
+                data-sg-tile-more="true"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  openMenuAt(rect.left, rect.bottom + MENU_OFFSET_PX)
+                }}
+                className={cn(TILE_ACTION_CLASS, FOCUS_RING, 'text-sg-muted hover:text-sg-text')}
+              >
+                <MoreHorizontal size={14} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {menuPos && (
         <ViewportFixedMenu
-          open
           x={menuPos.x}
           y={menuPos.y}
-          onClose={closeMenu}
+          onClose={() => setMenuPos(null)}
           restoreFocusTo={restoreFocusEl}
-          className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48"
+          ariaLabelledBy={menuHeadingId}
+          className="fixed z-[9999] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1 min-w-48 max-w-sm"
         >
-          <MenuItem
-            onSelect={() => {
-              useStylesStore.getState().toggleStyle(style)
-              closeMenu()
-            }}
-          >
-            {isSelected ? '✕ Deselect' : '✓ Select'}
-          </MenuItem>
+          <div className="px-3 pt-1 pb-1.5 mb-1 border-b border-sg-border" data-sg-menu-header="true">
+            <div id={menuHeadingId} className="font-semibold text-sm text-sg-text truncate">
+              {displayName}
+            </div>
+            <div className="font-mono text-xs text-sg-muted truncate">{menuSourceLabel}</div>
+          </div>
           <MenuItem
             className="flex items-center gap-2"
-            onSelect={() => {
-              useStylesStore.getState().toggleFavorite(style)
-              closeMenu()
-            }}
+            onSelect={() => { toggleStyle(style); setMenuPos(null) }}
           >
-            <Star size={MENU_ICON_SIZE} fill={fav ? 'currentColor' : 'none'} aria-hidden="true" />
-            {fav ? 'Remove from Favorites' : 'Add to Favorites'}
+            {/* Check mark is state, not action: shown only while selected. */}
+            <Check
+              size={14}
+              aria-hidden="true"
+              className={isSelected ? undefined : 'invisible'}
+            />
+            {isSelected ? 'Deselect' : 'Select'}
+          </MenuItem>
+          <MenuItem
+            onSelect={() => { toggleFavorite(style); setMenuPos(null) }}
+            className="flex items-center gap-2"
+          >
+            <Star size={14} aria-hidden="true" />
+            {fav ? 'Remove from favorites' : 'Add to favorites'}
           </MenuItem>
           <div className="h-px my-1 bg-sg-border" role="separator" />
           <MenuItem
             className="flex items-center gap-2"
             onSelect={async () => {
-              closeMenu()
+              setMenuPos(null)
               try {
-                await navigator.clipboard.writeText(displayStyle.prompt)
-                useStylesStore.getState().showToast('Prompt copied', 'success')
+                await navigator.clipboard.writeText(style.prompt)
+                showToast('Prompt copied', 'success')
               } catch {
-                useStylesStore.getState().showToast('Copy failed', 'error')
+                showToast('Copy failed', 'error')
               }
             }}
           >
-            <Clipboard size={MENU_ICON_SIZE} aria-hidden="true" />
+            <Copy size={14} aria-hidden="true" />
             Copy prompt
           </MenuItem>
-          <MenuItem
-            className={`flex items-center gap-2 ${readOnlyClass ?? ''}`}
-            onSelect={() => {
-              if (displayStyle.read_only) {
-                closeMenu()
-                useStylesStore.getState().showToast(
-                  'This style is from the protected samples pack (read-only). Duplicate it into a data source to edit your own copy.',
-                  'info',
-                )
-                return
-              }
-              closeMenu()
-              setEditOpen(true)
-            }}
-          >
-            {displayStyle.read_only
-              ? <Lock size={MENU_ICON_SIZE} aria-hidden="true" />
-              : <Pencil size={MENU_ICON_SIZE} aria-hidden="true" />}
-            Edit
-          </MenuItem>
-          <MenuItem
-            className="flex items-center gap-2"
-            onSelect={() => {
-              closeMenu()
-              setDuplicateOpen(true)
-            }}
-          >
-            <Copy size={MENU_ICON_SIZE} aria-hidden="true" />
-            Duplicate
-          </MenuItem>
-          <MenuItem
-            className={`flex items-center gap-2 ${readOnlyClass ?? ''}`}
-            onSelect={() => {
-              if (displayStyle.read_only) {
-                closeMenu()
-                useStylesStore.getState().showToast(
-                  'This style is from the protected samples pack (read-only). Duplicate it into a data source to move your own copy.',
-                  'info',
-                )
-                return
-              }
-              closeMenu()
-              setMoveOpen(true)
-            }}
-          >
-            {displayStyle.read_only
-              ? <Lock size={MENU_ICON_SIZE} aria-hidden="true" />
-              : <FolderInput size={MENU_ICON_SIZE} aria-hidden="true" />}
-            Move to category...
-          </MenuItem>
-          <div className="h-px my-1 bg-sg-border" role="separator" />
-          <MenuItem
-            className="flex items-center gap-2"
-            onSelect={() => {
-              closeMenu()
-              if (fileInputArmed) {
-                fileInputRef.current?.click()
-              } else {
-                setFileInputArmed(true)
-              }
-            }}
-          >
-            <ImagePlus size={MENU_ICON_SIZE} aria-hidden="true" />
-            Upload preview image
-          </MenuItem>
-          {displayStyle.has_thumbnail && (
-            <MenuItem
-              className={`flex items-center gap-2 ${readOnlyClass ?? ''}`}
-              onSelect={async () => {
-                if (displayStyle.read_only) {
-                  closeMenu()
-                  showToast(
-                    'This style is from the protected samples pack (read-only). Duplicate it into a data source to manage your own preview.',
-                    'info',
-                  )
-                  return
-                }
-                closeMenu()
-                try {
-                  const params = new URLSearchParams({ name: displayStyle.name })
-                  if (displayStyle.source_file) {
-                    params.set('source', displayStyle.source_file)
-                  }
-                  const res = await fetch(`/style_grid/thumbnail?${params}`, {
-                    method: 'DELETE',
-                  })
-                  const data = await res.json().catch(() => ({}))
-                  if (!res.ok || data.ok === false || data.error) {
-                    showToast(
-                      typeof data.error === 'string' && data.error
-                        ? data.error
-                        : 'Delete preview failed',
-                      'error',
-                    )
+          {!isLora && (
+            <>
+              <MenuItem
+                className={`flex items-center gap-2 ${style.read_only ? previewReadOnlyClass : ''}`}
+                onSelect={() => {
+                  setMenuPos(null)
+                  if (style.read_only) {
+                    showToast(READ_ONLY_EDIT_TOAST, 'info')
                     return
                   }
-                  const version = String(Date.now())
-                  useStylesStore.getState().bumpThumbVersion(key, version)
-                  void useStylesStore.getState().loadThumbnails()
-                  showToast('Preview deleted', 'success')
-                } catch {
-                  showToast('Delete preview failed', 'error')
-                }
-              }}
-            >
-              {displayStyle.read_only
-                ? <Lock size={MENU_ICON_SIZE} aria-hidden="true" />
-                : <Trash2 size={MENU_ICON_SIZE} aria-hidden="true" />}
-              Delete preview
-            </MenuItem>
+                  setEditOpen(true)
+                }}
+              >
+                <Pencil size={14} aria-hidden="true" />
+                Edit…
+              </MenuItem>
+              <MenuItem
+                className={`flex items-center gap-2 ${style.read_only && !PLATFORM.samplesCopyToData ? previewReadOnlyClass : ''}`}
+                onSelect={async () => {
+                  setMenuPos(null)
+                  const toData = !!style.read_only && PLATFORM.samplesCopyToData
+                  if (style.read_only && !toData) {
+                    showToast(READ_ONLY_DUPLICATE_TOAST, 'info')
+                    return
+                  }
+                  // A sample copy goes to the data/ twin of its file (samples/ is read-only).
+                  const target = toData ? samplesCopyTarget(style.source_file) : style.source_file
+                  const result = await duplicateStyleRequest(
+                    toData ? { ...style, source_file: target, read_only: false } : style,
+                    useStylesStore.getState().styles,
+                  )
+                  if (!result.ok) {
+                    showToast(`Duplicate failed: ${result.error}`, 'error')
+                    return
+                  }
+                  // The host reloads the catalog and pushes it back to the iframe.
+                  sendToHost({ type: 'SG_REFRESH' })
+                  showToast(`Duplicated as "${result.name}"`, 'success')
+                  if (toData && useStylesStore.getState().activeSource !== target) {
+                    useStylesStore.getState().setActiveSource(target)
+                    showToast(samplesCopyToast(target), 'info')
+                  }
+                }}
+              >
+                <CopyPlus size={14} aria-hidden="true" />
+                Duplicate
+              </MenuItem>
+              <MenuItem
+                className={`flex items-center gap-2 ${style.read_only ? previewReadOnlyClass : ''}`}
+                onSelect={() => {
+                  setMenuPos(null)
+                  if (style.read_only) {
+                    showToast(READ_ONLY_MOVE_TOAST, 'info')
+                    return
+                  }
+                  setMoveOpen(true)
+                }}
+              >
+                <FolderInput size={14} aria-hidden="true" />
+                Move to category…
+              </MenuItem>
+            </>
           )}
-          <div className="h-px my-1 bg-sg-border" role="separator" />
-          <MenuItem
-            className={`flex items-center gap-2 ${
-              displayStyle.read_only
-                ? 'opacity-45 cursor-not-allowed text-sg-muted hover:bg-transparent'
-                : 'text-sg-danger-text hover:bg-sg-danger/20'
-            }`}
-            onSelect={() => {
-              closeMenu()
-              if (displayStyle.read_only) {
-                showToast(
-                  'This style is from the protected samples pack (read-only) and cannot be deleted.',
-                  'info',
-                )
-                return
-              }
-              setPendingDelete(true)
-            }}
-          >
-            {displayStyle.read_only
-              ? <Lock size={MENU_ICON_SIZE} aria-hidden="true" />
-              : <Trash2 size={MENU_ICON_SIZE} aria-hidden="true" />}
-            Delete
-          </MenuItem>
+          {!isLora && (
+            <>
+              <div className="h-px my-1 bg-sg-border" role="separator" />
+              {PLATFORM.previewGeneration && (
+              <MenuItem
+                className={`flex items-center gap-2 ${previewReadOnlyClass}`}
+                // One generation per tile at a time.
+                disabled={generating}
+                onSelect={() => {
+                  if (style.read_only) {
+                    setMenuPos(null)
+                    showToast(READ_ONLY_PREVIEW_TOAST, 'info')
+                    return
+                  }
+                  sendToHost({ type: 'SG_GENERATE_PREVIEW', styleId: style.name, source: style.source_file })
+                  setMenuPos(null)
+                }}
+              >
+                <Sparkles size={14} aria-hidden="true" />
+                Generate preview
+              </MenuItem>
+              )}
+              <MenuItem
+                className={`flex items-center gap-2 ${previewReadOnlyClass}`}
+                onSelect={() => {
+                  if (style.read_only) {
+                    setMenuPos(null)
+                    showToast(READ_ONLY_PREVIEW_TOAST, 'info')
+                    return
+                  }
+                  sendToHost({ type: 'SG_UPLOAD_PREVIEW', styleId: style.name, source: style.source_file })
+                  setMenuPos(null)
+                }}
+              >
+                <ImagePlus size={14} aria-hidden="true" />
+                Upload preview…
+              </MenuItem>
+              {hasThumb === true && (
+                <MenuItem
+                  className={`flex items-center gap-2 ${previewReadOnlyClass}`}
+                  onSelect={async () => {
+                    if (style.read_only) {
+                      setMenuPos(null)
+                      showToast(READ_ONLY_PREVIEW_TOAST, 'info')
+                      return
+                    }
+                    setMenuPos(null)
+                    try {
+                      const name = style.name
+                      const source_file = style.source_file
+                      const params = new URLSearchParams({ name })
+                      if (source_file) params.set('source', source_file)
+                      const res = await styleGridDelete(`/style_grid/thumbnail?${params}`)
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok || data.ok === false || data.error) {
+                        showToast(
+                          typeof data.error === 'string' && data.error
+                            ? data.error
+                            : 'Remove preview failed',
+                          'error',
+                        )
+                        return
+                      }
+                      const version = String(Date.now())
+                      // Local bump only — do not window.postMessage (would fail
+                      // host-origin/source guards; App listens for host SG_THUMB_DONE).
+                      useStylesStore.getState().bumpThumbVersion(key, version)
+                      useStylesStore.getState().markThumb(key, false)
+                      showToast('Preview removed', 'success')
+                    } catch {
+                      showToast('Remove preview failed', 'error')
+                    }
+                  }}
+                >
+                  <ImageMinus size={14} aria-hidden="true" />
+                  Remove preview
+                </MenuItem>
+              )}
+            </>
+          )}
+          {!isLora && (
+            <>
+              <div className="h-px my-1 bg-sg-border" role="separator" />
+              <MenuItem
+                className={`flex items-center gap-2 ${
+                  style.read_only
+                    ? previewReadOnlyClass
+                    : 'text-sg-danger-text hover:bg-sg-danger/20'
+                }`}
+                onSelect={() => {
+                  setMenuPos(null)
+                  if (style.read_only) {
+                    showToast(READ_ONLY_DELETE_TOAST, 'info')
+                    return
+                  }
+                  setDeleteOpen(true)
+                }}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                Delete…
+              </MenuItem>
+            </>
+          )}
         </ViewportFixedMenu>
+      )}
+
+      {editOpen && (
+        <StyleEditorDialog
+          mode="edit"
+          open
+          style={style}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {moveOpen && (
+        <MoveToCategoryDialog
+          open
+          style={style}
+          displayName={displayName}
+          onClose={() => setMoveOpen(false)}
+        />
+      )}
+
+      {deleteOpen && (
+        <DeleteStyleDialog
+          open
+          style={style}
+          displayName={displayName}
+          onClose={() => setDeleteOpen(false)}
+        />
       )}
 
       {pickerPos && (
         <ViewportFixedMenu
-          open
           x={pickerPos.x}
           y={pickerPos.y}
-          onClose={closePicker}
+          onClose={() => setPickerPos(null)}
           restoreFocusTo={restoreFocusEl}
           className="fixed z-[10005] bg-sg-surface border border-sg-border rounded-lg shadow-xl py-1"
           backdropClassName="fixed inset-0 z-[10004]"
@@ -446,7 +715,7 @@ export const StyleCard = memo(function StyleCard({
                 key={`${dup.source_file || 'unknown'}-${idx}`}
                 onSelect={() => {
                   toggleStyle(dup)
-                  closePicker()
+                  setPickerPos(null)
                 }}
               >
                 <div className="font-medium truncate">{sourceLabel}</div>
@@ -454,281 +723,6 @@ export const StyleCard = memo(function StyleCard({
             )
           })}
         </ViewportFixedMenu>
-      )}
-
-      {pendingDelete && (
-        <Portal>
-          <ConfirmDialog
-            open
-            title="Delete style?"
-            message={`"${displayStyle.name}" will be permanently removed from the CSV.`}
-            confirmLabel="Delete"
-            destructive
-            onCancel={() => setPendingDelete(false)}
-            onConfirm={async () => {
-              try {
-                const res = await fetch('/style_grid/style/delete', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: displayStyle.name, source: displayStyle.source_file }),
-                })
-                const data = await res.json().catch(() => ({}))
-                if (!res.ok || data.ok === false) {
-                  showToast(
-                    typeof data.error === 'string' && data.error
-                      ? data.error
-                      : `Failed to delete ${displayStyle.name}`,
-                    'error',
-                  )
-                  return
-                }
-                fetch(
-                  `/style_grid/thumbnail?name=${encodeURIComponent(displayStyle.name)}&source=${encodeURIComponent(displayStyle.source_file || '')}`,
-                  { method: 'DELETE' },
-                ).catch(() => { /* best-effort, style delete already succeeded */ })
-                sendToHost({
-                  type: 'SG_UNAPPLY',
-                  styleId: displayStyle.name,
-                  source_file: displayStyle.source_file,
-                })
-                useStylesStore.getState().removeStyleRow(displayStyle)
-                showToast(`Deleted "${displayStyle.name}"`, 'success')
-                setPendingDelete(false)
-              } catch {
-                showToast(`Failed to delete ${displayStyle.name}`, 'error')
-              }
-            }}
-          />
-        </Portal>
-      )}
-
-      {/* Lazy-mount Move/Edit/Duplicate dialogs: closed cards must not pay
-          nextDuplicateName(styles) / categories() — O(N) per card (profile P). */}
-      {duplicateOpen && (
-        <Portal>
-          <ConfirmInputDialog
-            open
-            title={`Duplicate "${displayStyle.name}"`}
-            initialValue={nextDuplicateName(displayStyle.name, useStylesStore.getState().styles)}
-            placeholder="New style name"
-            confirmLabel="Duplicate"
-            onCancel={() => setDuplicateOpen(false)}
-            onConfirm={async (newName) => {
-              // Name collision check against the current catalog — style/save
-              // is an upsert, so an existing name would silently overwrite that
-              // style instead of creating a new one.
-              const catalog = useStylesStore.getState().styles
-              const exists = catalog.some((s) => s.name === newName)
-              if (exists) {
-                showToast(`A style named "${newName}" already exists`, 'error')
-                return  // keep dialog open so the user can retype
-              }
-              const result = await useStylesStore.getState().saveStyle({
-                name: newName,
-                prompt: displayStyle.prompt,
-                negative_prompt: displayStyle.negative_prompt,
-                description: displayStyle.description,
-                category: displayStyle.category,
-                source: displayStyle.source_file,
-              })
-              if (!result.ok) {
-                showToast(
-                  typeof result.error === 'string' && result.error
-                    ? result.error
-                    : 'Duplicate failed',
-                  'error',
-                )
-                return  // keep dialog open
-              }
-              // style/save only returns {ok}; write path comes from the new
-              // row's source_file after refetch (samples basename → data/).
-              showToast(`Duplicated as "${newName}"`, 'success')
-              if (displayStyle.read_only) {
-                const created =
-                  result.styles.find((s) => s.name === newName && !s.read_only) ??
-                  result.styles.find((s) => s.name === newName)
-                if (created?.source_file && created.source_file !== useStylesStore.getState().activeSource) {
-                  setActiveSource(created.source_file)
-                  const base = (created.source_file.replace(/\\/g, '/').split('/').pop() || created.source_file)
-                    .replace(/\.csv$/i, '')
-                  showToast(`Created in ${base} (data/) — switched source`, 'info')
-                }
-              }
-              setDuplicateOpen(false)
-            }}
-          />
-        </Portal>
-      )}
-
-      {moveOpen && (
-        <Portal>
-          <ConfirmInputDialog
-            open
-            title={`Move "${displayStyle.name}" to category`}
-            initialValue={displayStyle.category}
-            placeholder="Category name"
-            confirmLabel="Move"
-            suggestions={useStylesStore
-              .getState()
-              .categories()
-              .filter((c) => c !== displayStyle.category)}
-            onCancel={() => setMoveOpen(false)}
-            onConfirm={async (newCategory) => {
-              if (newCategory === displayStyle.category) {
-                setMoveOpen(false)
-                return
-              }
-              const result = await useStylesStore.getState().saveStyle({
-                name: displayStyle.name,
-                prompt: displayStyle.prompt,
-                negative_prompt: displayStyle.negative_prompt,
-                description: displayStyle.description,
-                category: newCategory,
-                source: displayStyle.source_file,
-              })
-              if (!result.ok) {
-                showToast(
-                  typeof result.error === 'string' && result.error
-                    ? result.error
-                    : 'Move failed',
-                  'error',
-                )
-                return
-              }
-              showToast(`Moved "${displayStyle.name}" to "${newCategory}"`, 'success')
-              setMoveOpen(false)
-            }}
-          />
-        </Portal>
-      )}
-
-      {editOpen && (
-        <Portal>
-          <EditStyleDialog
-            open
-            style={displayStyle}
-            categories={useStylesStore
-              .getState()
-              .categories()
-              .filter((c) => c !== displayStyle.category)}
-            onCancel={() => setEditOpen(false)}
-            onSave={async (fields) => {
-              const result = await useStylesStore.getState().saveStyle({
-                name: displayStyle.name,
-                prompt: fields.prompt,
-                negative_prompt: fields.negative_prompt,
-                description: fields.description,
-                category: fields.category,
-                source: displayStyle.source_file,
-              })
-              if (!result.ok) {
-                showToast(
-                  typeof result.error === 'string' && result.error
-                    ? result.error
-                    : 'Save failed',
-                  'error',
-                )
-                return  // keep dialog open so edits aren't lost
-              }
-
-              // styles[] is fresh; selectedStyles still holds the pre-edit
-              // Style objects (detectConflicts / re-apply would read stale
-              // prompt/neg). Patch matching selection rows from the refetch.
-              const updated =
-                result.styles.find(
-                  (s) =>
-                    s.name === displayStyle.name &&
-                    s.source_file === displayStyle.source_file,
-                ) ?? {
-                  ...displayStyle,
-                  prompt: fields.prompt,
-                  negative_prompt: fields.negative_prompt,
-                  description: fields.description,
-                  category: fields.category,
-                }
-              const wasSelected = useStylesStore.getState().selectedKeySet.has(key)
-              useStylesStore.setState((s) => ({
-                selectedStyles: s.selectedStyles.map((row) =>
-                  row.name === displayStyle.name &&
-                  row.source_file === displayStyle.source_file
-                    ? updated
-                    : row,
-                ),
-              }))
-              // Host keeps apply-time prompt/neg in a ledger and in the
-              // node widgets — nothing else refreshes them on edit. Swap
-              // so the canvas text matches the saved style.
-              if (wasSelected) {
-                sendToHost({
-                  type: 'SG_UNAPPLY',
-                  styleId: displayStyle.name,
-                  source_file: displayStyle.source_file,
-                })
-                sendToHost({
-                  type: 'SG_APPLY',
-                  styleId: displayStyle.name,
-                  prompt: updated.prompt,
-                  neg: updated.negative_prompt,
-                  source_file: displayStyle.source_file,
-                })
-              }
-              useStylesStore.getState().detectConflicts()
-
-              showToast(`Saved "${displayStyle.name}"`, 'success')
-              setEditOpen(false)
-            }}
-          />
-        </Portal>
-      )}
-
-      {fileInputArmed && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            e.target.value = ''  // allow re-selecting the same file later
-            if (!file) return
-            if (file.size > 10 * 1024 * 1024) {
-              showToast('Image must be under 10MB', 'error')
-              return
-            }
-            const reader = new FileReader()
-            reader.onload = async () => {
-              try {
-                const res = await fetch('/style_grid/thumbnail/upload', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    name: displayStyle.name,
-                    source: displayStyle.source_file,
-                    image: reader.result,
-                  }),
-                })
-                const data = await res.json().catch(() => ({}))
-                if (!res.ok || data.ok === false || data.error) {
-                  showToast(
-                    typeof data.error === 'string' && data.error
-                      ? data.error
-                      : 'Upload failed',
-                    'error',
-                  )
-                  return
-                }
-                const version = String(Date.now())
-                useStylesStore.getState().bumpThumbVersion(key, version)
-                void useStylesStore.getState().loadThumbnails()
-                showToast('Preview updated', 'success')
-              } catch {
-                showToast('Upload failed', 'error')
-              }
-            }
-            reader.onerror = () => showToast('Failed to read image file', 'error')
-            reader.readAsDataURL(file)
-          }}
-        />
       )}
     </>
   )

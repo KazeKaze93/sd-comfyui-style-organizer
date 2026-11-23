@@ -1,4 +1,3 @@
-# Local KEYS-E2E artifacts (never commit)
+# Local harness artifacts (never commit)
 out/
-raw/
 report.md

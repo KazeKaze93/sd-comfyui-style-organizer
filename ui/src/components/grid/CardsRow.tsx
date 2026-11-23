@@ -1,85 +1,93 @@
-import { memo, type ReactNode } from 'react'
+import { memo, useMemo, type ReactNode } from 'react'
 import type { Style } from '../../bridge'
-import { useFocusedColForRow } from '../../lib/gridFocus'
-import { styleRowKey } from '../../store/stylesStore'
+import { styleRowKey, type ViewMode } from '../../store/stylesStore'
 import { StyleCard } from '../StyleCard'
-import { GRID_FOCUS_RING_CLASS, gridGapClass } from './constants'
+import { gridGapPx } from './constants'
 
 export type CardsRowProps = {
   styles: readonly Style[]
   columns: number
-  compactMode: boolean
   windowed: boolean
-  /** Virtualizer row index — used for `data-cell-row` / roving tabindex. */
+  viewMode?: ViewMode
+  /** Gallery card height (thumbnail + label); undefined in grid. */
+  galleryCardHeightPx?: number
   rowIndex: number
+  focusedCol: number | null
+  /** First cards row of a category — target for header aria-controls. */
+  categoryPanelId?: string
   renderCard?: (style: Style) => ReactNode
 }
 
-function cardsRowPropsEqual(prev: CardsRowProps, next: CardsRowProps): boolean {
-  if (
-    prev.columns !== next.columns ||
-    prev.compactMode !== next.compactMode ||
-    prev.windowed !== next.windowed ||
-    prev.renderCard !== next.renderCard ||
-    prev.rowIndex !== next.rowIndex ||
-    prev.styles.length !== next.styles.length
-  ) {
-    return false
-  }
-  // Prefer reference equality; fall back to row-key identity for rebuilt slices.
-  if (prev.styles === next.styles) return true
-  for (let i = 0; i < prev.styles.length; i += 1) {
-    if (prev.styles[i] !== next.styles[i]) return false
+function stylesPropsEqual(a: readonly Style[], b: readonly Style[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false
   }
   return true
 }
 
-/** Column gap only; vertical gap is padding-bottom on the virtual row. */
+function cardsRowPropsEqual(prev: CardsRowProps, next: CardsRowProps): boolean {
+  return (
+    prev.columns === next.columns &&
+    prev.windowed === next.windowed &&
+    prev.viewMode === next.viewMode &&
+    prev.galleryCardHeightPx === next.galleryCardHeightPx &&
+    prev.rowIndex === next.rowIndex &&
+    prev.focusedCol === next.focusedCol &&
+    prev.categoryPanelId === next.categoryPanelId &&
+    prev.renderCard === next.renderCard &&
+    stylesPropsEqual(prev.styles, next.styles)
+  )
+}
+
+/** Profile (P toggle N=5000): CardsRow 40 stack hits — memo skips identical viewport rows. */
 export const CardsRow = memo(function CardsRow({
   styles,
   columns,
-  compactMode,
   windowed,
+  viewMode = 'grid',
+  galleryCardHeightPx,
   rowIndex,
+  focusedCol,
+  categoryPanelId,
   renderCard,
 }: CardsRowProps) {
-  // Per-row focus subscription — sibling rows bail out on col/row moves (toggle P50).
-  const focusedCol = useFocusedColForRow(rowIndex)
+  // Column gap only — vertical ROW_GAP lives on the virtual row padding-bottom.
+  const colGap = gridGapPx()
+  // Stable style object across parent scroll re-renders with unchanged columns.
+  const gridStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+      columnGap: `${colGap}px`,
+    }),
+    [columns, colGap],
+  )
   return (
     <div
+      id={categoryPanelId}
       role="presentation"
-      className={`grid content-start ${gridGapClass(compactMode, windowed)}`}
-      style={{
-        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-      }}
+      className="grid content-start"
+      style={gridStyle}
     >
-      {styles.map((style, col) => {
-        const tab = focusedCol === col ? 0 : -1
-        if (renderCard) {
-          return (
-            <div
-              key={styleRowKey(style)}
-              role="gridcell"
-              data-cell-row={rowIndex}
-              data-cell-col={col}
-              tabIndex={tab}
-              className={`rounded-lg ${GRID_FOCUS_RING_CLASS}`}
-            >
-              {renderCard(style)}
-            </div>
-          )
-        }
-        return (
+      {styles.map((style, col) =>
+        renderCard ? (
+          <div key={styleRowKey(style)} role="gridcell">
+            {renderCard(style)}
+          </div>
+        ) : (
           <StyleCard
             key={styleRowKey(style)}
             style={style}
             windowed={windowed}
+            viewMode={viewMode}
+            galleryCardHeightPx={galleryCardHeightPx}
             cellRow={rowIndex}
             cellCol={col}
-            tabIndex={tab}
+            tabIndex={focusedCol === col ? 0 : -1}
           />
-        )
-      })}
+        ),
+      )}
     </div>
   )
 }, cardsRowPropsEqual)

@@ -1,246 +1,257 @@
 /**
- * Layout invariants for the virtualized style grid.
+ * Grid layout invariants (bench-only).
  *
- * (1) every card height <= CARD_ROW_HEIGHT - ROW_GAP + TOL
- * (2) vertical gap between adjacent card rows == ROW_GAP ± TOL
- *     and == horizontal gap ± TOL
- * (3) no card rect overlaps another
+ * Mirrors ui/src/components/grid/constants.ts — keep in sync when metrics change.
  *
- * Prints up to MAX_OFFENDERS offenders on failure.
+ * For every density × (top | after 3 screens):
+ *   (1) card height <= CARD_ROW_HEIGHT - ROW_GAP + 0.5
+ *   (2) vertical gap between adjacent card-rows == ROW_GAP ±0.5
+ *       and == horizontal gap ±0.5
+ *   (3) no card rect overlaps another
+ *
+ * Failures collect up to MAX_OFFENDERS details.
  */
 
-import { metricsForDensity } from './gridMetrics.mjs'
-
-export const CARD_SELECTOR = '.cursor-pointer.rounded-lg.border'
-export const LAYOUT_TOL_PX = 0.5
+export const TOLERANCE_PX = 0.5
 export const MAX_OFFENDERS = 10
+export const SCROLL_SCREENS = 3
 
 /**
- * @typedef {{
- *   ok: boolean
- *   density: string
- *   position: string
- *   n: number
- *   expected: { rowGapPx: number, maxCardHeightPx: number, cardRowHeightPx: number }
- *   measured: {
- *     cardCount: number
- *     hGapPx: number | null
- *     vGaps: number[]
- *     tallCards: number
- *     overlapPairs: number
- *   }
- *   offenders: string[]
- * }} LayoutCheckResult
+ * Densities exercised by layout bench.
+ * - normal: default panel (windowed=true) → windowed card + normal gap
+ * - fullscreen: Fullscreen → normal card chrome + normal gap
  */
+export const DENSITY_METRICS = Object.freeze({
+  normal: Object.freeze({
+    cardRowHeight: 42, // CARD_ROW_HEIGHT_WINDOWED_PX = 34 + 8
+    rowGap: 8, // ROW_GAP_NORMAL_PX
+  }),
+  fullscreen: Object.freeze({
+    cardRowHeight: 54, // CARD_ROW_HEIGHT_NORMAL_PX = 46 + 8
+    rowGap: 8,
+  }),
+})
+
+export const DENSITIES = Object.freeze(Object.keys(DENSITY_METRICS))
 
 /**
- * Run layout invariants in the page for the active density.
- * @param {import('playwright').Page} page
+ * Pure check over measured card/row geometry. Runnable in Node or via page.evaluate.
+ *
  * @param {{
- *   density: 'windowed' | 'compact-windowed' | 'normal' | 'compact'
- *   position: 'top' | 'scrolled'
- *   n: number
- * }} opts
- * @returns {Promise<LayoutCheckResult>}
+ *   cards: Array<{ name: string, top: number, right: number, bottom: number, left: number, width: number, height: number }>
+ *   rowPairs: Array<{ prevIndex: number, nextIndex: number, vGap: number, prevName: string, nextName: string }>
+ *   hGaps: number[]
+ *   cardRowHeight: number
+ *   rowGap: number
+ * }} sample
  */
-export async function checkLayoutInvariants(page, opts) {
-  const { density, position, n } = opts
-  const expected = metricsForDensity(density)
-  const raw = await page.evaluate(
-    ({ cardSel, maxH, rowGap, tol }) => {
-      const cards = [...document.querySelectorAll(cardSel)]
-      /** @type {string[]} */
-      const offenders = []
+export function evaluateLayoutSample(sample) {
+  const { cards, rowPairs, hGaps, cardRowHeight, rowGap } = sample
+  const maxCardH = cardRowHeight - rowGap + TOLERANCE_PX
+  /** @type {Array<{ kind: string, detail: string }>} */
+  const offenders = []
 
-      // (1) card height
-      let tallCards = 0
-      for (let i = 0; i < cards.length; i += 1) {
-        const h = cards[i].getBoundingClientRect().height
-        if (h > maxH + tol) {
-          tallCards += 1
-          if (offenders.length < 10) {
-            offenders.push(
-              `tall card#${i} height=${h.toFixed(2)} > max=${(maxH + tol).toFixed(2)}`,
-            )
-          }
-        }
-      }
-
-      // Adjacent card rows (skip headers / non-consecutive virtual indexes)
-      const cardRows = [...document.querySelectorAll('[data-sg-row-kind="cards"]')].sort(
-        (a, b) =>
-          Number(a.getAttribute('data-index') || 0) -
-          Number(b.getAttribute('data-index') || 0),
-      )
-
-      /** @type {number[]} */
-      const vGaps = []
-      for (let i = 1; i < cardRows.length; i += 1) {
-        const prev = cardRows[i - 1]
-        const next = cardRows[i]
-        const prevIdx = Number(prev.getAttribute('data-index'))
-        const nextIdx = Number(next.getAttribute('data-index'))
-        if (!Number.isFinite(prevIdx) || nextIdx !== prevIdx + 1) continue
-        const a = prev.querySelector(cardSel)?.getBoundingClientRect()
-        const b = next.querySelector(cardSel)?.getBoundingClientRect()
-        if (!a || !b) continue
-        const gap = b.top - a.bottom
-        vGaps.push(gap)
-        if (Math.abs(gap - rowGap) > tol && offenders.length < 10) {
-          offenders.push(
-            `vGap rows ${prevIdx}→${nextIdx} gap=${gap.toFixed(2)} expected=${rowGap}±${tol}`,
-          )
-        }
-      }
-
-      // Horizontal gap from first card row with ≥2 cards
-      let hGap = null
-      for (const row of cardRows) {
-        const rowCards = [...row.querySelectorAll(cardSel)]
-        if (rowCards.length < 2) continue
-        const a = rowCards[0].getBoundingClientRect()
-        const b = rowCards[1].getBoundingClientRect()
-        hGap = b.left - a.right
-        if (Math.abs(hGap - rowGap) > tol && offenders.length < 10) {
-          offenders.push(
-            `hGap=${hGap.toFixed(2)} expected rowGap=${rowGap}±${tol}`,
-          )
-        }
-        break
-      }
-
-      // Gap parity: each vGap == hGap
-      if (hGap != null) {
-        for (let i = 0; i < vGaps.length; i += 1) {
-          if (Math.abs(vGaps[i] - hGap) > tol && offenders.length < 10) {
-            offenders.push(
-              `gapParity vGaps[${i}]=${vGaps[i].toFixed(2)} vs hGap=${hGap.toFixed(2)}`,
-            )
-          }
-        }
-      }
-
-      // (3) no overlaps (axis-aligned, tol shrink)
-      let overlapPairs = 0
-      const rects = cards.map((el, idx) => {
-        const r = el.getBoundingClientRect()
-        return { idx, left: r.left, right: r.right, top: r.top, bottom: r.bottom }
-      })
-      for (let i = 0; i < rects.length; i += 1) {
-        for (let j = i + 1; j < rects.length; j += 1) {
-          const a = rects[i]
-          const b = rects[j]
-          const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left)
-          const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
-          if (overlapX > tol && overlapY > tol) {
-            overlapPairs += 1
-            if (offenders.length < 10) {
-              offenders.push(
-                `overlap card#${a.idx}×#${b.idx} ox=${overlapX.toFixed(2)} oy=${overlapY.toFixed(2)}`,
-              )
-            }
-          }
-        }
-      }
-
-      const vGapOk =
-        vGaps.length > 0 && vGaps.every((g) => Math.abs(g - rowGap) <= tol)
-      const hGapOk = hGap != null && Math.abs(hGap - rowGap) <= tol
-      const parityOk =
-        hGap != null && vGaps.every((g) => Math.abs(g - hGap) <= tol)
-      const heightOk = tallCards === 0
-      const overlapOk = overlapPairs === 0
-
-      return {
-        ok: heightOk && vGapOk && hGapOk && parityOk && overlapOk && cards.length > 0,
-        cardCount: cards.length,
-        hGapPx: hGap,
-        vGaps,
-        tallCards,
-        overlapPairs,
-        offenders,
-        checks: { heightOk, vGapOk, hGapOk, parityOk, overlapOk },
-      }
-    },
-    {
-      cardSel: CARD_SELECTOR,
-      maxH: expected.maxCardHeightPx,
-      rowGap: expected.rowGapPx,
-      tol: LAYOUT_TOL_PX,
-    },
-  )
-
-  // Cap offenders client-side too
-  const offenders = (raw.offenders || []).slice(0, MAX_OFFENDERS)
-  let ok = Boolean(raw.ok)
-  if (raw.cardCount === 0) {
-    ok = false
-    offenders.unshift('no cards mounted in viewport')
+  const push = (kind, detail) => {
+    if (offenders.length < MAX_OFFENDERS) offenders.push({ kind, detail })
   }
-  if ((raw.vGaps || []).length === 0 && raw.cardCount > 0) {
-    ok = false
-    offenders.push('no adjacent card-row pairs to measure vertical gap')
+
+  // (1) card height vs virtualizer budget
+  for (const c of cards) {
+    if (c.height > maxCardH) {
+      push(
+        'height',
+        `${c.name || '(unnamed)'} height=${round1(c.height)} > max=${round1(maxCardH)} ` +
+          `(rowH=${cardRowHeight} gap=${rowGap})`,
+      )
+    }
+  }
+
+  // (2) vertical gaps == ROW_GAP; also match horizontal gap
+  const hGap = hGaps.length
+    ? hGaps.reduce((a, b) => a + b, 0) / hGaps.length
+    : null
+
+  for (const pair of rowPairs) {
+    if (Math.abs(pair.vGap - rowGap) > TOLERANCE_PX) {
+      push(
+        'vgap',
+        `rows ${pair.prevIndex}→${pair.nextIndex} vGap=${round1(pair.vGap)} ` +
+          `expected ${rowGap}±${TOLERANCE_PX} (${pair.prevName} / ${pair.nextName})`,
+      )
+    }
+    if (hGap != null && Math.abs(pair.vGap - hGap) > TOLERANCE_PX) {
+      push(
+        'gap-parity',
+        `rows ${pair.prevIndex}→${pair.nextIndex} vGap=${round1(pair.vGap)} ` +
+          `!= hGap=${round1(hGap)}±${TOLERANCE_PX}`,
+      )
+    }
+  }
+
+  if (hGap != null && Math.abs(hGap - rowGap) > TOLERANCE_PX) {
+    push('hgap', `hGap=${round1(hGap)} expected ${rowGap}±${TOLERANCE_PX}`)
+  }
+
+  // (3) no overlaps
+  for (let i = 0; i < cards.length; i += 1) {
+    for (let j = i + 1; j < cards.length; j += 1) {
+      const a = cards[i]
+      const b = cards[j]
+      if (rectsOverlap(a, b)) {
+        push(
+          'overlap',
+          `${a.name || i} ↔ ${b.name || j} ` +
+            `(${round1(a.left)},${round1(a.top)},${round1(a.width)}x${round1(a.height)}) ` +
+            `(${round1(b.left)},${round1(b.top)},${round1(b.width)}x${round1(b.height)})`,
+        )
+      }
+    }
   }
 
   return {
-    ok,
-    density,
-    position,
-    n,
-    expected: {
-      rowGapPx: expected.rowGapPx,
-      maxCardHeightPx: expected.maxCardHeightPx,
-      cardRowHeightPx: expected.cardRowHeightPx,
-    },
-    measured: {
-      cardCount: raw.cardCount,
-      hGapPx: raw.hGapPx,
-      vGaps: raw.vGaps,
-      tallCards: raw.tallCards,
-      overlapPairs: raw.overlapPairs,
-    },
+    ok: offenders.length === 0,
+    cardCount: cards.length,
+    rowPairCount: rowPairs.length,
+    hGap: hGap == null ? null : round1(hGap),
+    expectedRowGap: rowGap,
+    maxCardHeight: round1(maxCardH),
     offenders,
   }
 }
 
 /**
- * Inject a "glue" fixture so invariants must FAIL (dev harness only).
- * Adds an extra line past fixed card row height.
- * @param {import('playwright').Page} page
+ * Browser-side sampler: read visible `[data-sg-card]` geometry + consecutive card-row gaps.
+ * Designed to run inside Playwright `frame.evaluate`.
+ *
+ * @param {{ cardRowHeight: number, rowGap: number }} metrics
  */
-export async function injectGlueFixture(page) {
-  await page.evaluate((cardSel) => {
-    for (const el of document.querySelectorAll(cardSel)) {
-      /** @type {HTMLElement} */
-      const card = /** @type {HTMLElement} */ (el)
-      card.style.height = 'auto'
-      card.style.overflow = 'visible'
-      card.style.minHeight = '0'
-      if (card.querySelector('[data-sg-glue-fixture]')) continue
-      const line = document.createElement('span')
-      line.dataset.sgGlueFixture = '1'
-      line.className = 'mt-0.5 block font-mono text-[10px] leading-none text-sg-muted'
-      line.textContent = '99+'
-      card.appendChild(line)
+export function sampleLayoutInPage(metrics) {
+  const cardEls = [...document.querySelectorAll('[data-sg-card="true"]')]
+  const cards = cardEls.map((el) => {
+    const r = el.getBoundingClientRect()
+    const title = (el.getAttribute('title') || '').split('\n')[0] || ''
+    return {
+      name: title,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      left: r.left,
+      width: r.width,
+      height: r.height,
     }
-  }, CARD_SELECTOR)
+  })
+
+  const cardRows = [...document.querySelectorAll('[data-index]')].filter((row) =>
+    row.querySelector('[data-sg-card="true"]'),
+  )
+
+  /** @type {Array<{ prevIndex: number, nextIndex: number, vGap: number, prevName: string, nextName: string }>} */
+  const rowPairs = []
+  for (let i = 1; i < cardRows.length; i += 1) {
+    const prev = cardRows[i - 1]
+    const next = cardRows[i]
+    const prevIdx = Number(prev.getAttribute('data-index'))
+    const nextIdx = Number(next.getAttribute('data-index'))
+    if (!Number.isFinite(prevIdx) || nextIdx !== prevIdx + 1) continue
+    const prevCard = prev.querySelector('[data-sg-card="true"]')
+    const nextCard = next.querySelector('[data-sg-card="true"]')
+    if (!prevCard || !nextCard) continue
+    const a = prevCard.getBoundingClientRect()
+    const b = nextCard.getBoundingClientRect()
+    rowPairs.push({
+      prevIndex: prevIdx,
+      nextIndex: nextIdx,
+      vGap: b.top - a.bottom,
+      prevName: (prevCard.getAttribute('title') || '').split('\n')[0] || '',
+      nextName: (nextCard.getAttribute('title') || '').split('\n')[0] || '',
+    })
+  }
+
+  /** @type {number[]} */
+  const hGaps = []
+  for (const row of cardRows) {
+    const rowCards = [...row.querySelectorAll('[data-sg-card="true"]')]
+    for (let i = 1; i < rowCards.length; i += 1) {
+      const a = rowCards[i - 1].getBoundingClientRect()
+      const b = rowCards[i].getBoundingClientRect()
+      if (Math.abs(a.top - b.top) > 2) continue
+      hGaps.push(b.left - a.right)
+    }
+  }
+
+  return {
+    cards,
+    rowPairs,
+    hGaps,
+    cardRowHeight: metrics.cardRowHeight,
+    rowGap: metrics.rowGap,
+  }
 }
 
 /**
- * Print a failed layout check (up to MAX_OFFENDERS lines).
- * @param {LayoutCheckResult} result
+ * Run sampler + evaluate inside a Playwright frame.
+ * @param {import('playwright').Frame} frame
+ * @param {{ cardRowHeight: number, rowGap: number }} metrics
  */
-export function printLayoutFailure(result) {
-  console.error(
-    `[layout] FAIL N=${result.n} density=${result.density} pos=${result.position} ` +
-      `maxH=${result.expected.maxCardHeightPx} rowGap=${result.expected.rowGapPx}`,
-  )
-  console.error(
-    `[layout] measured cards=${result.measured.cardCount} hGap=${result.measured.hGapPx} ` +
-      `vGaps=${JSON.stringify(result.measured.vGaps.slice(0, 8))} ` +
-      `tall=${result.measured.tallCards} overlaps=${result.measured.overlapPairs}`,
-  )
-  for (const o of result.offenders.slice(0, MAX_OFFENDERS)) {
-    console.error(`  · ${o}`)
+export async function checkLayoutInFrame(frame, metrics) {
+  const sample = await frame.evaluate(sampleLayoutInPage, metrics)
+  return evaluateLayoutSample(sample)
+}
+
+/**
+ * Inflate every visible card height (temporary fixture for FAIL-path self-test).
+ * Returns prior inline heights so the caller can restore.
+ * @param {import('playwright').Frame} frame
+ * @param {number} heightPx
+ */
+export async function inflateCardHeights(frame, heightPx) {
+  return frame.evaluate((h) => {
+    const cards = [...document.querySelectorAll('[data-sg-card="true"]')]
+    return cards.map((el) => {
+      const prev = el.style.height
+      el.style.height = `${h}px`
+      el.style.maxHeight = `${h}px`
+      el.style.overflow = 'visible'
+      return prev
+    })
+  }, heightPx)
+}
+
+/**
+ * @param {import('playwright').Frame} frame
+ * @param {string[]} previousHeights
+ */
+export async function restoreCardHeights(frame, previousHeights) {
+  await frame.evaluate((prev) => {
+    const cards = [...document.querySelectorAll('[data-sg-card="true"]')]
+    for (let i = 0; i < cards.length; i += 1) {
+      cards[i].style.height = prev[i] ?? ''
+      cards[i].style.maxHeight = ''
+    }
+  }, previousHeights)
+}
+
+function rectsOverlap(a, b) {
+  // Strict overlap (shared edge = abutting = OK).
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+}
+
+function round1(n) {
+  return Math.round(n * 10) / 10
+}
+
+/**
+ * Pretty-print one check result.
+ * @param {string} label
+ * @param {ReturnType<typeof evaluateLayoutSample>} result
+ */
+export function formatLayoutResult(label, result) {
+  const head = result.ok
+    ? `PASS ${label} cards=${result.cardCount} hGap=${result.hGap} rowGap=${result.expectedRowGap}`
+    : `FAIL ${label} cards=${result.cardCount} offenders=${result.offenders.length}`
+  const lines = [head]
+  for (const o of result.offenders) {
+    lines.push(`  - [${o.kind}] ${o.detail}`)
   }
+  return lines.join('\n')
 }

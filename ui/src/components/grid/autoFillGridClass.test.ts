@@ -2,35 +2,25 @@ import { describe, expect, it } from 'vitest'
 import constantsSource from './constants.ts?raw'
 import { autoFillGridClass, minCardWidthPx } from './constants'
 
-const COMBOS: ReadonlyArray<readonly [boolean, boolean]> = [
-  [false, false],
-  [false, true],
-  [true, false],
-  [true, true],
-]
+const WINDOWED: readonly boolean[] = [false, true]
 
 describe('autoFillGridClass', () => {
-  it.each(COMBOS)(
-    'includes minmax for compact=%s windowed=%s matching minCardWidthPx',
-    (compact, windowed) => {
-      const minW = minCardWidthPx(compact, windowed)
-      expect(autoFillGridClass(compact, windowed)).toContain(`minmax(${minW}px,1fr)`)
-    },
-  )
+  it.each(WINDOWED)('minmax matches minCardWidthPx(windowed=%s)', (windowed) => {
+    const result = autoFillGridClass(windowed)
+    const minW = minCardWidthPx(windowed)
+    expect(result).toContain(`minmax(${minW}px,1fr)`)
+  })
 
-  it.each(COMBOS)(
-    'every utility for compact=%s windowed=%s is a literal substring of constants.ts',
-    (compact, windowed) => {
-      const result = autoFillGridClass(compact, windowed)
-      for (const utility of result.split(' ')) {
-        expect(constantsSource).toContain(utility)
-      }
-    },
-  )
+  it.each(WINDOWED)('every utility is a literal substring of constants.ts (windowed=%s)', (windowed) => {
+    const result = autoFillGridClass(windowed)
+    for (const utility of result.split(' ')) {
+      expect(constantsSource).toContain(utility)
+    }
+  })
 
-  it('no combo result contains a template placeholder', () => {
-    for (const [compact, windowed] of COMBOS) {
-      expect(autoFillGridClass(compact, windowed)).not.toContain('${')
+  it('no result contains template residue', () => {
+    for (const windowed of WINDOWED) {
+      expect(autoFillGridClass(windowed)).not.toContain('${')
     }
   })
 })

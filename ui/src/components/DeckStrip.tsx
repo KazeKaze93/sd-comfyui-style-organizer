@@ -11,7 +11,7 @@ import {
   DECK_SEED_LABEL,
   DECK_STRIP_ARIA,
   DECK_STRIP_TITLE,
-} from '../lib/wildcardLabels'
+} from '../lib/deckLabels'
 import { useStylesStore } from '../store/stylesStore'
 import { DeckIcon } from './DeckIcon'
 

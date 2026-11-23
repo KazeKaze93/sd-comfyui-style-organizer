@@ -1,34 +1,8 @@
 import type { ThemeMode } from './lib/themeMode'
 
-/** Messages sent from ComfyUI host extension (web/js/style_grid.js) to the React iframe. */
-export type HostMessage =
-  | { type: 'SG_CLEAR_SELECTION' }
-  | { type: 'SG_INIT';           styles: Style[] }
-  | { type: 'SG_TOAST'; message: string; variant: 'success' | 'error' | 'info' }
-  | { type: 'SG_STYLE_APPLIED'; style: Style }
-  | { type: 'SG_WILDCARDS_ACTIVE'; categories: WildcardRef[] }
-  | { type: 'SG_CLOSE' }
-  | { type: 'SG_THEME'; mode: ThemeMode }
-  | { type: 'SG_DECK_STATE'; seed: number; index: number }
-
-/** Messages sent from the React iframe back to ComfyUI host extension (web/js/style_grid.js). */
-export type FrameMessage =
-  | { type: 'SG_READY' }
-  | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; source_file: string }
-  | { type: 'SG_UNAPPLY';       styleId: string; source_file: string }
-  | { type: 'SG_WILDCARD_CATEGORY'; category: string; kind?: WildcardKind }
-  | { type: 'SG_WILDCARD_SLICE'; category: string; spec: string; kind?: WildcardKind }
-  | { type: 'SG_REMOVE_WILDCARD'; category: string; spec: string; kind?: WildcardKind }
-  /** styleIds are styleRowKey values (`source_file\\0name`). */
-  | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
-  | { type: 'SG_REORDER_WILDCARDS'; categories: WildcardRef[] }
-  | { type: 'SG_CLOSE_REQUEST' }
-  | { type: 'SG_CLEAR_ALL' }
-  | { type: 'SG_SOURCE_CHANGE'; source: string | null }
-  | { type: 'SG_DECK_RESTART' }
-  | { type: 'SG_DECK_NEW' }
-
 // ── Shared types ──────────────────────────────────────────────
+export type Tab = 'txt2img' | 'img2img'
+
 export type WildcardKind = 'sg' | 'sgd'
 export const WILDCARD_KIND_DICE: WildcardKind = 'sg'
 export const WILDCARD_KIND_DECK: WildcardKind = 'sgd'
@@ -41,6 +15,90 @@ export interface WildcardRef {
   kind?: WildcardKind
 }
 
+export type PreviewJobStatus = 'generating' | 'done' | 'error'
+export type BatchStatus = 'running' | 'finished' | 'cancelled'
+
+/** Category batch preview generation, as the host reports it. */
+export interface BatchProgress {
+  category: string
+  source: string
+  status: BatchStatus
+  /** Styles queued for generation (those without a preview). */
+  total: number
+  /** Queued styles that are over (new, skipped or failed). */
+  processed: number
+  newCount: number
+  /** Styles of the category that already had a preview (not queued). */
+  alreadyHad: number
+  /** Styles dropped with Skip. */
+  skipped: number
+  failed: number
+}
+
+/**
+ * Messages sent from the host (Forge host script, or the ComfyUI extension in
+ * web/js/style_grid.js) to the React iframe. One union for both platforms: a
+ * type a host never sends is inert. See lib/platform.ts.
+ */
+export type HostMessage =
+  | { type: 'SG_CLEAR_SELECTION' }
+  /** `tab` is absent on hosts without tabs (ComfyUI: PLATFORM.hostTabs false). */
+  | { type: 'SG_INIT';           tab?: Tab; styles: Style[] }
+  | { type: 'SG_HOST_TAB';       tab: Tab }
+  | { type: 'SG_STYLES_UPDATE';  styles: Style[] }
+  | { type: 'SG_WILDCARDS_ACTIVE'; categories: WildcardRef[] }
+  | { type: 'SG_TOAST'; message: string; variant: 'success' | 'error' | 'info' }
+  | { type: 'SG_STYLE_APPLIED'; style: Style }
+  | { type: 'SG_THUMB_DONE';     styleId: string; version: number; source_file: string }
+  /** Single preview generation: one message per status, then SG_THUMB_DONE after 'done'. */
+  | { type: 'SG_THUMB_PROGRESS'; status: PreviewJobStatus; styleId: string; source_file: string }
+  /** Category batch: at start, after every style, once at the end (re-sent on SG_READY while running). */
+  | ({ type: 'SG_BATCH_PROGRESS' } & BatchProgress)
+  | { type: 'SG_PROMPT_CHANGED'; prompt: string; neg: string }
+  | { type: 'SG_CLOSE' }
+  | { type: 'SG_THEME'; mode: ThemeMode }
+  /** The host owns the panel frame; this is the resulting state after SG_SET_FULLSCREEN. */
+  | { type: 'SG_FULLSCREEN_STATE'; fullscreen: boolean }
+  /** ComfyUI: the node's hidden deck_seed / deck_index widgets (PLATFORM.deck). */
+  | { type: 'SG_DECK_STATE'; seed: number; index: number }
+
+/** Messages sent from the React iframe back to the host. Senders are gated by lib/platform.ts. */
+export type FrameMessage =
+  | { type: 'SG_READY' }
+  | { type: 'SG_APPLY';         styleId: string; prompt: string; neg: string; source_file: string }
+  | { type: 'SG_UNAPPLY';       styleId: string; source_file?: string }
+  | { type: 'SG_GENERATE_PREVIEW'; styleId: string; source: string }
+  | { type: 'SG_UPLOAD_PREVIEW';   styleId: string; source: string }
+  | { type: 'SG_WILDCARD_CATEGORY'; category: string; kind?: WildcardKind }
+  | { type: 'SG_WILDCARD_SLICE'; category: string; spec: string; kind?: WildcardKind }
+  | { type: 'SG_REMOVE_WILDCARD'; category: string; spec: string; kind?: WildcardKind }
+  | { type: 'SG_GENERATE_CATEGORY_PREVIEWS'; category: string; missingCount: number; source?: string }
+  | { type: 'SG_REORDER_STYLES'; styleIds: string[] }
+  | { type: 'SG_REORDER_WILDCARDS'; categories: WildcardRef[] }
+  | { type: 'SG_CLOSE_REQUEST' }
+  | { type: 'SG_CLEAR_ALL' }
+  | { type: 'SG_SOURCE_CHANGE'; source: string | null }
+  /**
+   * Reload host state and the catalog after a library change. quiet_vanished:
+   * a selected style is gone on purpose (deleted here), so the host strips its
+   * text without the "no longer in the library" toast.
+   */
+  | { type: 'SG_REFRESH'; quiet_vanished?: boolean }
+  /** Ask the host to enter or leave fullscreen. The host answers SG_FULLSCREEN_STATE. */
+  | { type: 'SG_SET_FULLSCREEN'; fullscreen: boolean }
+  /** Stop the running category batch (host: owner tab only). */
+  | { type: 'SG_BATCH_CANCEL' }
+  /** Drop the style the batch is generating and go on with the next one. */
+  | { type: 'SG_BATCH_SKIP' }
+  /**
+   * The iframe renamed a style on the server. The host remaps its references
+   * (selection, applied text) to the new name, then refreshes like SG_REFRESH.
+   */
+  | { type: 'SG_STYLE_RENAMED'; old_name: string; new_name: string; source_file: string }
+  /** ComfyUI deck strip: restart the node's deck / start a new one (PLATFORM.deck). */
+  | { type: 'SG_DECK_RESTART' }
+  | { type: 'SG_DECK_NEW' }
+
 export interface Style {
   name:              string
   prompt:            string
@@ -48,8 +106,11 @@ export interface Style {
   description:       string
   category:          string
   source_file:       string
-  has_thumbnail:     boolean
-  read_only:         boolean
+  read_only?:        boolean
+  /** Backend-supplied override for the card label (e.g. the real CivitAI
+   * title for a LoRA, fetched via /style_grid/lora/fetch_titles). Falls
+   * back to the name-derived display when absent. */
+  display_name?:     string
 }
 
 function bridgeOrigin(): string {
@@ -60,6 +121,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isTab(value: unknown): value is Tab {
+  return value === 'txt2img' || value === 'img2img'
+}
+
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'dark'
 }
@@ -67,6 +132,20 @@ function isThemeMode(value: unknown): value is ThemeMode {
 function isToastVariant(value: unknown): value is 'success' | 'error' | 'info' {
   return value === 'success' || value === 'error' || value === 'info'
 }
+
+function isPreviewJobStatus(value: unknown): value is PreviewJobStatus {
+  return value === 'generating' || value === 'done' || value === 'error'
+}
+
+function isBatchStatus(value: unknown): value is BatchStatus {
+  return value === 'running' || value === 'finished' || value === 'cancelled'
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
+const BATCH_COUNTS = ['total', 'processed', 'newCount', 'alreadyHad', 'skipped', 'failed'] as const
 
 /**
  * Runtime guard for host → iframe HostMessage shapes (SG_*).
@@ -87,6 +166,22 @@ export function parseHostMessage(data: unknown): HostMessage | null {
       return { type, mode: data.mode }
 
     case 'SG_INIT':
+      // A host without tabs (ComfyUI) leaves `tab` out; a present tab must be valid.
+      if (data.tab !== undefined && !isTab(data.tab)) return null
+      if (!Array.isArray(data.styles)) return null
+      return data.tab === undefined
+        ? { type, styles: data.styles as Style[] }
+        : { type, tab: data.tab, styles: data.styles as Style[] }
+
+    case 'SG_DECK_STATE':
+      if (typeof data.seed !== 'number' || typeof data.index !== 'number') return null
+      return { type, seed: data.seed, index: data.index }
+
+    case 'SG_HOST_TAB':
+      if (!isTab(data.tab)) return null
+      return { type, tab: data.tab }
+
+    case 'SG_STYLES_UPDATE':
       if (!Array.isArray(data.styles)) return null
       return { type, styles: data.styles as Style[] }
 
@@ -103,10 +198,50 @@ export function parseHostMessage(data: unknown): HostMessage | null {
       if (!isRecord(data.style)) return null
       return { type, style: data.style as unknown as Style }
 
-    case 'SG_DECK_STATE':
-      if (typeof data.seed !== 'number') return null
-      if (typeof data.index !== 'number') return null
-      return { type, seed: data.seed, index: data.index }
+    case 'SG_THUMB_DONE':
+      if (typeof data.styleId !== 'string' || !data.styleId) return null
+      if (typeof data.version !== 'number') return null
+      if (typeof data.source_file !== 'string') return null
+      return {
+        type,
+        styleId: data.styleId,
+        version: data.version,
+        source_file: data.source_file,
+      }
+
+    case 'SG_THUMB_PROGRESS':
+      if (!isPreviewJobStatus(data.status)) return null
+      if (typeof data.styleId !== 'string' || !data.styleId) return null
+      if (typeof data.source_file !== 'string') return null
+      return { type, status: data.status, styleId: data.styleId, source_file: data.source_file }
+
+    case 'SG_BATCH_PROGRESS': {
+      if (typeof data.category !== 'string' || !data.category) return null
+      if (typeof data.source !== 'string') return null
+      if (!isBatchStatus(data.status)) return null
+      if (!BATCH_COUNTS.every((k) => isCount(data[k]))) return null
+      return {
+        type,
+        category: data.category,
+        source: data.source,
+        status: data.status,
+        total: data.total as number,
+        processed: data.processed as number,
+        newCount: data.newCount as number,
+        alreadyHad: data.alreadyHad as number,
+        skipped: data.skipped as number,
+        failed: data.failed as number,
+      }
+    }
+
+    case 'SG_PROMPT_CHANGED':
+      if (typeof data.prompt !== 'string') return null
+      if (typeof data.neg !== 'string') return null
+      return { type, prompt: data.prompt, neg: data.neg }
+
+    case 'SG_FULLSCREEN_STATE':
+      if (typeof data.fullscreen !== 'boolean') return null
+      return { type, fullscreen: data.fullscreen }
 
     default:
       return null
@@ -120,7 +255,7 @@ export function isTrustedHostEvent(event: MessageEvent): boolean {
   return true
 }
 
-/** Posts one typed bridge message to the ComfyUI host extension (web/js/style_grid.js). */
+/** Posts one typed bridge message to the Forge host window. */
 export function sendToHost(msg: FrameMessage): void {
   window.parent.postMessage(msg, bridgeOrigin())
 }

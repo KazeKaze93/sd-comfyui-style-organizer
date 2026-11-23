@@ -31,13 +31,13 @@ body {
 }
 
 @layer base {
-  /* Dark is the default (no host message / invalid &theme=). */
   :root {
-    --font-sans: "Geist Variable", sans-serif;
+    /* Font tokens on :root so both theme palettes inherit (no unused .theme class).
+       Family name only — Tailwind fontFamily.sans / .heading supply the fallback chain. */
+    --font-sans: "Geist Variable";
     --font-heading: var(--font-sans);
 
     color-scheme: dark;
-
     --sg-bg: 26 26 46;
     --sg-surface: 22 33 62;
     --sg-popover: 15 23 42;
@@ -67,18 +67,30 @@ body {
     --secondary-foreground: rgb(var(--sg-text));
     --muted: rgb(var(--sg-surface));
     --muted-foreground: rgb(var(--sg-muted));
-    --accent: rgb(var(--sg-surface));
-    --accent-foreground: rgb(var(--sg-text));
+    --accent: rgb(var(--sg-accent));
+    --accent-foreground: rgb(var(--sg-accent-text));
     --destructive: rgb(var(--sg-danger));
-    --destructive-foreground: rgb(255 255 255);
+    --destructive-foreground: rgb(var(--sg-danger-text));
     --border: rgb(var(--sg-border));
     --input: rgb(var(--sg-border));
     --ring: rgb(var(--sg-accent));
+    --chart-1: rgb(var(--sg-accent));
+    --chart-2: rgb(var(--sg-muted));
+    --chart-3: rgb(var(--sg-info));
+    --chart-4: rgb(var(--sg-success));
+    --chart-5: rgb(var(--sg-wildcard));
     --radius: 0.625rem;
+    --sidebar: rgb(var(--sg-surface));
+    --sidebar-foreground: rgb(var(--sg-text));
+    --sidebar-primary: rgb(var(--sg-accent));
+    --sidebar-primary-foreground: rgb(255 255 255);
+    --sidebar-accent: rgb(var(--sg-bg));
+    --sidebar-accent-foreground: rgb(var(--sg-text));
+    --sidebar-border: rgb(var(--sg-border));
+    --sidebar-ring: rgb(var(--sg-accent));
   }
   :root[data-sg-theme="light"] {
     color-scheme: light;
-
     --sg-bg: 248 250 252;
     --sg-surface: 255 255 255;
     --sg-popover: 255 255 255;
@@ -102,6 +114,17 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Initial focus of a dialog (ModalShell): the standard accent ring, shown even
+   when the dialog was opened with the mouse, where :focus-visible does not
+   match a programmatic focus. Same geometry as the focus-visible ring
+   utilities: ring-2 ring-sg-accent ring-offset-1 ring-offset-sg-bg. */
+[data-sg-initial-focus="true"]:focus {
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgb(var(--sg-bg)),
+    0 0 0 3px rgb(var(--sg-accent));
 }
 
 /* Unified scrollbar for ALL scrollable elements */

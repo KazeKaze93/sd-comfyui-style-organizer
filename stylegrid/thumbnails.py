@@ -138,6 +138,23 @@ def clear_thumbnail_files(style_name, csv_path=""):
                 pass
 
 
+def move_thumbnail_files(old_name, new_name, csv_path):
+    """Move the (old_name, source) thumbnail to (new_name, source). True when a file moved.
+
+    *csv_path* is required: a thumbnail is keyed by (name, source), never by name
+    alone. A stale thumbnail already stored for the new key is replaced.
+    """
+    if not old_name or not new_name or old_name == new_name or not csv_path:
+        return False
+    old_path = find_thumbnail_path(old_name, csv_path)
+    if not old_path:
+        return False
+    ext = os.path.splitext(old_path)[1]
+    clear_thumbnail_files(new_name, csv_path)
+    os.replace(old_path, get_thumbnail_path(new_name, csv_path, ext=ext))
+    return True
+
+
 def _find_legacy_thumbnail_path(style_name: str):
     """Return path of a name-only legacy thumbnail if present."""
     stem = legacy_thumbnail_stem(style_name)

@@ -1,3 +1,3 @@
 export function MenuDivider() {
-  return <div role="separator" className="border-t border-sg-border my-1" />
+  return <div className="border-t border-sg-border my-1" aria-hidden />
 }

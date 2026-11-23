@@ -1,174 +1,146 @@
-#!/usr/bin/env node
 /**
- * Layout invariant bench (ComfyUI).
+ * Layout invariant bench (dev-only — not in prod bundle).
  *
- * Densities × positions at N=500 (fast) or N=500,5000 (full).
- * Fails closed on height / gap parity / overlap. Prints ≤10 offenders.
+ * Checks every density at N (default 500) × top + after 3 screens:
+ *   (1) card height <= CARD_ROW_HEIGHT - ROW_GAP + 0.5
+ *   (2) v-gap == ROW_GAP ±0.5 and == h-gap ±0.5
+ *   (3) no card overlaps
  *
  * Usage (from ui/):
  *   npm run bench:layout
- *   node bench/layout.mjs --sizes 500,5000
- *   node bench/layout.mjs --glue-fixture          # must FAIL (prove harness)
- *   node bench/layout.mjs --skip-build
+ *   npm run bench:layout -- --sizes 500,5000
+ *   npm run bench:layout -- --prove-fail
+ *   npm run bench:layout -- --dev
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import {
-  BENCH_ROOT,
-  TMP_DIST,
-  buildToTmp,
-  openBenchPage,
-  scrollThreeScreens,
-  setDensity,
-  startStaticServer,
-} from './lib/benchHost.mjs'
-import { LAYOUT_DENSITIES } from './lib/gridMetrics.mjs'
+  applySelected,
+  proveFailPath,
+  runLayoutInvariantsForFrame,
+  selectFirstSource,
+  sleep,
+} from './lib/layoutHarness.mjs'
 import {
-  checkLayoutInvariants,
-  injectGlueFixture,
-  printLayoutFailure,
-} from './lib/layoutInvariants.mjs'
+  openBench,
+  startVite,
+  waitForGridStable,
+  waitForUrl,
+} from './profile/lib.mjs'
 
-const PREVIEW_PORT = 4187
-const OUT_DIR = path.join(BENCH_ROOT, '.tmp', 'layout')
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const RESULTS_DIR = path.join(__dirname, 'results')
 
 function parseArgs(argv) {
-  /** @type {{ sizes: number[], skipBuild: boolean, glueFixture: boolean, densities: string[], positions: string[] }} */
   const out = {
     sizes: [500],
-    skipBuild: false,
-    glueFixture: false,
-    densities: [...LAYOUT_DENSITIES],
-    positions: ['top', 'scrolled'],
+    port: 5176,
+    headed: false,
+    dev: false,
+    proveFail: false,
   }
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
     if (a === '--sizes') {
-      out.sizes = argv[++i]
+      out.sizes = String(argv[++i])
         .split(',')
         .map((s) => Number(s.trim()))
-        .filter((n) => n > 0)
-    } else if (a === '--skip-build') out.skipBuild = true
-    else if (a === '--glue-fixture') out.glueFixture = true
-    else if (a === '--help' || a === '-h') {
-      console.log(
-        'Usage: node bench/layout.mjs [--sizes 500] [--glue-fixture] [--skip-build]',
-      )
-      process.exit(0)
-    }
+        .filter((n) => Number.isInteger(n) && n > 0)
+    } else if (a === '--port') out.port = Number(argv[++i]) || 5176
+    else if (a === '--headed') out.headed = true
+    else if (a === '--dev') out.dev = true
+    else if (a === '--prove-fail') out.proveFail = true
   }
-  if (!out.sizes.length) throw new Error('--sizes empty')
+  if (out.sizes.length === 0) throw new Error('--sizes produced an empty list')
   return out
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  await mkdir(OUT_DIR, { recursive: true })
+  fs.mkdirSync(RESULTS_DIR, { recursive: true })
 
-  if (!args.skipBuild) {
-    console.log('[layout] building →', TMP_DIST)
-    await buildToTmp()
-  }
+  const viteMode = args.dev ? 'dev' : 'preview'
+  console.log(
+    `[layout] sizes=${args.sizes.join(',')} vite=${viteMode} proveFail=${args.proveFail}`,
+  )
+  console.log(
+    '[layout] tip note: StyleCard fixed height on working tree; ' +
+      'expect GREEN on live tip. Use --prove-fail to validate the FAIL path via inflated cards.',
+  )
 
-  const server = await startStaticServer(TMP_DIST, PREVIEW_PORT)
-  const browser = await chromium.launch({ headless: true })
-  /** @type {import('./lib/layoutInvariants.mjs').LayoutCheckResult[]} */
-  const results = []
-  let failed = 0
+  const vite = await startVite(args.port, { mode: viteMode })
+  const browser = await chromium.launch({
+    headless: !args.headed,
+    args: ['--disable-dev-shm-usage', '--disable-gpu'],
+  })
+
+  /** @type {object[]} */
+  const allResults = []
+  let allOk = true
+  let failPathOk = true
 
   try {
-    for (const n of args.sizes) {
-      for (const density of args.densities) {
-        for (const position of args.positions) {
-          const label = `N=${n} ${density} ${position}`
-          process.stdout.write(`[layout] ${label}... `)
-          const { context, page } = await openBenchPage(browser, {
-            baseUrl: server.baseUrl,
-            n,
-            // Avoid source-picker overlays from multi-source name dups.
-            seedSelected: false,
-          })
-          try {
-            await setDensity(page, density)
-            await page.waitForTimeout(150)
-            if (position === 'scrolled') await scrollThreeScreens(page)
-            if (args.glueFixture) {
-              await injectGlueFixture(page)
-              await page.waitForTimeout(50)
-            }
+    const baseUrl = await vite.ready
+    await waitForUrl(`${baseUrl}/bench/host.html`)
+    console.log(`[layout] vite ${vite.mode} ready at ${baseUrl}`)
 
-            const check = await checkLayoutInvariants(page, {
-              density: /** @type {'windowed'|'compact-windowed'|'normal'|'compact'} */ (
-                density
-              ),
-              position: /** @type {'top'|'scrolled'} */ (position),
-              n,
-            })
-            results.push(check)
-            if (check.ok) {
-              console.log(
-                `OK cards=${check.measured.cardCount} hGap=${check.measured.hGapPx} ` +
-                  `vGap≈${check.measured.vGaps[0]?.toFixed?.(1) ?? 'n/a'}`,
-              )
-            } else {
-              failed += 1
-              console.log('FAIL')
-              printLayoutFailure(check)
-            }
-          } finally {
-            await context.close()
-          }
+    for (const n of args.sizes) {
+      const bench = await openBench(browser, baseUrl, n)
+      try {
+        await waitForGridStable(bench.frame, n)
+        await selectFirstSource(bench.frame)
+        await sleep(100)
+        await applySelected(bench.frame, bench.fixture?.selected ?? [])
+        await sleep(100)
+
+        console.log(
+          `[layout] fixture N=${n} ` +
+            `favs=${bench.fixture?.meta?.favoriteCount ?? 0} ` +
+            `selected=${bench.fixture?.meta?.selectedCount ?? 0}`,
+        )
+
+        const run = await runLayoutInvariantsForFrame(bench.frame, { n })
+        allResults.push(...run.results)
+        if (!run.ok) allOk = false
+
+        if (args.proveFail) {
+          const proved = await proveFailPath(bench.frame, { n })
+          if (!proved.ok) failPathOk = false
         }
+      } finally {
+        await bench.close()
       }
     }
   } finally {
     await browser.close()
-    await server.close()
+    await vite.stop()
   }
 
-  const reportPath = path.join(
-    OUT_DIR,
-    args.glueFixture ? 'report-glue-fixture.json' : 'report.json',
-  )
-  await writeFile(
-    reportPath,
-    `${JSON.stringify(
-      {
-        glueFixture: args.glueFixture,
-        failed,
-        total: results.length,
-        results,
-        timestamp: new Date().toISOString(),
-      },
-      null,
-      2,
-    )}\n`,
-    'utf8',
-  )
-  console.log(`[layout] wrote ${reportPath}`)
-
-  if (args.glueFixture) {
-    if (failed === 0) {
-      console.error(
-        '[layout] FAIL PROOF BROKEN: --glue-fixture expected failures but all passed',
-      )
-      process.exit(2)
-    }
-    console.log(
-      `[layout] FAIL proof OK: ${failed}/${results.length} cases failed with glue fixture`,
-    )
-    process.exit(0)
+  const outPath = path.join(RESULTS_DIR, 'layout.json')
+  const doc = {
+    createdAt: new Date().toISOString(),
+    sizes: args.sizes,
+    viteMode,
+    tipAlreadyFixed:
+      'StyleCard fixed height (CARD wave already on working tree)',
+    proveFail: args.proveFail,
+    ok: allOk && failPathOk,
+    layoutOk: allOk,
+    failPathOk: args.proveFail ? failPathOk : null,
+    results: allResults,
   }
+  fs.writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`, 'utf8')
+  console.log(`[layout] wrote ${outPath}`)
+  console.log(`[layout] overall ${doc.ok ? 'PASS' : 'FAIL'} (layoutOk=${allOk}` +
+    (args.proveFail ? `, failPathOk=${failPathOk}` : '') +
+    ')')
 
-  if (failed > 0) {
-    console.error(`[layout] ${failed}/${results.length} cases failed`)
-    process.exit(1)
-  }
-  console.log(`[layout] all ${results.length} cases passed`)
+  if (!doc.ok) process.exitCode = 1
 }
 
 main().catch((err) => {
   console.error('[layout] FAILED', err)
-  process.exit(1)
+  process.exitCode = 1
 })

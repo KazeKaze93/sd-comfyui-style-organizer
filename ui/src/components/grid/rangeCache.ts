@@ -1,6 +1,6 @@
 import type { Range } from '@tanstack/react-virtual'
 
-/** Cached sticky/focus range indexes. `count` must match or the entry is stale. */
+/** Cached sticky/focus range indexes — `count` must match or the entry is stale. */
 export type StickyRangeCache = {
   startIndex: number
   endIndex: number

@@ -65,6 +65,10 @@ fi
 echo "pre-push: pytest (min count enforced)"
 python scripts/run_pytest_min.py
 
+echo "pre-push: lint extension JS (web/js)"
+# Run from the repo root: ESLint ignores files outside its working directory.
+node ui/node_modules/eslint/bin/eslint.js -c ui/eslint.host.config.js web/js
+
 echo "pre-push: UI typecheck + lint + vitest"
 (
   cd ui

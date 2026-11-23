@@ -3,65 +3,64 @@ import {
   sendToHost,
   WILDCARD_KIND_DECK,
   WILDCARD_KIND_DICE,
+  type BatchProgress,
+  type PreviewJobStatus,
   type Style,
+  type Tab,
   type WildcardKind,
   type WildcardRef,
 } from '../bridge'
+import { conflictPairKey } from '../lib/conflictPairs'
 import { wildcardKey } from '../lib/wildcardKey'
-import { type DeckState } from '../lib/deckState'
 import {
   parseCorruptData,
   type CorruptDataInfo,
 } from '../lib/parseCorruptData'
-import { tagKeySet } from '../lib/tagIdentity'
+import { readApiResponse, styleGridPost } from '../lib/styleGridFetch'
+import {
+  BATCH_RESULT_MS,
+  isBatchFinal,
+  PREVIEW_DONE_MS,
+  type PreviewBatch,
+  type PreviewJobState,
+} from '../lib/previewProgress'
 import { isSourceId, sourceLeaf } from '../lib/styleIdentity'
+import { PLATFORM } from '../lib/platform'
+import type { DeckState } from '../lib/deckState'
+import type { ThemeMode } from '../lib/themeMode'
 
-/** Avoid toast spam: categories() runs during render while coverage stays low. */
-let categoryOrderCoverageToastShown = false
+export type { ThemeMode }
 
-/** Memo for categories(); invalidated when styles / activeSource / categoryOrder identity changes. */
-let categoryListCache: {
-  styles: Style[]
-  activeSource: string | null
-  categoryOrder: string[]
-  list: string[]
-} | null = null
+/** Matches the backend's LORA_SOURCE marker (stylegrid/lora_scan.py). LoRA
+ * cards use this as their synthetic source_file so they can be excluded
+ * from normal CSV source/category browsing and routed to their own
+ * sidebar view instead. */
+export const LORA_SOURCE = '__style_grid_lora__'
 
-/** Preset style ref: legacy bare name, or backend-normalized {name, source_file, weight?}. */
-export type PresetStyleEntry = string | { name: string; source_file?: string; weight?: number }
+/** Sidebar special-view id for the LoRA section, parallel to Favorites. */
+export const LORA_VIEW = '🧬 LoRA'
 
-export function presetEntryName(entry: PresetStyleEntry): string | null {
-  if (typeof entry === 'string') return entry || null
-  if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') return null
-  return entry.name || null
+/** How the virtualized grid draws styles: text tiles, or square preview tiles. */
+export type ViewMode = 'grid' | 'gallery'
+
+/** One value per browser, shared by the txt2img and img2img iframes. */
+export const VIEW_MODE_STORAGE_KEY = 'sg_view_mode'
+
+/** Stored view mode; anything missing, unknown or unreadable is 'grid'. Never throws. */
+export function loadViewMode(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'gallery' ? 'gallery' : 'grid'
+  } catch {
+    return 'grid'
+  }
 }
 
-/** Chip/card label: strip leading `Category_` prefix when present. */
-export function styleDisplayName(name: string): string {
-  return name.includes('_') ? name.split('_').slice(1).join(' ') : name
-}
-
-/** Default Save-set name: first two display names, then `+K` for the rest. */
-export function suggestPresetName(styles: Pick<Style, 'name'>[]): string {
-  if (styles.length === 0) return ''
-  const names = styles.map((s) => styleDisplayName(s.name))
-  if (names.length === 1) return names[0]
-  if (names.length === 2) return `${names[0]} + ${names[1]}`
-  return `${names[0]} + ${names[1]} +${names.length - 2}`
-}
-
-export function packBasename(sourceFile: string | undefined | null): string | null {
-  if (!sourceFile) return null
-  const base = sourceFile.replace(/\\/g, '/').split('/').pop() || sourceFile
-  return base.replace(/\.csv$/i, '') || null
-}
-
-export type PresetRecord = {
-  styles: PresetStyleEntry[]
-  created: string
-  wildcards?: WildcardRef[]
-  note?: string
-  last_used?: string
+function saveViewMode(mode: ViewMode): void {
+  try {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
+  } catch {
+    // Storage blocked or full: the choice still applies for this session.
+  }
 }
 
 interface Conflict {
@@ -72,7 +71,8 @@ interface Conflict {
   reason: string
 }
 
-export type ThemeMode = 'light' | 'dark'
+const TOAST_TTL_MS = 3000
+const TOAST_ERROR_TTL_MS = 6000
 
 // Fixed palettes of visually distinct colors — no duplicates. Both palettes
 // share hue order so a category keeps its hue when the theme flips.
@@ -173,20 +173,24 @@ export function styleRowKey(s: Pick<Style, 'name' | 'source_file'>): string {
 const THUMB_VERSION_LS_PREFIX = 'sg_thumb_v_'
 const EMPTY_STYLES: readonly Style[] = []
 
+/** Pending "clear the ✓" timers of single preview jobs, by styleRowKey. */
+const previewDoneTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let previewBatchSeq = 0
+
 function buildSelectedKeySet(styles: Style[]): ReadonlySet<string> {
   return new Set(styles.map((s) => styleRowKey(s)))
 }
 
-/** Category → count of selected rows; rebuilt with selectedKeySet. */
 function buildSelectedCountByCategory(styles: Style[]): ReadonlyMap<string, number> {
   const counts = new Map<string, number>()
   for (const s of styles) {
-    const cat = s.category || 'OTHER'
+    const cat = s.category
     counts.set(cat, (counts.get(cat) ?? 0) + 1)
   }
   return counts
 }
 
+/** selectedKeySet + selectedCountByCategory — always rebuilt together. */
 function selectionDerived(styles: Style[]): {
   selectedKeySet: ReadonlySet<string>
   selectedCountByCategory: ReadonlyMap<string, number>
@@ -195,6 +199,33 @@ function selectionDerived(styles: Style[]): {
     selectedKeySet: buildSelectedKeySet(styles),
     selectedCountByCategory: buildSelectedCountByCategory(styles),
   }
+}
+
+function buildSearchTextByKey(styles: Style[]): ReadonlyMap<string, string> {
+  const out = new Map<string, string>()
+  for (const s of styles) {
+    out.set(styleRowKey(s), buildStyleSearchText(s))
+  }
+  return out
+}
+
+function keySetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const key of b) {
+    if (!a.has(key)) return false
+  }
+  return true
+}
+
+function countMapsEqual(
+  a: ReadonlyMap<string, number>,
+  b: ReadonlyMap<string, number>,
+): boolean {
+  if (a.size !== b.size) return false
+  for (const [cat, n] of b) {
+    if (a.get(cat) !== n) return false
+  }
+  return true
 }
 
 /** Names with 2+ library rows; per-name arrays keep stable refs until `styles` changes. */
@@ -230,16 +261,87 @@ function loadThumbVersionsFromLs(): Record<string, string> {
   return out
 }
 
+/** Preset style ref: legacy bare name, or backend-normalized {name, source_file, weight?}. */
+export type PresetStyleEntry = string | { name: string; source_file?: string; weight?: number }
+
+export function presetEntryName(entry: PresetStyleEntry): string | null {
+  if (typeof entry === 'string') return entry || null
+  if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') return null
+  return entry.name || null
+}
+
+/** Chip/card label: strip leading `Category_` prefix when present. */
+export function styleDisplayName(name: string): string {
+  return name.includes('_') ? name.split('_').slice(1).join(' ') : name
+}
+
+/** Default Save-set name: first two display names, then `+K` for the rest. */
+export function suggestPresetName(styles: Pick<Style, 'name'>[]): string {
+  if (styles.length === 0) return ''
+  const names = styles.map((s) => styleDisplayName(s.name))
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} + ${names[1]}`
+  return `${names[0]} + ${names[1]} +${names.length - 2}`
+}
+
+export function packBasename(sourceFile: string | undefined | null): string | null {
+  if (!sourceFile) return null
+  const base = sourceFile.replace(/\\/g, '/').split('/').pop() || sourceFile
+  return base.replace(/\.csv$/i, '') || null
+}
+
+export type PresetRecord = {
+  styles: PresetStyleEntry[]
+  created: string
+  wildcards?: WildcardRef[]
+  note?: string
+  last_used?: string
+}
+
 type StyleIdentity = Pick<Style, 'name' | 'source_file'>
 
-/** Resolve a preset styles[] entry to a library row (name+source, else unique name). */
+/** New identity and fields of a style after Move / Edit (see renameStyleIdentity). */
+export type RenamedStyleFields = {
+  name: string
+  /** Derived category after the change. */
+  category: string
+  /** CSV category column, only when the change wrote it. */
+  categoryColumn?: string
+} & Partial<Pick<Style, 'prompt' | 'negative_prompt' | 'description'>>
+
+function sameContent(a: Style, b: Style): boolean {
+  return (a.prompt ?? '') === (b.prompt ?? '')
+    && (a.negative_prompt ?? '') === (b.negative_prompt ?? '')
+}
+
+/**
+ * Name-only fallback. A name alone does not identify a style: it resolves only
+ * when every row with that name, across all files, has the same prompt and
+ * negative prompt. Diverging rows mean the reference is ambiguous -> undefined.
+ */
+function resolveByNameIfUnambiguous(
+  name: string,
+  styles: Style[],
+  bySource: (s: Style) => boolean,
+): Style | undefined {
+  const candidates = styles.filter((s) => s.name === name && bySource(s))
+  if (candidates.length === 0) return undefined
+  const first = candidates[0]
+  return candidates.every((c) => sameContent(first, c)) ? first : undefined
+}
+
+/**
+ * Resolve a preset styles[] entry to a library row: exact (source file, name)
+ * first; otherwise by name only when that is unambiguous (see above). Legacy
+ * bare-name entries follow the same name rule. Unresolved -> undefined (Missing).
+ */
 export function resolvePresetStyleEntry(
   entry: PresetStyleEntry,
   styles: Style[],
+  bySource: (s: Style) => boolean = () => true,
 ): Style | undefined {
   if (typeof entry === 'string') {
-    const matches = styles.filter((s) => s.name === entry)
-    return matches.length === 1 ? matches[0] : undefined
+    return entry ? resolveByNameIfUnambiguous(entry, styles, bySource) : undefined
   }
   if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string' || !entry.name) {
     return undefined
@@ -248,130 +350,10 @@ export function resolvePresetStyleEntry(
   const source = typeof entry.source_file === 'string' ? entry.source_file : ''
   if (source) {
     const want = styleRowKey({ name, source_file: source })
-    const hit = styles.find((s) => styleRowKey(s) === want)
+    const hit = styles.find((s) => styleRowKey(s) === want && bySource(s))
     if (hit) return hit
   }
-  const matches = styles.filter((s) => s.name === name)
-  return matches.length === 1 ? matches[0] : undefined
-}
-
-function sameContent(a: Style, b: Style): boolean {
-  return (a.prompt ?? '') === (b.prompt ?? '')
-    && (a.negative_prompt ?? '') === (b.negative_prompt ?? '')
-}
-
-/**
- * Upgrade legacy favorites/recent entries to styleRowKey composites.
- * Composite entries: exact catalog hit or source-id kept as stored; abs/other
- * remapped by name + source leaf. Multi-pack candidates with identical prompt
- * and negative_prompt link to every pack when linkIdenticalToAll, else sit in
- * `identical` (no toast). Diverging content stays ambiguous. Bare names: unique
- * upgrades; 0 -> missing (never assigned to the first pack).
- */
-export function migrateLegacyNameKeys(
-  entries: string[],
-  styles: Style[],
-  options?: { linkIdenticalToAll?: boolean },
-): { keys: string[]; ambiguous: string[]; missing: string[]; identical: string[] } {
-  const keys: string[] = []
-  const ambiguous: string[] = []
-  const missing: string[] = []
-  const identical: string[] = []
-  const seenKeys = new Set<string>()
-  const seenAmbiguous = new Set<string>()
-  const seenMissing = new Set<string>()
-  const seenIdentical = new Set<string>()
-  const catalogKeys = new Set(styles.map((s) => styleRowKey(s)))
-  const linkIdenticalToAll = Boolean(options?.linkIdenticalToAll)
-  const pushKey = (key: string) => {
-    if (!seenKeys.has(key)) {
-      seenKeys.add(key)
-      keys.push(key)
-    }
-  }
-  const resolveMulti = (entry: string, candidates: Style[]) => {
-    const first = candidates[0]
-    const allIdentical = candidates.every((c) => sameContent(first, c))
-    if (allIdentical) {
-      if (linkIdenticalToAll) {
-        for (const c of candidates) pushKey(styleRowKey(c))
-      } else if (!seenIdentical.has(entry)) {
-        seenIdentical.add(entry)
-        identical.push(entry)
-      }
-      return
-    }
-    if (!seenAmbiguous.has(entry)) {
-      seenAmbiguous.add(entry)
-      ambiguous.push(entry)
-    }
-  }
-  for (const entry of entries) {
-    if (entry.includes('\0')) {
-      const sep = entry.indexOf('\0')
-      const sourcePart = entry.slice(0, sep)
-      const name = entry.slice(sep + 1)
-      if (catalogKeys.has(entry) || isSourceId(sourcePart)) {
-        pushKey(entry)
-        continue
-      }
-      const leaf = sourceLeaf(sourcePart)
-      const candidates = styles.filter(
-        (s) => s.name === name && sourceLeaf(s.source_file) === leaf,
-      )
-      if (candidates.length === 1) {
-        pushKey(styleRowKey(candidates[0]))
-      } else if (candidates.length > 1) {
-        resolveMulti(entry, candidates)
-      } else if (!seenMissing.has(entry)) {
-        seenMissing.add(entry)
-        missing.push(entry)
-      }
-      continue
-    }
-    const matches = styles.filter((s) => s.name === entry)
-    if (matches.length === 1) {
-      pushKey(styleRowKey(matches[0]))
-    } else if (matches.length > 1) {
-      resolveMulti(entry, matches)
-    } else if (!seenMissing.has(entry)) {
-      seenMissing.add(entry)
-      missing.push(entry)
-    }
-  }
-  return { keys, ambiguous, missing, identical }
-}
-
-/** Session guard so the ambiguous-legacy toast does not repeat on every SG_INIT. */
-let lastAmbiguousToastSignature: string | null = null
-
-/** Test-only: clear the once-per-session ambiguous toast signature. */
-export function __resetAmbiguousToastForTests(): void {
-  lastAmbiguousToastSignature = null
-}
-
-function readLsStringArray(lsKey: string): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(lsKey) || '[]')
-    return Array.isArray(parsed) ? (parsed as string[]).filter((e) => typeof e === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-/** Persist composite keys plus any still-unresolved bare legacy names. */
-function persistIdentityKeys(lsKey: string, keys: Iterable<string>): void {
-  const keyList = [...keys]
-  const keyNames = new Set(
-    keyList.map((k) => {
-      const i = k.indexOf('\0')
-      return i < 0 ? k : k.slice(i + 1)
-    }),
-  )
-  const unresolved = readLsStringArray(lsKey).filter(
-    (e) => !e.includes('\0') && !keyNames.has(e),
-  )
-  localStorage.setItem(lsKey, JSON.stringify([...keyList, ...unresolved]))
+  return resolveByNameIfUnambiguous(name, styles, bySource)
 }
 
 export type ResolvedPresetMember =
@@ -394,6 +376,35 @@ export function resolvePresetMembers(
   })
 }
 
+/** Safe localStorage JSON array read — never throws on corrupt data. */
+function loadStringArrayFromLs(key: string): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '[]')
+    if (!Array.isArray(raw)) return []
+    return raw.filter((x): x is string => typeof x === 'string')
+  } catch {
+    return []
+  }
+}
+
+/** Session guard so the ambiguous-favorites toast does not repeat every hydrate. */
+let lastAmbiguousToastSignature: string | null = null
+
+/** Test-only: clear the once-per-session ambiguous toast signature. */
+export function __resetAmbiguousToastForTests(): void {
+  lastAmbiguousToastSignature = null
+}
+
+/** First occurrence wins; use only when the active source is "All sources". */
+export function dedupeStylesByNameForAllSources(styles: Style[]): Style[] {
+  const seen = new Set<string>()
+  return styles.filter((s) => {
+    if (seen.has(s.name)) return false
+    seen.add(s.name)
+    return true
+  })
+}
+
 const COMBOS_CONFLICTS_RE = /\b(?:Combos|Conflicts):\s*[^.]*\.?/gi
 
 function stripStyleReferences(description: string): string {
@@ -413,49 +424,30 @@ function buildStyleSearchText(style: Style): string {
   return [nameSearchText(style), cleanDescription].filter(Boolean).join(' ').toLowerCase()
 }
 
-/** Module snapshot so filters can hit precomputed haystacks without a store circular read. */
-let searchTextByKeySnapshot: ReadonlyMap<string, string> = new Map()
-
-function buildSearchTextByKey(styles: Style[]): ReadonlyMap<string, string> {
-  const map = new Map<string, string>()
-  for (const s of styles) {
-    map.set(styleRowKey(s), buildStyleSearchText(s))
-  }
-  searchTextByKeySnapshot = map
-  return map
-}
-
-/** AND-token match against a lowercased haystack (empty query matches all). */
-function matchSearchTokens(haystack: string, rawQuery: string): boolean {
+function tokensMatchHaystack(haystack: string, rawQuery: string): boolean {
   const query = rawQuery.trim().toLowerCase()
   if (!query) return true
   return query.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token))
 }
 
+/** AND-token match against name/description haystack (uses searchTextByKey when present). */
 export function matchesSearch(style: Style, rawQuery: string): boolean {
   const key = styleRowKey(style)
-  const cached = searchTextByKeySnapshot.get(key)
-  const haystack = cached !== undefined ? cached : buildStyleSearchText(style)
-  return matchSearchTokens(haystack, rawQuery)
+  const cached = useStylesStore.getState().searchTextByKey.get(key)
+  return tokensMatchHaystack(cached ?? buildStyleSearchText(style), rawQuery)
 }
 
-/** Same AND-token semantics as matchesSearch; looks up precomputed haystack by styleRowKey. */
+/** Same AND-token semantics as matchesSearch, keyed via searchTextByKey. */
 export function matchesSearchKey(key: string, rawQuery: string): boolean {
-  return matchSearchTokens(searchTextByKeySnapshot.get(key) ?? '', rawQuery)
-}
-
-/** First occurrence wins; use only when the active source is "All sources". */
-export function dedupeStylesByNameForAllSources(styles: Style[]): Style[] {
-  const seen = new Set<string>()
-  return styles.filter((s) => {
-    if (seen.has(s.name)) return false
-    seen.add(s.name)
-    return true
-  })
+  const haystack = useStylesStore.getState().searchTextByKey.get(key) ?? ''
+  return tokensMatchHaystack(haystack, rawQuery)
 }
 
 /** Map persisted or UI source string to an entry in `sources` (exact, else unique leaf). */
-function resolveSourceInList(sources: string[], preferred: string | null): string | null {
+export function resolveSourceInList(
+  sources: string[],
+  preferred: string | null,
+): string | null {
   if (!preferred || sources.length === 0) return null
   if (sources.includes(preferred)) return preferred
   // Source ids that miss exactly must not collapse across packs by basename.
@@ -467,30 +459,33 @@ function resolveSourceInList(sources: string[], preferred: string | null): strin
 
 /**
  * Values of `activeCategory` that are sidebar “special” views (not real CSV categories).
- * Matches Favorites / Recent; use the same checks in grid layout as those.
+ * Matches Favorites; use the same checks in grid layout as those.
  */
-export const FAVORITES_VIEW = '★ Favorites' as const
-export const RECENT_VIEW = '🕑 Recent' as const
-export const RECENT_CAP = 10
-export type ActiveSpecialView = typeof FAVORITES_VIEW | typeof RECENT_VIEW | 'presets'
+export type ActiveSpecialView = '★ Favorites' | 'presets'
 
 /** Central UI state for style filtering, selection, and host-side actions. */
 interface StylesStore {
   toasts: { id: number; message: string; variant: 'success' | 'error' | 'info' }[]
   // Data
   styles: Style[]
+  tab: Tab
   
   // Filters
   search: string
   activeCategory: string | null
   sources: string[]
   activeSource: string | null
+  /**
+   * True once the first styles payload (SG_INIT / SG_STYLES_UPDATE) has been
+   * applied; never reset. Empty states wait for it, so nothing flashes before data.
+   */
+  stylesLoaded: boolean
   
   // Selection
   selectedStyles: Style[]
   /** styleRowKey set for `selectedStyles`; rebuilt in the same set() as selection. */
   selectedKeySet: ReadonlySet<string>
-  /** Category → selected row count; rebuilt in the same set() as selectedKeySet. */
+  /** category → selected count; rebuilt in the same set() as selectedKeySet. */
   selectedCountByCategory: ReadonlyMap<string, number>
   /** styleRowKey → lowercased search haystack; rebuilt only when `styles` change. */
   searchTextByKey: ReadonlyMap<string, string>
@@ -498,46 +493,81 @@ interface StylesStore {
   duplicatesByName: ReadonlyMap<string, readonly Style[]>
   /** Cache-bust versions keyed by styleRowKey; hydrated once from sg_thumb_v_* LS keys. */
   thumbVersions: Readonly<Record<string, string>>
+  /**
+   * Styles that have a generated thumbnail (styleRowKey), from
+   * GET /style_grid/thumbnails/list. LoRA previews are not in it.
+   */
+  thumbKeys: ReadonlySet<string>
+  /** True once the thumbnails list has loaded at least once. */
+  thumbKeysLoaded: boolean
+  /** Reload thumbKeys from the server; on failure keep the previous set. Never throws. */
+  fetchThumbKeys: () => Promise<void>
+  /** Record locally that a style's thumbnail now exists (or is gone). */
+  markThumb: (key: string, present: boolean) => void
   bumpThumbVersion: (key: string, version: string) => void
+  /** Single preview jobs by styleRowKey: 'generating', then 'done' for PREVIEW_DONE_MS. */
+  previewJobs: ReadonlyMap<string, PreviewJobState>
+  /** Latest category batch report; a finished / cancelled one clears after BATCH_RESULT_MS. */
+  previewBatch: PreviewBatch | null
+  /** SG_THUMB_PROGRESS: 'error' drops the job at once (the host shows the error toast). */
+  applyPreviewProgress: (key: string, status: PreviewJobStatus) => void
+  /** SG_BATCH_PROGRESS. */
+  applyBatchProgress: (report: BatchProgress) => void
+  /** ComfyUI deck (SG_DECK_STATE): the node's deck_seed / deck_index; null until the host sends it. */
+  deckState: DeckState | null
+  setDeckState: (state: DeckState) => void
   /** Collapsed category names in the All/Categories views. */
   collapsedCategories: Set<string>
-  compactMode: boolean
   themeMode: ThemeMode
-  /** Favorite style names persisted in localStorage. */
+  viewMode: ViewMode
+  /** Favorite style row keys (styleRowKey) persisted in data/favorites.json. */
   favorites: Set<string>
-  /** Most recently applied style names (max 10). */
-  recentNames: string[]
+  /** True after the first server hydrate (migrate-once + load) finishes. */
+  favoritesHydrated: boolean
   /** Detected conflicts among current selected styles. */
   conflicts: Conflict[]
+  /**
+   * "Keep both" pairs (conflictPairKey). A pair drops out as soon as either
+   * style leaves the selection (detectConflicts); clearing the selection empties it.
+   */
+  dismissedConflictPairs: ReadonlySet<string>
+  dismissConflictPair: (aKey: string, bKey: string) => void
   /** User-defined category order for All Sources view. */
   categoryOrder: string[]
-  /** Saved style presets from backend (`/style_grid/presets/list`). */
+  /** Saved style presets from backend (`GET /style_grid/presets`). */
   presets: Record<string, PresetRecord>
   /**
    * When set, presets.json is corrupt — show a blocking banner and disable
    * preset save/rename/delete/touch until the user restores from `.bak`.
    */
   presetsCorrupt: CorruptDataInfo | null
-  /** Last preset loaded via Apply; informational only (SaveSetDialog prefill). */
+  /** Last preset loaded via Apply; used for Save-set name/note prefill. */
   activePresetName: string | null
   /** Which sources (a preset name, or the literal 'manual') currently
-   * want each selected style present. Keys are styleRowKey composites. */
+   * want each selected style present. Keys are styleRowKey composites.
+   * A style with an empty/absent set has no reason to stay selected once
+   * a preset stops wanting it. */
   styleContributors: Record<string, Set<string>>
-  unapplyPreset: (name: string) => void
-  
+
   // Actions
-  setStyles: (styles: Style[]) => void
+  setStyles: (styles: Style[], tab: Tab) => void
   setSearch: (q: string) => void
   setCategory: (cat: string | null) => void
   setActiveSource: (src: string | null) => void
-  toggleCompact: () => void
   setThemeMode: (mode: ThemeMode) => void
+  /** Switch Grid / Gallery and remember it in localStorage (sg_view_mode). */
+  setViewMode: (mode: ViewMode) => void
   toggleCollapse: (cat: string) => void
-  collapseAll: () => void
-  expandAll: () => void
   selectAllInCategory: (cat: string) => void
   toggleStyle: (style: Style) => void
   setSelectedStyles: (styles: Style[]) => void
+  /**
+   * A style was renamed or re-categorised on the server (Move to category).
+   * Carry the iframe's own references — selection, favorites, preset
+   * contributors, thumbnail version — to the new identity. Nothing is posted:
+   * the server already migrated favorites.json and recent.json.
+   */
+  renameStyleIdentity: (from: StyleIdentity, to: RenamedStyleFields) => void
   clearAll: () => void
   /**
    * Host SG_CLEAR_SELECTION chrome reset: clears selection + key set, conflicts,
@@ -548,14 +578,13 @@ interface StylesStore {
   activeWildcards: WildcardRef[]
   setActiveWildcards: (refs: WildcardRef[]) => void
   removeWildcard: (ref: WildcardRef) => void
-  /** Shuffle deck position reported by the host; null until the host has sent it. */
-  deckState: DeckState | null
-  setDeckState: (state: DeckState) => void
   /** When set, the grid is picking styles for a `{sg|sgd:category:spec}` slice. */
   sliceMode: { category: string; kind: WildcardKind } | null
   /** Full style names selected for the current slice. */
   sliceSelection: string[]
   startSliceMode: (category: string, kind?: WildcardKind) => void
+  /** Switch the open slice between random and shuffle; keeps the category and the picks. */
+  setSliceKind: (kind: WildcardKind) => void
   exitSliceMode: () => void
   toggleSliceSelection: (name: string) => void
   /** Select all currently visible (search/filter-applied) names — caller supplies the list. */
@@ -563,14 +592,15 @@ interface StylesStore {
   clearSliceSelection: () => void
   showToast: (message: string, variant?: 'success' | 'error' | 'info') => void
   detectConflicts: () => void
-  loadCategoryOrder: () => Promise<void>
-  loadThumbnails: () => Promise<void>
   setCategoryOrder: (order: string[]) => void
   toggleFavorite: (style: StyleIdentity) => void
-  clearFavorites: () => void
   isFavorite: (style: StyleIdentity) => boolean
-  addToRecent: (style: StyleIdentity) => void
-  clearRecent: () => void
+  /**
+   * Load favorites from the server. When the server file is absent and the
+   * legacy `sg_v2_favorites` localStorage key has data, push it once (migrate),
+   * then treat the server as source of truth.
+   */
+  hydrateFavorites: () => Promise<void>
   fetchPresets: () => Promise<void>
   savePreset: (
     name: string,
@@ -591,43 +621,15 @@ interface StylesStore {
   ) => Promise<{ ok: true } | { ok: false; error?: string }>
   touchPreset: (name: string) => Promise<void>
   /**
-   * Apply a saved set by merging into the current selection/wildcards.
-   * Host owns prompt injection through SG_APPLY / wildcards.
+   * Merge preset styles/wildcards into the current selection
+   * (SG_APPLY / SG_WILDCARD_*). The host no longer has its own
+   * preset-loading path. The tray's Clear button uses SG_CLEAR_ALL.
    */
   loadPreset: (name: string) => void
-  /** POST /style_grid/style/save then refetch catalog into styles[]. */
-  saveStyle: (payload: {
-    name: string
-    prompt: string
-    negative_prompt: string
-    description: string
-    category: string
-    source?: string | null
-  }) => Promise<
-    | { ok: true; styles: Style[] }
-    | { ok: false; error?: string }
-  >
-  /** Drop one catalog row by (name, source_file); prune styleRowKey favorites/recent/contributors. */
-  removeStyleRow: (style: Pick<Style, 'name' | 'source_file'>) => void
-  
+  unapplyPreset: (name: string) => void
+
   // Derived
   categories: () => string[]
-}
-
-/**
- * Favorites grid pool: styleRowKey Set ∩ current source/search.
- * Same list the Favorites view renders — use for badge counts too.
- */
-export function filterFavoriteStyles(
-  styles: Style[],
-  search: string,
-  activeSource: string | null,
-  favorites: Set<string>,
-): Style[] {
-  const bySource = (s: Style) => !activeSource || s.source_file === activeSource
-  return styles.filter(
-    (s) => favorites.has(styleRowKey(s)) && bySource(s) && matchesSearchKey(styleRowKey(s), search),
-  )
 }
 
 export function selectFilteredStyles(
@@ -636,42 +638,29 @@ export function selectFilteredStyles(
   activeCategory: string | null,
   activeSource: string | null,
   favorites: Set<string>,
-  recentNames: string[],
-  presets: Record<string, PresetRecord>,
 ): Style[] {
   const bySource = (s: Style) => !activeSource || s.source_file === activeSource
 
-  if (activeCategory === FAVORITES_VIEW) {
-    return filterFavoriteStyles(styles, search, activeSource, favorites)
+  if (activeCategory === '★ Favorites') {
+    return styles.filter(
+      (s) => favorites.has(styleRowKey(s)) && bySource(s) && matchesSearchKey(styleRowKey(s), search),
+    )
   }
 
-  if (activeCategory === RECENT_VIEW) {
-    const byKey = new Map(styles.map((s) => [styleRowKey(s), s]))
-    return recentNames
-      .map((key) => byKey.get(key))
-      .filter((s): s is Style => s !== undefined && bySource(s))
-      .filter((s) => matchesSearchKey(styleRowKey(s), search))
+  if (activeCategory === LORA_VIEW) {
+    return styles.filter(
+      (s) => s.source_file === LORA_SOURCE && matchesSearchKey(styleRowKey(s), search),
+    )
   }
 
-  if (activeCategory === 'presets') {
-    const order: Style[] = []
-    const seen = new Set<string>()
-    for (const key of Object.keys(presets).sort()) {
-      for (const entry of presets[key]?.styles ?? []) {
-        const style = resolvePresetStyleEntry(entry, styles)
-        if (!style || !bySource(style)) continue
-        const rowKey = styleRowKey(style)
-        if (seen.has(rowKey)) continue
-        seen.add(rowKey)
-        order.push(style)
-      }
-    }
-    return order.filter((s) => matchesSearchKey(styleRowKey(s), search))
-  }
-
-  let filtered = styles.filter(s => {
-    const matchCat = !activeCategory || (s.category || 'OTHER') === activeCategory
-    return bySource(s) && matchCat && matchesSearchKey(styleRowKey(s), search)
+  let filtered = styles.filter((s) => {
+    const matchCat = !activeCategory || s.category === activeCategory
+    return (
+      s.source_file !== LORA_SOURCE &&
+      bySource(s) &&
+      matchCat &&
+      matchesSearchKey(styleRowKey(s), search)
+    )
   })
 
   if (!activeSource) {
@@ -681,58 +670,11 @@ export function selectFilteredStyles(
   return filtered
 }
 
-/** Tag keys for conflict intersection; mirrors node drop_shared_tags identity, not /conflicts. */
-function conflictTokenSet(str: string): Set<string> {
-  return tagKeySet(str)
-}
-
-function tokenSetsIntersect(a: Set<string>, b: Set<string>): boolean {
-  for (const t of a) {
-    if (b.has(t)) return true
-  }
-  return false
-}
-
-/** Prefer live catalog prompt/neg; fall back to the selection snapshot if missing. */
-function resolveSelectedForConflicts(selected: Style, live: Style[]): Style {
-  const bySource = live.find(
-    s => s.name === selected.name && s.source_file === selected.source_file
-  )
-  if (bySource) return bySource
-  const byName = live.find(s => s.name === selected.name)
-  return byName ?? selected
-}
-
-/** After selection paint — never batch conflicts into the same set() as selection. */
-// Node setTimeout → Timeout; browser rAF → number (tsconfig.test pulls @types/node).
-let conflictsRaf: number | ReturnType<typeof setTimeout> = 0
-function clearConflictsHandle(handle: number | ReturnType<typeof setTimeout>): void {
-  if (typeof handle === 'number' && typeof cancelAnimationFrame === 'function') {
-    cancelAnimationFrame(handle)
-  } else {
-    clearTimeout(handle)
-  }
-}
-function scheduleDetectConflicts(get: () => StylesStore): void {
-  if (conflictsRaf !== 0) clearConflictsHandle(conflictsRaf)
-  const run = () => {
-    conflictsRaf = 0
-    get().detectConflicts()
-  }
-  // Vitest/node has no rAF — setTimeout(0) still keeps conflicts off the sync toggle set().
-  conflictsRaf = typeof requestAnimationFrame === 'function'
-    ? requestAnimationFrame(run)
-    : setTimeout(run, 0)
-}
-function cancelScheduledDetectConflicts(): void {
-  if (conflictsRaf === 0) return
-  clearConflictsHandle(conflictsRaf)
-  conflictsRaf = 0
-}
-
 export const useStylesStore = create<StylesStore>((set, get) => ({
   toasts: [],
   styles: [],
+  stylesLoaded: false,
+  tab: 'txt2img',
   search: '',
   activeCategory: null,
   activeSource: null,
@@ -743,34 +685,44 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   searchTextByKey: new Map(),
   duplicatesByName: new Map(),
   thumbVersions: loadThumbVersionsFromLs(),
+  thumbKeys: new Set<string>(),
+  thumbKeysLoaded: false,
+  fetchThumbKeys: async () => {
+    try {
+      const res = await fetch('/style_grid/thumbnails/list')
+      const result = await readApiResponse(res)
+      // `has_thumbnail` is the server response field (stylegrid/routes.py api_list_thumbnails), not a Style field.
+      if (!result.ok || !Array.isArray(result.body.has_thumbnail)) return
+      const keys = new Set<string>()
+      for (const entry of result.body.has_thumbnail as unknown[]) {
+        if (!entry || typeof entry !== 'object') continue
+        const { name, source_file } = entry as { name?: unknown; source_file?: unknown }
+        if (typeof name !== 'string' || !name) continue
+        keys.add(styleRowKey({ name, source_file: typeof source_file === 'string' ? source_file : '' }))
+      }
+      set({ thumbKeys: keys, thumbKeysLoaded: true })
+    } catch {
+      // Network or parse failure: keep what we had.
+    }
+  },
+  markThumb: (key, present) => {
+    const has = get().thumbKeys.has(key)
+    if (has === present) return
+    const next = new Set(get().thumbKeys)
+    if (present) next.add(key)
+    else next.delete(key)
+    set({ thumbKeys: next })
+  },
   conflicts: [],
-  categoryOrder: (() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem('sg_v2_category_order') || '[]')
-      return Array.isArray(parsed) ? (parsed as string[]) : []
-    } catch {
-      return []
-    }
-  })(),
+  dismissedConflictPairs: new Set<string>(),
+  categoryOrder: JSON.parse(
+    localStorage.getItem('sg_v2_category_order') || '[]'
+  ) as string[],
   collapsedCategories: new Set(),
-  compactMode: false,
   themeMode: 'dark',
-  favorites: (() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
-      return new Set(Array.isArray(parsed) ? (parsed as string[]) : [])
-    } catch {
-      return new Set<string>()
-    }
-  })(),
-  recentNames: (() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem('sg_v2_recent') || '[]')
-      return Array.isArray(parsed) ? (parsed as string[]) : []
-    } catch {
-      return []
-    }
-  })(),
+  viewMode: loadViewMode(),
+  favorites: new Set(),
+  favoritesHydrated: false,
   presets: {},
   presetsCorrupt: null,
   activePresetName: null,
@@ -783,69 +735,73 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }))
   },
 
-  setStyles: (styles) => {
-    const normalized = styles.map((s) => ({
-      ...s,
-      has_thumbnail: Boolean(s.has_thumbnail),
-    }))
+  previewJobs: new Map(),
+  previewBatch: null,
+  deckState: null,
+  setDeckState: (deckState) => set({ deckState }),
+
+  applyPreviewProgress: (key, status) => {
+    const pending = previewDoneTimers.get(key)
+    if (pending !== undefined) {
+      clearTimeout(pending)
+      previewDoneTimers.delete(key)
+    }
+    const next = new Map(get().previewJobs)
+    if (status === 'error') {
+      if (!next.delete(key)) return
+    } else {
+      next.set(key, status)
+    }
+    set({ previewJobs: next })
+    if (status === 'done') {
+      previewDoneTimers.set(
+        key,
+        setTimeout(() => {
+          previewDoneTimers.delete(key)
+          if (get().previewJobs.get(key) !== 'done') return
+          const cleared = new Map(get().previewJobs)
+          cleared.delete(key)
+          set({ previewJobs: cleared })
+        }, PREVIEW_DONE_MS),
+      )
+    }
+  },
+
+  applyBatchProgress: (report) => {
+    const prev = get().previewBatch
+    // A new batch: nothing shown, the shown one is over, another category, or a fresh start.
+    const isNew =
+      !prev ||
+      isBatchFinal(prev) ||
+      prev.category !== report.category ||
+      (report.status === 'running' && report.processed === 0)
+    const seq = isNew ? ++previewBatchSeq : prev.seq
+    set({ previewBatch: { ...report, seq } })
+    if (isBatchFinal(report)) {
+      setTimeout(() => {
+        // Only this batch's result: a newer batch keeps its line.
+        if (get().previewBatch?.seq === seq) set({ previewBatch: null })
+      }, BATCH_RESULT_MS)
+    }
+  },
+
+  setStyles: (styles, tab) => {
     const sources = [...new Set(
-      normalized.map(s => s.source_file).filter(Boolean)
+      styles.filter(s => s.source_file !== LORA_SOURCE).map(s => s.source_file).filter(Boolean)
     )].sort()
 
     // Restore selection: exact match, else unique leaf for legacy abs paths only
-    const lastSource = localStorage.getItem('sg_v2_last_source')
+    const lastSourceKey = `sg_v2_last_source_${tab}`
+    const lastSource =
+      localStorage.getItem(lastSourceKey) ??
+      localStorage.getItem('sg_v2_last_source') // legacy global (pre per-tab)
     const prevActive = get().activeSource
     const activeSource =
       resolveSourceInList(sources, prevActive) ??
       resolveSourceInList(sources, lastSource)
 
-    const prevFavEntries = (() => {
-      try {
-        const parsed = JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')
-        return Array.isArray(parsed) ? (parsed as string[]) : [...get().favorites]
-      } catch {
-        return [...get().favorites]
-      }
-    })()
-    const prevRecentEntries = (() => {
-      try {
-        const parsed = JSON.parse(localStorage.getItem('sg_v2_recent') || '[]')
-        return Array.isArray(parsed) ? (parsed as string[]) : [...get().recentNames]
-      } catch {
-        return [...get().recentNames]
-      }
-    })()
-    const favMig = migrateLegacyNameKeys(prevFavEntries, normalized, {
-      linkIdenticalToAll: true,
-    })
-    const recentMig = migrateLegacyNameKeys(prevRecentEntries, normalized, {
-      linkIdenticalToAll: false,
-    })
-    const nextFavStore = [
-      ...favMig.keys,
-      ...favMig.ambiguous,
-      ...favMig.missing,
-      ...favMig.identical,
-    ]
-    const nextRecentStore = [
-      ...recentMig.keys,
-      ...recentMig.ambiguous,
-      ...recentMig.missing,
-      ...recentMig.identical,
-    ]
-    const prevFavStore = JSON.stringify(prevFavEntries)
-    const prevRecentStore = JSON.stringify(prevRecentEntries)
-    if (JSON.stringify(nextFavStore) !== prevFavStore) {
-      localStorage.setItem('sg_v2_favorites', JSON.stringify(nextFavStore))
-    }
-    if (JSON.stringify(nextRecentStore) !== prevRecentStore) {
-      localStorage.setItem('sg_v2_recent', JSON.stringify(nextRecentStore))
-    }
-    const favorites = new Set(favMig.keys)
-    const recentNames = recentMig.keys
-
     // Copy abs-path thumb version keys onto unique source-id remaps (never delete old LS keys).
-    const catalogKeys = new Set(normalized.map((s) => styleRowKey(s)))
+    const catalogKeys = new Set(styles.map((s) => styleRowKey(s)))
     const prevThumbs = get().thumbVersions
     let nextThumbs: Record<string, string> | null = null
     for (const [key, version] of Object.entries(prevThumbs)) {
@@ -856,7 +812,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       if (isSourceId(sourcePart)) continue
       const name = key.slice(sep + 1)
       const leaf = sourceLeaf(sourcePart)
-      const candidates = normalized.filter(
+      const candidates = styles.filter(
         (s) => s.name === name && sourceLeaf(s.source_file) === leaf,
       )
       if (candidates.length !== 1) continue
@@ -868,32 +824,231 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       localStorage.setItem(`${THUMB_VERSION_LS_PREFIX}${newKey}`, version)
     }
 
-    const patch: Partial<StylesStore> = {
-      styles: normalized,
+    set({
+      styles,
+      stylesLoaded: true,
+      tab,
       sources,
       activeSource,
-      favorites,
-      recentNames,
-      duplicatesByName: buildDuplicatesByName(normalized),
-      searchTextByKey: buildSearchTextByKey(normalized),
+      duplicatesByName: buildDuplicatesByName(styles),
+      searchTextByKey: buildSearchTextByKey(styles),
+      ...(nextThumbs ? { thumbVersions: nextThumbs } : {}),
+    })
+    if (activeSource && activeSource !== lastSource) {
+      localStorage.setItem(lastSourceKey, activeSource)
     }
-    if (nextThumbs) patch.thumbVersions = nextThumbs
-    if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
-      patch.activeCategory = null
+    localStorage.removeItem('sg_v2_last_source')
+    // 'always': notify on every catalog push, including All (null), so Gradio clears
+    // a stale source path. 'user-only' (ComfyUI): a catalog load must not write the
+    // node's active_source; only setActiveSource (a user's pick) does.
+    if (PLATFORM.sourceChange === 'always') {
+      sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
     }
-    if (recentNames.length === 0 && get().activeCategory === RECENT_VIEW) {
-      patch.activeCategory = null
+  },
+  setSearch: (search) => set({ search }),
+  setCategory: (activeCategory) => set({ activeCategory }),
+  setActiveSource: (activeSource) => {
+    const tab = get().tab
+    const lastSourceKey = `sg_v2_last_source_${tab}`
+    if (activeSource) {
+      localStorage.setItem(lastSourceKey, activeSource)
+    } else {
+      localStorage.removeItem(lastSourceKey)
     }
-    set(patch)
+    localStorage.removeItem('sg_v2_last_source')
+    set({ activeSource })
+    sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
+  },
+  setThemeMode: (themeMode) => set({ themeMode }),
+  setViewMode: (viewMode) => {
+    saveViewMode(viewMode)
+    set({ viewMode })
+  },
+  toggleCollapse: (cat) => set((s) => {
+    const next = new Set(s.collapsedCategories)
+    if (next.has(cat)) next.delete(cat)
+    else next.add(cat)
+    return { collapsedCategories: next }
+  }),
+  selectAllInCategory: (cat) => {
+    const { styles, activeSource, selectedStyles } = get()
+    const src = activeSource
+      ? styles.filter(s => s.source_file === activeSource)
+      : styles
+    const catStyles = src.filter(s => s.category === cat)
+    const allSelected = catStyles.every(s =>
+      selectedStyles.some(sel => styleRowKey(sel) === styleRowKey(s))
+    )
 
-    const ambiguousNames = [
-      ...new Set(
-        favMig.ambiguous.map((e) => {
-          const i = e.indexOf('\0')
-          return i < 0 ? e : e.slice(i + 1)
-        }),
-      ),
-    ].sort()
+    if (allSelected) {
+      const removeKeys = new Set(catStyles.map(s => styleRowKey(s)))
+      const nextSelected = selectedStyles.filter(s => !removeKeys.has(styleRowKey(s)))
+      set({
+        selectedStyles: nextSelected,
+        ...selectionDerived(nextSelected),
+      })
+      catStyles.forEach((style) => {
+        sendToHost({
+          type: 'SG_UNAPPLY',
+          styleId: style.name,
+          source_file: style.source_file,
+        })
+      })
+      get().detectConflicts()
+      return
+    }
+
+    const selectedKeys = new Set(selectedStyles.map(s => styleRowKey(s)))
+    const toAdd = catStyles.filter(s => !selectedKeys.has(styleRowKey(s)))
+    if (toAdd.length === 0) return
+
+    const nextSelected = [...selectedStyles, ...toAdd]
+    set({
+      selectedStyles: nextSelected,
+      ...selectionDerived(nextSelected),
+    })
+    toAdd.forEach((style) => {
+      sendToHost({
+        type: 'SG_APPLY',
+        styleId: style.name,
+        prompt: style.prompt,
+        neg: style.negative_prompt,
+        source_file: style.source_file,
+      })
+    })
+    get().detectConflicts()
+  },
+  toggleFavorite: (style) => {
+    const key = styleRowKey(style)
+    const favs = new Set(get().favorites)
+    if (favs.has(key)) favs.delete(key)
+    else favs.add(key)
+    const items = [...favs]
+    set({ favorites: favs })
+    try {
+      void styleGridPost('/style_grid/favorites/save', { items }).catch(() => {})
+    } catch {
+      // fetch unavailable (unit tests / offline)
+    }
+  },
+  isFavorite: (style) => get().favorites.has(styleRowKey(style)),
+  hydrateFavorites: async () => {
+    /**
+     * Only remove migration-source LS keys after the server confirms persistence
+     * (`persisted: true` on GET, or a successful migrate POST). Never wipe
+     * `sg_v2_favorites` while it is still the only copy.
+     */
+    const removeLegacyKey = (lsKey: string, canRemove: boolean) => {
+      if (!canRemove) return
+      try {
+        localStorage.removeItem(lsKey)
+      } catch {
+        // ignore unavailable storage
+      }
+    }
+
+    const parseAmbiguous = (body: { ambiguous?: unknown } | null): string[] => {
+      if (!Array.isArray(body?.ambiguous)) return []
+      return body.ambiguous.filter((x): x is string => typeof x === 'string')
+    }
+
+    const hydrateFavorites = async (): Promise<{
+      items: string[]
+      canRemoveLegacy: boolean
+      ambiguous: string[]
+    }> => {
+      try {
+        const r = await fetch('/style_grid/favorites')
+        if (!r.ok) {
+          return {
+            items: loadStringArrayFromLs('sg_v2_favorites'),
+            canRemoveLegacy: false,
+            ambiguous: [],
+          }
+        }
+        const body = (await r.json().catch(() => null)) as {
+          items?: unknown
+          persisted?: unknown
+          ambiguous?: unknown
+        } | null
+        const serverItems = Array.isArray(body?.items)
+          ? body.items.filter((x): x is string => typeof x === 'string' && x.length > 0)
+          : []
+        const persisted = body?.persisted === true
+        if (persisted) {
+          return {
+            items: serverItems,
+            canRemoveLegacy: true,
+            ambiguous: parseAmbiguous(body),
+          }
+        }
+
+        const legacy = loadStringArrayFromLs('sg_v2_favorites')
+        if (legacy.length === 0) {
+          return {
+            items: [],
+            canRemoveLegacy: true,
+            ambiguous: parseAmbiguous(body),
+          }
+        }
+
+        const mig = await styleGridPost('/style_grid/favorites/migrate', { items: legacy })
+        if (!mig.ok) {
+          return { items: legacy, canRemoveLegacy: false, ambiguous: [] }
+        }
+        const migBody = (await mig.json().catch(() => null)) as {
+          items?: unknown
+          migrated?: unknown
+        } | null
+        let items: string[] | null = null
+        if (Array.isArray(migBody?.items)) {
+          items = migBody.items.filter(
+            (x): x is string => typeof x === 'string' && x.length > 0,
+          )
+        } else if (migBody?.migrated === true) {
+          items = legacy
+        }
+        if (items === null) {
+          return { items: legacy, canRemoveLegacy: false, ambiguous: [] }
+        }
+
+        // Server owns classify; re-GET after migrate for ambiguous names.
+        let ambiguous: string[] = []
+        try {
+          const r2 = await fetch('/style_grid/favorites')
+          if (r2.ok) {
+            const body2 = (await r2.json().catch(() => null)) as {
+              items?: unknown
+              ambiguous?: unknown
+            } | null
+            if (Array.isArray(body2?.items)) {
+              items = body2.items.filter(
+                (x): x is string => typeof x === 'string' && x.length > 0,
+              )
+            }
+            ambiguous = parseAmbiguous(body2)
+          }
+        } catch {
+          // keep migrate items; no ambiguous toast without a GET body
+        }
+        return { items, canRemoveLegacy: true, ambiguous }
+      } catch {
+        return {
+          items: loadStringArrayFromLs('sg_v2_favorites'),
+          canRemoveLegacy: false,
+          ambiguous: [],
+        }
+      }
+    }
+
+    const fav = await hydrateFavorites()
+    removeLegacyKey('sg_v2_favorites', fav.canRemoveLegacy)
+    set({
+      favorites: new Set(fav.items),
+      favoritesHydrated: true,
+    })
+
+    const ambiguousNames = [...new Set(fav.ambiguous)].sort()
     if (ambiguousNames.length > 0) {
       const signature = ambiguousNames.join('\n')
       if (signature !== lastAmbiguousToastSignature) {
@@ -910,133 +1065,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         })
       }
     }
-
-    if (activeSource && activeSource !== lastSource) {
-      localStorage.setItem('sg_v2_last_source', activeSource)
-    }
-    if (activeSource) {
-      sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
-    }
-    // List endpoint returns names only (not name+source); merge flags after catalog lands.
-    void get().loadThumbnails()
-  },
-  setSearch: (search) => set({ search }),
-  setCategory: (activeCategory) => set({ activeCategory }),
-  setActiveSource: (activeSource) => {
-    if (activeSource) {
-      localStorage.setItem('sg_v2_last_source', activeSource)
-    } else {
-      localStorage.removeItem('sg_v2_last_source')
-    }
-    set({ activeSource })
-    sendToHost({ type: 'SG_SOURCE_CHANGE', source: activeSource })
-  },
-  toggleCompact: () => set((s) => ({ compactMode: !s.compactMode })),
-  setThemeMode: (themeMode) => set({ themeMode }),
-  toggleCollapse: (cat) => set((s) => {
-    const next = new Set(s.collapsedCategories)
-    if (next.has(cat)) next.delete(cat)
-    else next.add(cat)
-    return { collapsedCategories: next }
-  }),
-  collapseAll: () => {
-    const { styles, activeSource } = get()
-    const src = activeSource
-      ? styles.filter(s => s.source_file === activeSource)
-      : styles
-    const cats = [...new Set(src.map(s => s.category || 'OTHER'))]
-    set({ collapsedCategories: new Set(cats) })
-  },
-  expandAll: () => set({ collapsedCategories: new Set() }),
-  selectAllInCategory: (cat) => {
-    const {
-      styles, search, activeCategory, activeSource,
-      selectedStyles, favorites, recentNames, presets,
-    } = get()
-    // Same pool as StyleGrid (search/source/special views + All-Sources dedupe).
-    const visible = selectFilteredStyles(
-      styles, search, activeCategory, activeSource, favorites, recentNames, presets,
-    )
-    const catStyles = visible.filter(s => (s.category || 'OTHER') === cat)
-    if (catStyles.length === 0) return
-
-    const allSelected = catStyles.every(s =>
-      selectedStyles.some(sel => styleRowKey(sel) === styleRowKey(s))
-    )
-
-    if (allSelected) {
-      const removeKeys = new Set(catStyles.map(s => styleRowKey(s)))
-      const nextSelected = selectedStyles.filter(s => !removeKeys.has(styleRowKey(s)))
-      set({
-        selectedStyles: nextSelected,
-        ...selectionDerived(nextSelected),
-      })
-      catStyles.forEach((style) => {
-        sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
-      })
-      get().detectConflicts()
-      return
-    }
-
-    const selectedKeys = new Set(selectedStyles.map(s => styleRowKey(s)))
-    const toAdd = catStyles.filter(s => !selectedKeys.has(styleRowKey(s)))
-    if (toAdd.length === 0) return
-
-    const nextSelected = [...selectedStyles, ...toAdd]
-    set({
-      selectedStyles: nextSelected,
-      ...selectionDerived(nextSelected),
-    })
-    toAdd.forEach((style) => {
-      // Bulk select: do not bump client Recent MRU (intentional; see Recent P1/P2).
-      sendToHost({
-        type: 'SG_APPLY',
-        styleId: style.name,
-        prompt: style.prompt,
-        neg: style.negative_prompt,
-        source_file: style.source_file,
-      })
-    })
-    get().detectConflicts()
-  },
-  toggleFavorite: (style) => {
-    const key = styleRowKey(style)
-    const favs = new Set(get().favorites)
-    if (favs.has(key)) favs.delete(key)
-    else favs.add(key)
-    persistIdentityKeys('sg_v2_favorites', favs)
-    // Leave Favorites view when the list is empty (sidebar row hides at count 0).
-    if (favs.size === 0 && get().activeCategory === FAVORITES_VIEW) {
-      set({ favorites: favs, activeCategory: null })
-    } else {
-      set({ favorites: favs })
-    }
-  },
-  clearFavorites: () => {
-    localStorage.setItem('sg_v2_favorites', '[]')
-    if (get().activeCategory === FAVORITES_VIEW) {
-      set({ favorites: new Set(), activeCategory: null })
-    } else {
-      set({ favorites: new Set() })
-    }
-  },
-  isFavorite: (style) => get().favorites.has(styleRowKey(style)),
-  addToRecent: (style) => {
-    const key = styleRowKey(style)
-    const prev = get().recentNames
-    // Already at head: keep the same array ref (Sidebar Recent badge skips no-op).
-    if (prev[0] === key) return
-    const recent = [key, ...prev.filter((n) => n !== key)].slice(0, RECENT_CAP)
-    persistIdentityKeys('sg_v2_recent', recent)
-    set({ recentNames: recent })
-  },
-  clearRecent: () => {
-    localStorage.setItem('sg_v2_recent', '[]')
-    if (get().activeCategory === RECENT_VIEW) {
-      set({ recentNames: [], activeCategory: null })
-    } else {
-      set({ recentNames: [] })
-    }
   },
 
   toggleStyle: (style) => {
@@ -1045,7 +1073,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     const isSelected = selectedStyles.some(s => styleRowKey(s) === key)
 
     if (isSelected) {
-      // Manual remove clears the WHOLE contributor set — explicit click wins.
       const nextContributors = { ...styleContributors }
       delete nextContributors[key]
       const nextSelected = selectedStyles.filter(s => styleRowKey(s) !== key)
@@ -1054,8 +1081,12 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         ...selectionDerived(nextSelected),
         styleContributors: nextContributors,
       })
-      sendToHost({ type: 'SG_UNAPPLY', styleId: style.name, source_file: style.source_file })
-      scheduleDetectConflicts(get)
+      sendToHost({
+        type: 'SG_UNAPPLY',
+        styleId: style.name,
+        source_file: style.source_file,
+      })
+      get().detectConflicts()
     } else {
       const existing = styleContributors[key] ?? new Set<string>()
       const nextSelected = [...selectedStyles, style]
@@ -1067,7 +1098,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
           [key]: new Set([...existing, 'manual']),
         },
       })
-      get().addToRecent(style)
       sendToHost({
         type: 'SG_APPLY',
         styleId: style.name,
@@ -1075,35 +1105,87 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         neg: style.negative_prompt,
         source_file: style.source_file,
       })
-      scheduleDetectConflicts(get)
+      get().detectConflicts()
     }
   },
   setSelectedStyles: (styles: Style[]) => set({
     selectedStyles: styles,
     ...selectionDerived(styles),
   }),
+  renameStyleIdentity: (from, to) => {
+    const oldKey = styleRowKey(from)
+    const newKey = styleRowKey({ name: to.name, source_file: from.source_file })
+    const s = get()
+    const swap = (key: string) => (key === oldKey ? newKey : key)
+
+    const { categoryColumn, ...fields } = to
+    const nextSelected = s.selectedStyles.map((row) =>
+      styleRowKey(row) === oldKey
+        ? {
+            ...row,
+            ...fields,
+            ...(categoryColumn !== undefined ? { category_explicit: categoryColumn } : {}),
+          }
+        : row,
+    )
+    const favorites = s.favorites.has(oldKey)
+      ? new Set([...s.favorites].map(swap))
+      : s.favorites
+    const styleContributors =
+      oldKey !== newKey && s.styleContributors[oldKey]
+        ? (() => {
+            const next = { ...s.styleContributors }
+            next[newKey] = new Set([...(next[newKey] ?? []), ...next[oldKey]])
+            delete next[oldKey]
+            return next
+          })()
+        : s.styleContributors
+    const thumbVersions =
+      oldKey !== newKey && s.thumbVersions[oldKey] !== undefined
+        ? { ...s.thumbVersions, [newKey]: s.thumbVersions[oldKey] }
+        : s.thumbVersions
+    // The server moves the thumbnail file with the rename.
+    const thumbKeys =
+      oldKey !== newKey && s.thumbKeys.has(oldKey)
+        ? new Set([...s.thumbKeys].filter((k) => k !== oldKey).concat(newKey))
+        : s.thumbKeys
+
+    set({
+      selectedStyles: nextSelected,
+      ...selectionDerived(nextSelected),
+      favorites,
+      styleContributors,
+      thumbVersions,
+      thumbKeys,
+    })
+    get().detectConflicts()
+  },
   clearAll: () => {
     const { selectedStyles } = get()
-    cancelScheduledDetectConflicts()
     selectedStyles.forEach(s =>
-      sendToHost({ type: 'SG_UNAPPLY', styleId: s.name, source_file: s.source_file })
+      sendToHost({
+        type: 'SG_UNAPPLY',
+        styleId: s.name,
+        source_file: s.source_file,
+      })
     )
     set({
       selectedStyles: [],
       selectedKeySet: new Set(),
       selectedCountByCategory: new Map(),
       conflicts: [],
+      dismissedConflictPairs: new Set<string>(),
       activePresetName: null,
       styleContributors: {},
     })
   },
   clearSelectionChrome: () => {
-    cancelScheduledDetectConflicts()
     set({
       selectedStyles: [],
       selectedKeySet: new Set(),
       selectedCountByCategory: new Map(),
       conflicts: [],
+      dismissedConflictPairs: new Set<string>(),
       activeWildcards: [],
       activePresetName: null,
       styleContributors: {},
@@ -1111,8 +1193,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   },
   activeWildcards: [],
   setActiveWildcards: (refs) => set({ activeWildcards: refs }),
-  deckState: null,
-  setDeckState: (state) => set({ deckState: state }),
   removeWildcard: (ref) => {
     const targetKey = wildcardKey(ref.category, ref.spec, ref.kind)
     set((s) => ({
@@ -1133,6 +1213,10 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     sliceMode: { category, kind },
     sliceSelection: [],
   }),
+  setSliceKind: (kind) => set((s) => {
+    if (!s.sliceMode || s.sliceMode.kind === kind) return {}
+    return { sliceMode: { ...s.sliceMode, kind } }
+  }),
   exitSliceMode: () => set({ sliceMode: null, sliceSelection: [] }),
   toggleSliceSelection: (name) => set((s) => {
     const has = s.sliceSelection.includes(name)
@@ -1145,8 +1229,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   selectAllSlice: (names) => set({ sliceSelection: [...names] }),
   clearSliceSelection: () => set({ sliceSelection: [] }),
   showToast: (message, variant = 'info') => {
-    const TOAST_TTL_MS = 3000
-    const TOAST_ERROR_TTL_MS = 6000
     const id = Date.now()
     set((s) => ({ toasts: [...s.toasts, { id, message, variant }] }))
     const ttl = variant === 'error' ? TOAST_ERROR_TTL_MS : TOAST_TTL_MS
@@ -1155,104 +1237,68 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })), ttl)
   },
   detectConflicts: () => {
-    // Exact tagKey-set intersection (node drop_shared_tags identity), not substring.
-    // Resolve prompt/neg from the live catalog so edits/refreshes aren't missed.
-    const { selectedStyles, styles } = get()
+    // Set intersection of tag keys; the key function is the platform's
+    // (WebUI: exactTokenSet, ComfyUI: tagKeySet = the node's drop_shared_tags identity).
+    const { selectedStyles } = get()
     const conflicts: Conflict[] = []
 
-    for (let i = 0; i < selectedStyles.length; i++) {
-      for (let j = i + 1; j < selectedStyles.length; j++) {
-        const a = resolveSelectedForConflicts(selectedStyles[i], styles)
-        const b = resolveSelectedForConflicts(selectedStyles[j], styles)
+    const tokenize = PLATFORM.conflictKeySet
 
-        const aPos = conflictTokenSet(a.prompt)
-        const bPos = conflictTokenSet(b.prompt)
-        const aNeg = conflictTokenSet(a.negative_prompt || '')
-        const bNeg = conflictTokenSet(b.negative_prompt || '')
+    const tokenMap = selectedStyles.map((s) => ({
+      name: s.name,
+      key: styleRowKey(s),
+      pos: tokenize(s.prompt || ''),
+      neg: tokenize(s.negative_prompt || ''),
+    }))
 
-        if (tokenSetsIntersect(bPos, aNeg)) {
-          conflicts.push({
-            styleA: a.name, styleB: b.name,
-            styleAKey: styleRowKey(a), styleBKey: styleRowKey(b),
-            reason: `${a.name} negates tags from ${b.name}`
-          })
-        }
-        if (tokenSetsIntersect(aPos, bNeg)) {
-          conflicts.push({
-            styleA: b.name, styleB: a.name,
-            styleAKey: styleRowKey(b), styleBKey: styleRowKey(a),
-            reason: `${b.name} negates tags from ${a.name}`
-          })
-        }
+    for (let i = 0; i < tokenMap.length; i++) {
+      for (let j = i + 1; j < tokenMap.length; j++) {
+        const a = tokenMap[i]
+        const b = tokenMap[j]
+
+        const aKillsB = [...b.pos].some((tag) => a.neg.has(tag))
+        const bKillsA = [...a.pos].some((tag) => b.neg.has(tag))
+
+        if (aKillsB) conflicts.push({
+          styleA: a.name, styleB: b.name,
+          styleAKey: a.key, styleBKey: b.key,
+          reason: `${a.name} negates tags from ${b.name}`
+        })
+        if (bKillsA) conflicts.push({
+          styleA: b.name, styleB: a.name,
+          styleAKey: b.key, styleBKey: a.key,
+          reason: `${b.name} negates tags from ${a.name}`
+        })
       }
     }
-    set({ conflicts })
-  },
-  loadThumbnails: async () => {
-    try {
-      const r = await fetch('/style_grid/thumbnails/list')
-      if (!r.ok) return
-      const data = await r.json().catch(() => null)
-      const raw = data && typeof data === 'object' ? (data as { has_thumbnail?: unknown }).has_thumbnail : null
-      const withThumb = new Set<string>()
-      if (Array.isArray(raw)) {
-        for (const entry of raw) {
-          if (typeof entry === 'string') {
-            // Legacy list payloads were bare names; ignore — cannot disambiguate packs.
-            continue
-          }
-          if (
-            entry &&
-            typeof entry === 'object' &&
-            typeof (entry as { name?: unknown }).name === 'string'
-          ) {
-            const name = (entry as { name: string }).name
-            const source_file =
-              typeof (entry as { source_file?: unknown }).source_file === 'string'
-                ? (entry as { source_file: string }).source_file
-                : ''
-            withThumb.add(styleRowKey({ name, source_file }))
-          }
+    // "Keep both" lasts only while both styles stay selected.
+    const { dismissedConflictPairs } = get()
+    let dismissed = dismissedConflictPairs
+    if (dismissedConflictPairs.size > 0) {
+      const selectedKeys = tokenMap.map((t) => t.key)
+      const stillSelected = new Set<string>()
+      for (let i = 0; i < selectedKeys.length; i++) {
+        for (let j = i + 1; j < selectedKeys.length; j++) {
+          const pairKey = conflictPairKey(selectedKeys[i], selectedKeys[j])
+          if (dismissedConflictPairs.has(pairKey)) stillSelected.add(pairKey)
         }
       }
-      set((s) => {
-        const styles = s.styles.map((st) => ({
-          ...st,
-          has_thumbnail: withThumb.has(styleRowKey(st)),
-        }))
-        return {
-          styles,
-          duplicatesByName: buildDuplicatesByName(styles),
-          searchTextByKey: buildSearchTextByKey(styles),
-        }
-      })
-    } catch {
-      // ignore thumbnail list errors — leave prior flags
+      if (stillSelected.size !== dismissedConflictPairs.size) dismissed = stillSelected
     }
+    set({ conflicts, dismissedConflictPairs: dismissed })
   },
-  loadCategoryOrder: async () => {
-    // Prefer server; keep LS init on empty/error (migration + offline).
-    try {
-      const r = await fetch('/style_grid/category_order')
-      if (!r.ok) return
-      const data = await r.json()
-      if (!Array.isArray(data) || data.length === 0) return
-      const order = data.filter((x): x is string => typeof x === 'string')
-      if (order.length === 0) return
-      localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
-      localStorage.setItem('sg_v2_category_order_source', 'all')
-      set({ categoryOrder: order })
-    } catch {
-      // keep localStorage-initialized order
-    }
-  },
+  dismissConflictPair: (aKey, bKey) => set((s) => {
+    const key = conflictPairKey(aKey, bKey)
+    if (s.dismissedConflictPairs.has(key)) return {}
+    return { dismissedConflictPairs: new Set([...s.dismissedConflictPairs, key]) }
+  }),
   fetchPresets: async () => {
     const parse = (raw: unknown): Record<string, PresetRecord> =>
       raw && typeof raw === 'object' && !Array.isArray(raw)
         ? raw as Record<string, PresetRecord>
         : {}
     try {
-      const r = await fetch('/style_grid/presets/list')
+      const r = await fetch('/style_grid/presets')
       const body = await r.json().catch(() => ({}))
       const corrupt = parseCorruptData(r, body)
       if (corrupt) {
@@ -1270,16 +1316,12 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       return { ok: false as const, error: 'corrupt_data' }
     }
     try {
-      const res = await fetch('/style_grid/presets/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          styles,
-          wildcards: opts?.wildcards ?? [],
-          note: opts?.note ?? '',
-          overwrite: Boolean(opts?.overwrite),
-        }),
+      const res = await styleGridPost('/style_grid/presets/save', {
+        name,
+        styles,
+        wildcards: opts?.wildcards ?? [],
+        note: opts?.note ?? '',
+        overwrite: Boolean(opts?.overwrite),
       })
       const data = await res.json().catch(() => ({}))
       const corrupt = parseCorruptData(res, data)
@@ -1299,11 +1341,21 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         await get().fetchPresets()
       }
       const nextContributors = { ...get().styleContributors }
-      const catalog = get().styles
+      const library = get().styles
       for (const entry of styles) {
-        const resolved = resolvePresetStyleEntry(entry, catalog)
-        if (!resolved) continue
-        const key = styleRowKey(resolved)
+        const resolved = resolvePresetStyleEntry(entry, library)
+        const key = resolved
+          ? styleRowKey(resolved)
+          : (() => {
+              const n = presetEntryName(entry)
+              if (!n) return null
+              const src =
+                typeof entry === 'object' && entry && typeof entry.source_file === 'string'
+                  ? entry.source_file
+                  : ''
+              return src ? styleRowKey({ name: n, source_file: src }) : null
+            })()
+        if (!key) continue
         const existing = nextContributors[key] ?? new Set<string>()
         const next = new Set(existing)
         next.delete('manual')
@@ -1321,11 +1373,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       return { ok: false as const, error: 'corrupt_data' }
     }
     try {
-      const res = await fetch('/style_grid/presets/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      })
+      const res = await styleGridPost('/style_grid/presets/delete', { name })
       const data = await res.json().catch(() => ({}))
       const corrupt = parseCorruptData(res, data)
       if (corrupt) {
@@ -1351,17 +1399,18 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
           nextContributors[rowKey] = next
         }
       }
-      const selectedNow = get().selectedStyles
+      const selected = get().selectedStyles
       toRemove.forEach((rowKey) => {
-        const style = selectedNow.find((s) => styleRowKey(s) === rowKey)
-        if (!style) return
-        sendToHost({
-          type: 'SG_UNAPPLY',
-          styleId: style.name,
-          source_file: style.source_file,
-        })
+        const style = selected.find((s) => styleRowKey(s) === rowKey)
+        if (style) {
+          sendToHost({
+            type: 'SG_UNAPPLY',
+            styleId: style.name,
+            source_file: style.source_file,
+          })
+        }
       })
-      const nextSelected = selectedNow.filter((s) => !toRemove.has(styleRowKey(s)))
+      const nextSelected = selected.filter((s) => !toRemove.has(styleRowKey(s)))
       if (data.presets) {
         set({
           presets: data.presets,
@@ -1392,14 +1441,10 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       return { ok: false as const, error: 'corrupt_data' }
     }
     try {
-      const res = await fetch('/style_grid/presets/rename', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          old_name: oldName,
-          new_name: newName,
-          overwrite: Boolean(opts?.overwrite),
-        }),
+      const res = await styleGridPost('/style_grid/presets/rename', {
+        old_name: oldName,
+        new_name: newName,
+        overwrite: Boolean(opts?.overwrite),
       })
       const data = await res.json().catch(() => ({}))
       const corrupt = parseCorruptData(res, data)
@@ -1425,12 +1470,12 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
         await get().fetchPresets()
       }
       const nextContributors = { ...get().styleContributors }
-      for (const [rowKey, contributors] of Object.entries(nextContributors)) {
+      for (const [styleName, contributors] of Object.entries(nextContributors)) {
         if (!contributors.has(oldName)) continue
         const next = new Set(contributors)
         next.delete(oldName)
         next.add(newName)
-        nextContributors[rowKey] = next
+        nextContributors[styleName] = next
       }
       set({ styleContributors: nextContributors })
       return { ok: true as const }
@@ -1441,11 +1486,7 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
   touchPreset: async (name) => {
     if (get().presetsCorrupt) return
     try {
-      const res = await fetch('/style_grid/presets/touch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      })
+      const res = await styleGridPost('/style_grid/presets/touch', { name })
       const data = await res.json().catch(() => ({}))
       const corrupt = parseCorruptData(res, data)
       if (corrupt) {
@@ -1459,10 +1500,11 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       // ignore
     }
   },
+  // React-orchestrated merge apply (host owns prompt via SG_APPLY / SG_WILDCARD_*).
   loadPreset: (name) => {
     const preset = get().presets[name]
     if (!preset) return
-    const { styles, showToast, addToRecent, detectConflicts } = get()
+    const { styles, showToast, detectConflicts } = get()
 
     const members = resolvePresetMembers(preset.styles ?? [], styles)
     const found = members.filter((m): m is Extract<ResolvedPresetMember, { status: 'found' }> =>
@@ -1480,7 +1522,6 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
       if (selectedKeys.has(rowKey)) continue
       selectedKeys.add(rowKey)
       selected.push(m.style)
-      addToRecent(m.style)
       sendToHost({
         type: 'SG_APPLY',
         styleId: m.style.name,
@@ -1498,7 +1539,9 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     detectConflicts()
 
     const activeWc = [...get().activeWildcards]
-    const activeWcKeys = new Set(activeWc.map((w) => wildcardKey(w.category, w.spec, w.kind)))
+    const activeWcKeys = new Set(
+      activeWc.map((w) => wildcardKey(w.category, w.spec, w.kind)),
+    )
     for (const wc of preset.wildcards ?? []) {
       const cat = String(wc.category || '')
       if (!cat) continue
@@ -1557,18 +1600,21 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     }
 
     toRemove.forEach((rowKey) => {
-      const style = selectedStyles.find((s) => styleRowKey(s) === rowKey)
-        ?? found.find((m) => styleRowKey(m.style) === rowKey)?.style
-      if (!style) return
-      sendToHost({
-        type: 'SG_UNAPPLY',
-        styleId: style.name,
-        source_file: style.source_file,
-      })
+      const style =
+        selectedStyles.find((s) => styleRowKey(s) === rowKey) ||
+        found.find((m) => styleRowKey(m.style) === rowKey)?.style
+      if (style) {
+        sendToHost({
+          type: 'SG_UNAPPLY',
+          styleId: style.name,
+          source_file: style.source_file,
+        })
+      }
     })
     const nextSelected = selectedStyles.filter((s) => !toRemove.has(styleRowKey(s)))
 
-    // Wildcards: remove this preset's own wildcards unconditionally (no cross-preset attribution).
+    // Wildcards: simplified scope — this preset's own wildcards are
+    // removed unconditionally, without cross-preset attribution.
     const presetWcKeys = new Set(
       (preset.wildcards ?? []).map((wc) =>
         wildcardKey(String(wc.category || ''), String(wc.spec || ''), wc.kind),
@@ -1597,204 +1643,63 @@ export const useStylesStore = create<StylesStore>((set, get) => ({
     })
     detectConflicts()
   },
-  saveStyle: async (payload) => {
-    try {
-      const res = await fetch('/style_grid/style/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: payload.name,
-          prompt: payload.prompt,
-          negative_prompt: payload.negative_prompt,
-          description: payload.description,
-          category: payload.category,
-          source: payload.source,
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data.ok === false || data.error) {
-        return {
-          ok: false as const,
-          error: typeof data.error === 'string' ? data.error : undefined,
-        }
-      }
-      const fresh = await fetch('/style_grid/styles').then((r) => r.json())
-      const flat = Object.values(fresh.categories || {}).flat() as Style[]
-      get().setStyles(flat)
-      return { ok: true as const, styles: flat }
-    } catch {
-      return { ok: false as const }
-    }
-  },
-  removeStyleRow: ({ name, source_file }) => {
-    const styles = get().styles.filter(
-      (s) => !(s.name === name && s.source_file === source_file),
-    )
-    const selectedStyles = get().selectedStyles.filter(
-      (s) => !(s.name === name && s.source_file === source_file),
-    )
-    const patch: Partial<StylesStore> = {
-      styles,
-      selectedStyles,
-      ...selectionDerived(selectedStyles),
-      duplicatesByName: buildDuplicatesByName(styles),
-      searchTextByKey: buildSearchTextByKey(styles),
-    }
 
-    const rowKey = styleRowKey({ name, source_file })
-    const favorites = new Set(get().favorites)
-    if (favorites.delete(rowKey)) {
-      persistIdentityKeys('sg_v2_favorites', favorites)
-      patch.favorites = favorites
-      if (favorites.size === 0 && get().activeCategory === FAVORITES_VIEW) {
-        patch.activeCategory = null
-      }
-    }
-
-    const recentNames = get().recentNames.filter((n) => n !== rowKey)
-    if (recentNames.length !== get().recentNames.length) {
-      persistIdentityKeys('sg_v2_recent', recentNames)
-      patch.recentNames = recentNames
-      if (recentNames.length === 0 && get().activeCategory === RECENT_VIEW) {
-        patch.activeCategory = null
-      }
-    }
-
-    const nextContributors = { ...get().styleContributors }
-    if (rowKey in nextContributors) {
-      delete nextContributors[rowKey]
-      patch.styleContributors = nextContributors
-    }
-
-    set(patch)
-  },
   setCategoryOrder: (order: string[]) => {
-    // Only All Sources owns the persisted order. Under a CSV filter, categories()
-    // is alphabetical anyway — skip so we don't poison the global All order.
-    if (get().activeSource) return
     localStorage.setItem('sg_v2_category_order', JSON.stringify(order))
     localStorage.setItem('sg_v2_category_order_source', 'all')
     set({ categoryOrder: order })
-    fetch('/style_grid/category_order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order })
-    }).catch(() => {})
+    // Sync to backend same as old panel
+    styleGridPost('/style_grid/category_order/save', { order }).catch(() => {})
   },
 
   categories: () => {
     const { styles, activeSource, categoryOrder } = get()
-    const hit = categoryListCache
-    if (
-      hit &&
-      hit.styles === styles &&
-      hit.activeSource === activeSource &&
-      hit.categoryOrder === categoryOrder
-    ) {
-      return hit.list
-    }
-
-    const filtered = activeSource
+    const filtered = (activeSource
       ? styles.filter(s => s.source_file === activeSource)
       : styles
+    ).filter(s => s.source_file !== LORA_SOURCE)
     const all = [...new Set(
-      filtered.map(s => s.category || 'OTHER')
+      filtered.map(s => s.category).filter(Boolean)
     )]
 
     // When specific source selected — always alphabetical
     // Saved category order only applies to All Sources view
-    let list: string[]
     if (activeSource) {
-      list = all.sort()
-    } else {
-      // Only use saved order if it was saved for All Sources context
-      // (contains most of the current categories)
-      const allSorted = all.sort()
-      if (categoryOrder.length === 0) {
-        list = allSorted
-      } else {
-        const savedForSource = localStorage.getItem('sg_v2_category_order_source')
-        if (savedForSource !== 'all') {
-          list = allSorted
-        } else {
-          const relevantOrder = categoryOrder.filter(c => all.includes(c))
-          const coverage = relevantOrder.length / all.length
-
-          // If saved order covers less than 80% of current categories — ignore it
-          if (coverage < 0.8) {
-            if (!categoryOrderCoverageToastShown) {
-              categoryOrderCoverageToastShown = true
-              // categories() is called during render — defer store writes
-              queueMicrotask(() => {
-                get().showToast('Category order reset — new categories detected', 'info')
-              })
-            }
-            list = allSorted
-          } else {
-            categoryOrderCoverageToastShown = false
-            const rest = all.filter(c => !relevantOrder.includes(c)).sort()
-            list = [...relevantOrder, ...rest]
-          }
-        }
-      }
+      return all.sort()
     }
 
-    categoryListCache = { styles, activeSource, categoryOrder, list }
-    return list
+    // Only use saved order if it was saved for All Sources context
+    // (contains most of the current categories)
+    const allSorted = all.sort()
+    if (categoryOrder.length === 0) return allSorted
+
+    const savedForSource = localStorage.getItem('sg_v2_category_order_source')
+    if (savedForSource !== 'all' && !activeSource) {
+      return allSorted
+    }
+
+    const relevantOrder = categoryOrder.filter(c => all.includes(c))
+    const coverage = relevantOrder.length / all.length
+
+    // If saved order covers less than 80% of current categories — ignore it
+    if (coverage < 0.8) return allSorted
+
+    const rest = all.filter(c => !relevantOrder.includes(c)).sort()
+    return [...relevantOrder, ...rest]
   }
 }))
 
-/** Keep searchTextByKey (+ module snapshot) aligned when styles change via raw setState. */
-useStylesStore.subscribe((state, prev) => {
-  if (state.styles === prev.styles) return
-  const map = state.searchTextByKey
-  if (map.size === state.styles.length) {
-    let ok = true
-    for (const s of state.styles) {
-      if (!map.has(styleRowKey(s))) {
-        ok = false
-        break
-      }
-    }
-    if (ok) {
-      searchTextByKeySnapshot = map
-      return
-    }
-  }
-  useStylesStore.setState({ searchTextByKey: buildSearchTextByKey(state.styles) })
-})
-
-/** Rebuild selectedKeySet + selectedCountByCategory when selectedStyles changes (incl. raw setState bypasses). */
+/** Rebuild selectedKeySet + selectedCountByCategory when selectedStyles changes. */
 useStylesStore.subscribe((state, prev) => {
   if (state.selectedStyles === prev.selectedStyles) return
   const derived = selectionDerived(state.selectedStyles)
-  const cur = state.selectedKeySet
-  const next = derived.selectedKeySet
-  let keysSame = cur.size === next.size
-  if (keysSame) {
-    for (const key of next) {
-      if (!cur.has(key)) {
-        keysSame = false
-        break
-      }
-    }
+  if (
+    keySetsEqual(state.selectedKeySet, derived.selectedKeySet) &&
+    countMapsEqual(state.selectedCountByCategory, derived.selectedCountByCategory)
+  ) {
+    return
   }
-  const curCounts = state.selectedCountByCategory
-  const nextCounts = derived.selectedCountByCategory
-  let countsSame = curCounts.size === nextCounts.size
-  if (countsSame) {
-    for (const [cat, n] of nextCounts) {
-      if (curCounts.get(cat) !== n) {
-        countsSame = false
-        break
-      }
-    }
-  }
-  if (keysSame && countsSame) return
-  useStylesStore.setState({
-    selectedKeySet: next,
-    selectedCountByCategory: nextCounts,
-  })
+  useStylesStore.setState(derived)
 })
 
 export function useIsSelected(key: string): boolean {
@@ -1809,6 +1714,35 @@ export function useStyleDuplicates(name: string): readonly Style[] {
   return useStylesStore((s) => s.duplicatesByName.get(name) ?? EMPTY_STYLES)
 }
 
+/** LoRA previews are files next to the model, served by the same rule as the server. */
+export function isLoraThumbnail(style: Pick<Style, 'name' | 'source_file'>): boolean {
+  return style.source_file === LORA_SOURCE || style.name.startsWith('LORA_')
+}
+
+/**
+ * Whether a style has a generated thumbnail: true / false from the thumbnails
+ * list, or 'unknown' for LoRA rows (their preview may or may not exist).
+ */
+export function useHasThumbnail(style: Pick<Style, 'name' | 'source_file'>): boolean | 'unknown' {
+  const key = styleRowKey(style)
+  const has = useStylesStore((s) => s.thumbKeys.has(key))
+  return isLoraThumbnail(style) ? 'unknown' : has
+}
+
 export function useThumbVersion(key: string): string {
   return useStylesStore((s) => s.thumbVersions[key] ?? '1')
+}
+
+/** This tile's single preview job, or null. */
+export function usePreviewJob(key: string): PreviewJobState | null {
+  return useStylesStore((s) => s.previewJobs.get(key) ?? null)
+}
+
+/** The batch for this category, or null (stable) for every other category. */
+export function useCategoryBatch(category: string): PreviewBatch | null {
+  return useStylesStore((s) => (s.previewBatch?.category === category ? s.previewBatch : null))
+}
+
+export function usePreviewBatch(): PreviewBatch | null {
+  return useStylesStore((s) => s.previewBatch)
 }

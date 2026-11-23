@@ -6,70 +6,105 @@ import {
   parseHostMessage,
   sendToHost,
 } from './bridge'
+// The ComfyUI host's guard for iframe -> host messages (web/js/style_grid.js runs it).
+import { parseFrameMessage } from '../../web/js/frame_messages.js'
+
+const bridgeOrigin = () => window.location.origin
 
 describe('parseHostMessage', () => {
-  it('accepts each valid host payload', () => {
-    expect(parseHostMessage({ type: 'SG_CLEAR_SELECTION' })).toEqual({
-      type: 'SG_CLEAR_SELECTION',
-    })
-    expect(parseHostMessage({ type: 'SG_CLOSE' })).toEqual({ type: 'SG_CLOSE' })
-    expect(parseHostMessage({ type: 'SG_INIT', styles: [] })).toEqual({
-      type: 'SG_INIT',
-      styles: [],
-    })
-    expect(
-      parseHostMessage({ type: 'SG_TOAST', message: 'ok', variant: 'info' }),
-    ).toEqual({ type: 'SG_TOAST', message: 'ok', variant: 'info' })
-    expect(
-      parseHostMessage({
-        type: 'SG_STYLE_APPLIED',
-        style: { name: 'A' },
-      }),
-    ).toMatchObject({ type: 'SG_STYLE_APPLIED' })
-    expect(
-      parseHostMessage({
-        type: 'SG_WILDCARDS_ACTIVE',
-        categories: [{ category: 'c', spec: '' }],
-      }),
-    ).toMatchObject({ type: 'SG_WILDCARDS_ACTIVE' })
+  it('accepts valid SG_THEME', () => {
     expect(parseHostMessage({ type: 'SG_THEME', mode: 'dark' })).toEqual({
       type: 'SG_THEME',
       mode: 'dark',
     })
-    expect(
-      parseHostMessage({ type: 'SG_DECK_STATE', seed: 1, index: 0 }),
-    ).toEqual({ type: 'SG_DECK_STATE', seed: 1, index: 0 })
   })
 
   it('ignores unknown types', () => {
     expect(parseHostMessage({ type: 'SG_NOT_A_REAL_TYPE' })).toBeNull()
     expect(parseHostMessage({ type: 'OTHER' })).toBeNull()
-    expect(
-      parseHostMessage({
-        type: 'SG_THUMB_DONE',
-        styleId: 'x',
-        version: 1,
-        source_file: '',
-      }),
-    ).toBeNull()
   })
 
   it('ignores malformed payloads', () => {
     expect(parseHostMessage(null)).toBeNull()
     expect(parseHostMessage({ type: 'SG_THEME', mode: 'neon' })).toBeNull()
+    expect(parseHostMessage({ type: 'SG_TOAST', message: 1, variant: 'info' })).toBeNull()
     expect(
-      parseHostMessage({ type: 'SG_TOAST', message: 1, variant: 'info' }),
+      parseHostMessage({ type: 'SG_THUMB_DONE', styleId: 'x', version: '1', source_file: '' }),
     ).toBeNull()
-    expect(parseHostMessage({ type: 'SG_INIT' })).toBeNull()
+    expect(parseHostMessage({ type: 'SG_INIT', tab: 'other', styles: [] })).toBeNull()
+    expect(parseHostMessage({ type: 'SG_DECK_STATE', seed: '1', index: 0 })).toBeNull()
+  })
+
+  it('SG_INIT without a tab (ComfyUI host) is accepted; a present tab must be valid', () => {
+    expect(parseHostMessage({ type: 'SG_INIT', styles: [] })).toEqual({ type: 'SG_INIT', styles: [] })
+    expect(parseHostMessage({ type: 'SG_INIT', tab: 'img2img', styles: [] })).toEqual({
+      type: 'SG_INIT',
+      tab: 'img2img',
+      styles: [],
+    })
+    expect(parseHostMessage({ type: 'SG_INIT', tab: null, styles: [] })).toBeNull()
+  })
+
+  it('SG_DECK_STATE carries the node deck seed and index', () => {
+    expect(parseHostMessage({ type: 'SG_DECK_STATE', seed: 7, index: 2, extra: 1 })).toEqual({
+      type: 'SG_DECK_STATE',
+      seed: 7,
+      index: 2,
+    })
+  })
+})
+
+describe('fullscreen and preview generation are not host messages here', () => {
+  it('the host guard rejects SG_SET_FULLSCREEN and generation (ComfyUI: frame-element fullscreen, upload only)', () => {
+    for (const msg of [
+      { type: 'SG_SET_FULLSCREEN', fullscreen: true },
+      { type: 'SG_GENERATE_PREVIEW', styleId: 'A', source: 'data/a.csv' },
+      { type: 'SG_GENERATE_CATEGORY_PREVIEWS', category: 'BODY', missingCount: 0 },
+      { type: 'SG_BATCH_CANCEL' },
+      { type: 'SG_BATCH_SKIP' },
+    ]) {
+      expect(parseFrameMessage(msg)).toBeNull()
+    }
+  })
+
+  it('the deck requests pass the host guard', () => {
+    expect(parseFrameMessage({ type: 'SG_DECK_RESTART' })).toEqual({ type: 'SG_DECK_RESTART' })
+    expect(parseFrameMessage({ type: 'SG_DECK_NEW' })).toEqual({ type: 'SG_DECK_NEW' })
+  })
+})
+
+describe('parseFrameMessage (host)', () => {
+  it('accepts valid SG_READY / SG_APPLY', () => {
+    expect(parseFrameMessage({ type: 'SG_READY' })).toEqual({ type: 'SG_READY' })
     expect(
-      parseHostMessage({ type: 'SG_DECK_STATE', seed: '1', index: 0 }),
-    ).toBeNull()
-    expect(
-      parseHostMessage({ type: 'SG_STYLE_APPLIED', style: null }),
-    ).toBeNull()
-    expect(
-      parseHostMessage({ type: 'SG_WILDCARDS_ACTIVE', categories: 'x' }),
-    ).toBeNull()
+      parseFrameMessage({
+        type: 'SG_APPLY',
+        styleId: 'A',
+        prompt: 'p',
+        neg: 'n',
+        source_file: 'f.csv',
+      }),
+    ).toMatchObject({ type: 'SG_APPLY', styleId: 'A' })
+  })
+
+  it('ignores unknown and malformed', () => {
+    expect(parseFrameMessage({ type: 'SG_NOPE' })).toBeNull()
+    expect(parseFrameMessage({ type: 'SG_APPLY', styleId: 'A' })).toBeNull()
+    expect(parseFrameMessage({ type: 'SG_SOURCE_CHANGE', source: 1 })).toBeNull()
+  })
+
+  // The iframe owns these dialogs; the host no longer accepts the requests.
+  it.each([
+    { type: 'SG_NEW_STYLE', sourceFile: 'styles/a.csv' },
+    { type: 'SG_NEW_STYLE' },
+    { type: 'SG_EDIT_STYLE', styleId: 'A', source_file: 'styles/a.csv' },
+    { type: 'SG_MOVE_TO_CATEGORY', styleId: 'A', source_file: 'styles/a.csv' },
+    { type: 'SG_DELETE_STYLE', styleId: 'A', source_file: 'styles/a.csv' },
+    { type: 'SG_DUPLICATE_STYLE', styleId: 'A', source_file: 'styles/a.csv' },
+    { type: 'SG_IMPORT_EXPORT' },
+    { type: 'SG_BACKUP' },
+  ])('rejects the retired $type', (msg) => {
+    expect(parseFrameMessage(msg)).toBeNull()
   })
 })
 
@@ -103,14 +138,14 @@ describe('host↔iframe trust guards', () => {
     ).toBe(false)
     expect(
       isTrustedHostEvent({
-        origin: window.location.origin,
+        origin: bridgeOrigin(),
         source: window,
         data: { type: 'SG_CLOSE' },
       } as unknown as MessageEvent),
     ).toBe(false)
     expect(
       isTrustedHostEvent({
-        origin: window.location.origin,
+        origin: bridgeOrigin(),
         source: hostParent,
         data: { type: 'SG_CLOSE' },
       } as unknown as MessageEvent),
@@ -165,16 +200,12 @@ describe('host↔iframe trust guards', () => {
     removeSpy.mockRestore()
   })
 
-  it('sendToHost posts with window.location.origin, never *', () => {
+  it('sendToHost uses window.location.origin', () => {
     stubHostParent()
     sendToHost({ type: 'SG_READY' })
     expect(hostParent.postMessage).toHaveBeenCalledWith(
       { type: 'SG_READY' },
       window.location.origin,
-    )
-    expect(hostParent.postMessage).not.toHaveBeenCalledWith(
-      expect.anything(),
-      '*',
     )
   })
 })

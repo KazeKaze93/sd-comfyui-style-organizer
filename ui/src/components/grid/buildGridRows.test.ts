@@ -6,14 +6,7 @@ import {
   findHeaderRowIndex,
   headerRowIndexes,
 } from './buildGridRows'
-import {
-  columnsForWidth,
-  GRID_GAP_COMPACT_PX,
-  GRID_GAP_NORMAL_PX,
-  gridGapPx,
-  MIN_CARD_WIDTH_NORMAL_PX,
-  MIN_CARD_WIDTH_WINDOWED_PX,
-} from './constants'
+import { columnsForWidth, MIN_CARD_WIDTH_NORMAL_PX, GRID_GAP_NORMAL_PX } from './constants'
 
 function style(name: string, category: string): Style {
   return {
@@ -23,8 +16,6 @@ function style(name: string, category: string): Style {
     negative_prompt: '',
     description: '',
     category,
-    has_thumbnail: false,
-    read_only: false,
   }
 }
 
@@ -34,24 +25,10 @@ describe('columnsForWidth', () => {
     expect(columnsForWidth(800, MIN_CARD_WIDTH_NORMAL_PX, GRID_GAP_NORMAL_PX)).toBe(5)
   })
 
-  it('matches windowed gap-1 + 110px min', () => {
-    // (800 + 4) / (110 + 4) = 7.05 → 7
-    expect(columnsForWidth(800, MIN_CARD_WIDTH_WINDOWED_PX, GRID_GAP_COMPACT_PX)).toBe(7)
-  })
-
   it('returns at least 1 for tiny or invalid widths', () => {
     expect(columnsForWidth(0, MIN_CARD_WIDTH_NORMAL_PX, GRID_GAP_NORMAL_PX)).toBe(1)
     expect(columnsForWidth(-10, MIN_CARD_WIDTH_NORMAL_PX, GRID_GAP_NORMAL_PX)).toBe(1)
     expect(columnsForWidth(40, MIN_CARD_WIDTH_NORMAL_PX, GRID_GAP_NORMAL_PX)).toBe(1)
-  })
-})
-
-describe('gridGapPx', () => {
-  it('uses gap-2 only for normal fullscreen', () => {
-    expect(gridGapPx(false, false)).toBe(GRID_GAP_NORMAL_PX)
-    expect(gridGapPx(false, true)).toBe(GRID_GAP_COMPACT_PX)
-    expect(gridGapPx(true, false)).toBe(GRID_GAP_COMPACT_PX)
-    expect(gridGapPx(true, true)).toBe(GRID_GAP_COMPACT_PX)
   })
 })
 

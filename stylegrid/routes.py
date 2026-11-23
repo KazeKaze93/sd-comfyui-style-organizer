@@ -18,23 +18,34 @@ from .cache import (
     invalidate_styles_cache,
     styles_cache_hashes,
 )
-from .config import CATEGORY_ORDER_FILE, DATA_DIR, IMPORTS_DIR, PRESETS_FILE, logger
+from .config import CATEGORY_ORDER_FILE, DATA_DIR, IMPORTS_DIR, PRESETS_FILE, _csvs_in, logger
 from .csv_io import (
     FIELDNAMES,
     categorize_styles,
     delete_style_from_csv,
     load_all_styles,
     parse_styles_csv,
+    rename_style_in_csv,
     save_style_to_csv,
 )
 from .data_files import (
+    BACKUP_KEEP_SNAPSHOTS,
     CorruptDataError,
-    backup_csv_files,
+    create_snapshot,
+    list_snapshots,
+    load_favorites,
     load_presets,
+    migrate_favorites,
     migrate_presets_source_ids_once,
     preset_styles_payload_ok,
+    rename_favorite_keys,
+    rename_preset_members,
+    restore_snapshot,
+    save_favorites,
     save_presets,
+    thumbnails_dir_size,
 )
+from .source_ids import is_samples_ref, to_source_id
 from .http_limits import (
     IMPORT_BODY_MAX_BYTES,
     JSON_BODY_MAX_BYTES,
@@ -50,8 +61,11 @@ from .thumbnails import (
     find_thumbnail_path,
     get_thumbnail_path,
     list_thumbnails,
+    move_thumbnail_files,
 )
 from .zip_limits import BackupZipLimitError, validate_backup_zip_limits
+
+SAMPLES_READ_ONLY_ERROR = "Cannot modify styles from the read-only samples/ pack."
 
 
 def _zip_csv_member_names(namelist):
@@ -103,6 +117,57 @@ def _styles_from_csv_text(text):
             skipped += 1
             continue
     return styles, skipped
+
+
+def _library_duplicate_keys():
+    """(name, prompt, negative_prompt) of every row in data/ and imports/ (samples/ ignored)."""
+    keys = set()
+    for fp in _csvs_in(DATA_DIR) + _csvs_in(IMPORTS_DIR):
+        for row in parse_styles_csv(fp):
+            keys.add((row.get("name", ""), row.get("prompt", ""), row.get("negative_prompt", "")))
+    return keys
+
+
+def _split_import_rows(rows, existing):
+    """Split incoming style rows into ``(importable, collision_names, invalid_count)``.
+
+    A collision is a true duplicate: a row whose name, prompt and negative_prompt
+    are byte-identical to a row already in a data/ or imports/ pack (or to an
+    earlier row of the same import). The same name with a different prompt or
+    negative is a different style and is imported. source_file plays no part.
+    Rows that are not objects or have no name are invalid. *existing* is
+    extended with the rows accepted here.
+    """
+    importable = []
+    collisions = set()
+    invalid = 0
+    for s in rows:
+        if not isinstance(s, dict):
+            invalid += 1
+            continue
+        name = s.get("name", "")
+        if not isinstance(name, str) or not name.strip():
+            invalid += 1
+            continue
+        key = (name.strip(), s.get("prompt", "") or "", s.get("negative_prompt", "") or "")
+        if key in existing:
+            collisions.add(key[0])
+            continue
+        existing.add(key)
+        importable.append(s)
+    return importable, collisions, invalid
+
+
+def _import_response(imported, collisions, invalid, presets_imported, presets_skipped):
+    """WebUI's import contract plus ComfyUI's presets counters."""
+    return {
+        "ok": True,
+        "imported": imported,
+        "collisions": sorted(collisions),
+        "invalid": invalid,
+        "presets_imported": presets_imported,
+        "presets_skipped": presets_skipped,
+    }
 
 
 def _write_styles_to_new_import_csv(styles, name_hint):
@@ -279,32 +344,29 @@ def _register_style_routes(routes):
                             return _corrupt_response(exc)
 
                     imported = 0
-                    skipped = 0
+                    invalid = 0
+                    collisions = set()
+                    existing = _library_duplicate_keys() if csv_members else set()
                     for member in csv_members:
                         try:
                             text = zf.read(member).decode("utf-8-sig")
                         except UnicodeDecodeError:
-                            skipped += 1
+                            invalid += 1
                             continue
                         rows, row_skipped = _styles_from_csv_text(text)
-                        skipped += row_skipped
-                        if rows:
+                        invalid += row_skipped
+                        importable, member_collisions, member_invalid = _split_import_rows(rows, existing)
+                        collisions |= member_collisions
+                        invalid += member_invalid
+                        if importable:
                             imported += await asyncio.to_thread(
-                                _write_styles_to_new_import_csv, rows, member
+                                _write_styles_to_new_import_csv, importable, member
                             )
 
                     # Legacy backup zips may contain usage.json — ignore; do not restore.
-                    if imported == 0 and presets_imported == 0:
-                        return web.json_response(
-                            {"error": "No importable data found in file"}
-                        )
-                    return web.json_response({
-                        "ok": True,
-                        "imported": imported,
-                        "skipped": skipped,
-                        "presets_imported": presets_imported,
-                        "presets_skipped": presets_skipped,
-                    })
+                    return web.json_response(
+                        _import_response(imported, collisions, invalid, presets_imported, presets_skipped)
+                    )
             except BackupZipLimitError as e:
                 return web.json_response({"error": str(e)}, status=422)
             except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
@@ -329,62 +391,28 @@ def _register_style_routes(routes):
                         save_presets(p)
             except CorruptDataError as exc:
                 return _corrupt_response(exc)
-        imported = 0
-        skipped = 0
-        duplicate_import = False
-        if "styles" in data:
-            styles = data["styles"]
-            if not isinstance(styles, list):
-                return web.json_response({"error": "styles must be a list"})
-            valid = []
-            for s in styles:
-                if isinstance(s, dict):
-                    valid.append(s)
-                else:
-                    skipped += 1
-            if valid:
-                incoming_names = frozenset(
-                    (s.get("name") or "").strip()
-                    for s in valid
-                    if (s.get("name") or "").strip()
-                )
-                if incoming_names and os.path.isdir(IMPORTS_DIR):
-                    for fname in sorted(os.listdir(IMPORTS_DIR)):
-                        if not fname.lower().endswith(".csv"):
-                            continue
-                        existing = frozenset(
-                            row["name"]
-                            for row in parse_styles_csv(os.path.join(IMPORTS_DIR, fname))
-                            if row.get("name")
-                        )
-                        if existing == incoming_names:
-                            duplicate_import = True
-                            break
-                if not duplicate_import:
-                    imported = await asyncio.to_thread(
-                        _write_styles_to_new_import_csv, valid, "import.json"
-                    )
         # Legacy export JSON may include a "usage" key — ignore; do not fail or restore.
-        if (
-            duplicate_import
-            and imported == 0
-            and presets_imported == 0
-        ):
+        if "styles" not in data:
+            if "presets" not in data:
+                return web.json_response({"error": "No importable data found in file"})
+            # Presets only: no style counters, like WebUI (the iframe shows no style summary).
             return web.json_response({
-                "error": "This looks like a duplicate of an existing import",
+                "ok": True,
+                "presets_imported": presets_imported,
+                "presets_skipped": presets_skipped,
             })
-        if imported == 0 and presets_imported == 0:
-            return web.json_response({"error": "No importable data found in file"})
-        resp = {
-            "ok": True,
-            "imported": imported,
-            "skipped": skipped,
-            "presets_imported": presets_imported,
-            "presets_skipped": presets_skipped,
-        }
-        if duplicate_import:
-            resp["warning"] = "This looks like a duplicate of an existing import"
-        return web.json_response(resp)
+        styles = data["styles"]
+        if not isinstance(styles, list):
+            return web.json_response({"error": "styles must be a list"})
+        imported = 0
+        importable, collisions, invalid = _split_import_rows(styles, _library_duplicate_keys())
+        if importable:
+            imported = await asyncio.to_thread(
+                _write_styles_to_new_import_csv, importable, "import.json"
+            )
+        return web.json_response(
+            _import_response(imported, collisions, invalid, presets_imported, presets_skipped)
+        )
 
     @routes.get("/style_grid/category_order")
     async def api_get_category_order(request):
@@ -561,6 +589,43 @@ def _register_preset_routes(routes):
         except CorruptDataError as exc:
             return _corrupt_response(exc)
 
+    # WebUI's path for the same list (the iframe port reads this one).
+    routes.get("/style_grid/presets")(api_list_presets)
+
+
+def _register_favorites_routes(routes):
+    """Server-side favorites: ``{"items": ["<source id>\\0<name>", ...]}``."""
+
+    @routes.get("/style_grid/favorites")
+    async def api_get_favorites(request):
+        try:
+            items, persisted = load_favorites()
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        # Only full (source, name) keys are stored, so nothing is ambiguous.
+        return web.json_response({"items": items, "persisted": persisted, "ambiguous": []})
+
+    @routes.post("/style_grid/favorites/save")
+    async def api_save_favorites(request):
+        data = await _read_json(request)
+        try:
+            items = save_favorites(data.get("items"))
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        return web.json_response({"ok": True, "items": items})
+
+    @routes.post("/style_grid/favorites/migrate")
+    async def api_migrate_favorites(request):
+        """Merge the iframe's localStorage favorites (sg_v2_favorites) once; idempotent."""
+        data = await _read_json(request)
+        try:
+            result = migrate_favorites(data.get("items"))
+        except CorruptDataError as exc:
+            return _corrupt_response(exc)
+        return web.json_response({"ok": True, **result})
+
 
 def _register_crud_routes(routes):
     @routes.post("/style_grid/style/save")
@@ -590,15 +655,82 @@ def _register_crud_routes(routes):
             clear_thumbnail_files(name, (data.get("source") or "").strip())
         return web.json_response({"ok": deleted})
 
-    @routes.post("/style_grid/backup")
-    async def api_backup(request):
+    @routes.post("/style_grid/style/rename")
+    async def api_rename_style(request):
+        data = await _read_json(request)
+        old_name = (data.get("old_name") or "").strip()
+        new_name = (data.get("new_name") or "").strip()
+        if not old_name:
+            return web.json_response({"error": "old_name required"})
+        if not new_name:
+            return web.json_response({"error": "new_name required"})
+        source = (data.get("source") or "").strip()
+        if not source:
+            return web.json_response(
+                {"ok": False, "error": "source is required to rename a style"}, status=400
+            )
+        if is_samples_ref(source):
+            return web.json_response({"ok": False, "error": SAMPLES_READ_ONLY_ERROR}, status=403)
+        fields = {k: data[k] for k in ("prompt", "negative_prompt", "description", "category") if k in data}
         try:
-            created = backup_csv_files()
-            if not created:
-                return web.json_response({"ok": False, "empty": True})
-            return web.json_response({"ok": True, "file": created})
-        except OSError as e:
-            return web.json_response({"error": str(e)})
+            target_path = rename_style_in_csv(old_name, new_name, source, **fields)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        # The CSV rename is committed: the follow-ups are best effort and never undo it.
+        source_id = to_source_id(target_path)
+        try:
+            move_thumbnail_files(old_name, new_name, target_path)
+        except OSError:
+            logger.exception("[Style Grid] rename: thumbnail move failed")
+        if source_id:
+            try:
+                rename_preset_members(old_name, new_name, source_id)
+            except (CorruptDataError, OSError):
+                logger.exception("[Style Grid] rename: presets update failed")
+            try:
+                rename_favorite_keys(old_name, new_name, source_id)
+            except (CorruptDataError, OSError):
+                logger.exception("[Style Grid] rename: favorites update failed")
+        return web.json_response({"ok": True})
+
+    @routes.get("/style_grid/backups")
+    async def api_list_backups(request):
+        return web.json_response(
+            {
+                "backups": list_snapshots(),
+                "thumbnails_bytes": thumbnails_dir_size(),
+                "keep_snapshots": BACKUP_KEEP_SNAPSHOTS,
+            }
+        )
+
+    # POST /backup is the path the iframe calls (WebUI's); /backups/create is the same handler.
+    @routes.post("/style_grid/backup")
+    @routes.post("/style_grid/backups/create")
+    async def api_create_snapshot(request):
+        data = await _read_json(request)
+        include_thumbnails = bool(data.get("include_thumbnails")) if isinstance(data, dict) else False
+        try:
+            return web.json_response(create_snapshot(include_thumbnails=include_thumbnails))
+        except (OSError, ValueError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+
+    @routes.post("/style_grid/restore")
+    async def api_restore(request):
+        data = await _read_json(request)
+        name = (data.get("id") or data.get("snapshot") or data.get("name") or "").strip()
+        if not name:
+            return web.json_response({"ok": False, "error": "snapshot name required"}, status=400)
+        try:
+            result = restore_snapshot(name, create_safety=True)
+        except FileNotFoundError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=404)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except (OSError, zipfile.BadZipFile) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        invalidate_styles_cache()
+        return web.json_response(result)
+
 
 
 def _register_thumbnail_routes(routes):
@@ -694,5 +826,6 @@ def register_api(routes):
         )
     _register_style_routes(routes)
     _register_preset_routes(routes)
+    _register_favorites_routes(routes)
     _register_crud_routes(routes)
     _register_thumbnail_routes(routes)

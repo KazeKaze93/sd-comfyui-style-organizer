@@ -242,6 +242,7 @@ _ensure_data_dirs(DATA_DIR)
 IMPORTS_DIR = os.path.join(DATA_DIR, "imports")
 PRESETS_FILE = os.path.join(DATA_DIR, "presets.json")
 CATEGORY_ORDER_FILE = os.path.join(DATA_DIR, "category_order.json")
+FAVORITES_FILE = os.path.join(DATA_DIR, "favorites.json")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 THUMBNAILS_DIR = os.path.join(DATA_DIR, "thumbnails")
 

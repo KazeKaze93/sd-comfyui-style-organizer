@@ -1,30 +1,33 @@
 import { useEffect, useId, useRef } from 'react'
 
+/** Return false to refuse (e.g. a busy dialog): the layer stays on the stack. */
+type LayerClose = () => void | boolean
+
 type LayerEntry = {
   id: string
-  close: () => void
+  close: LayerClose
 }
 
 const stack: LayerEntry[] = []
 
-/** Register an overlay layer. Returns unregister (idempotent for this entry). */
-export function registerLayer(id: string, close: () => void): () => void {
+/** Push a dismissible overlay layer. Returns unregister (safe if already closed). */
+export function registerLayer(id: string, close: LayerClose): () => void {
   const entry: LayerEntry = { id, close }
   stack.push(entry)
-  let active = true
   return () => {
-    if (!active) return
-    active = false
-    const index = stack.lastIndexOf(entry)
+    const index = stack.indexOf(entry)
     if (index >= 0) stack.splice(index, 1)
   }
 }
 
-/** Close the topmost layer (LIFO). Returns true if a layer was closed. */
+/**
+ * Ask the topmost registered layer to close (LIFO). True if a layer handled
+ * the request, including one that refused: the key press is still its own.
+ */
 export function closeTopLayer(): boolean {
   const top = stack.pop()
   if (!top) return false
-  top.close()
+  if (top.close() === false) stack.push(top)
   return true
 }
 
@@ -32,16 +35,16 @@ export function hasOpenLayer(): boolean {
   return stack.length > 0
 }
 
-/** Test helper: clear the stack between cases. */
-export function resetLayerStackForTests(): void {
+/** Test helper — clears the stack between cases. */
+export function __resetLayerStackForTests(): void {
   stack.length = 0
 }
 
 /**
- * While `open` is true, register this instance on the layer stack.
- * `close` is read from a ref so the registration stays stable across renders.
+ * While `open` is true, registers this surface on the layer stack.
+ * Cleanup on close / unmount unregisters without calling `close`.
  */
-export function useLayer(open: boolean, close: () => void): void {
+export function useLayer(open: boolean, close: LayerClose): void {
   const id = useId()
   const closeRef = useRef(close)
 
@@ -51,8 +54,6 @@ export function useLayer(open: boolean, close: () => void): void {
 
   useEffect(() => {
     if (!open) return
-    return registerLayer(id, () => {
-      closeRef.current()
-    })
+    return registerLayer(id, () => closeRef.current())
   }, [open, id])
 }

@@ -1,18 +1,40 @@
 import type { Style } from '../bridge'
+import { blockList, splitCombos } from './combosBlock'
+import { PLATFORM } from './platform'
 
-/** True when value looks like `<prefix>/<leaf.csv>` with a known lowercase prefix. */
-export function isSourceId(s: string): boolean {
-  if (typeof s !== 'string' || !s) return false
-  const slash = s.indexOf('/')
-  if (slash <= 0) return false
-  const prefix = s.slice(0, slash)
-  const leaf = s.slice(slash + 1)
-  if (prefix !== 'data' && prefix !== 'imports' && prefix !== 'samples') return false
+const FORBIDDEN_LEAF_CHARS = new Set(['/', '\\', ':', '\0'])
+
+function leafOk(leaf: string): boolean {
   if (!leaf || leaf === '.' || leaf === '..') return false
-  if (leaf.includes('/') || leaf.includes('\\') || leaf.includes(':') || leaf.includes('\0')) {
-    return false
+  for (const ch of FORBIDDEN_LEAF_CHARS) {
+    if (leaf.includes(ch)) return false
   }
   return leaf.toLowerCase().endsWith('.csv')
+}
+
+/**
+ * True when value looks like a public source id (mirrors stylegrid/source_ids.py
+ * is_source_id): `<prefix>/<f.csv>` with a PLATFORM.sourceIdPrefixes prefix
+ * (WebUI: styles|samples|webui; ComfyUI: data|imports|samples), or
+ * shared/<dir>/<f.csv> where PLATFORM.sharedSourceIds.
+ */
+export function isSourceId(s: string): boolean {
+  if (typeof s !== 'string' || !s) return false
+  if (s.includes('\\') || s.includes('\0')) return false
+  const parts = s.split('/')
+  if (parts.length === 2 && PLATFORM.sourceIdPrefixes.includes(parts[0])) {
+    return leafOk(parts[1])
+  }
+  if (PLATFORM.sharedSourceIds && parts.length === 3 && parts[0] === 'shared') {
+    const dirPart = parts[1]
+    const leaf = parts[2]
+    if (!dirPart) return false
+    for (const ch of FORBIDDEN_LEAF_CHARS) {
+      if (dirPart.includes(ch)) return false
+    }
+    return leafOk(leaf)
+  }
+  return false
 }
 
 /** Last path segment after `/` or `\`, lowercased. */
@@ -21,7 +43,7 @@ export function sourceLeaf(s: string): string {
   return base.toLowerCase()
 }
 
-/** Same composite as stylesStore.styleRowKey — kept here so tests stay free of the store. */
+/** Same composite as stylesStore.styleRowKey - kept here so tests stay free of the store. */
 export function styleIdentityKey(name: string, sourceFile: string): string {
   return `${sourceFile}\0${name}`
 }
@@ -113,13 +135,14 @@ export function parseComboPart(raw: string): ComboPart {
 }
 
 /**
- * Parses "Combos: ..." into items (`;`), then `+` pieces, then name/comment parts.
+ * Parses the "Combos: ..." block (combosBlock.splitCombos, shared with the
+ * style editor) into items (`;`), then `+` pieces, then name/comment parts.
  * `;` / `+` inside parentheses do not split.
  */
 export function parseComboTokens(description: string): string[] {
-  const match = description.match(/Combos?:\s*([^.]+)/i)
-  if (!match) return []
-  return splitOutsideParens(match[1], ';')
+  const { block } = splitCombos(description)
+  if (!block) return []
+  return splitOutsideParens(blockList(block), ';')
 }
 
 export function parseComboParts(description: string): ComboPart[] {
@@ -137,6 +160,40 @@ export type ResolvedCombo =
   | { type: 'category'; token: string; category: string; comment: string }
   | { type: 'raw'; token: string }
 
+/** A combo part whose name matches neither a style nor a category of the file. */
+export type MissingCombo = { type: 'missing'; token: string; comment: string }
+
+/**
+ * Resolve one combo part among `inFile` (styles of a single source file):
+ * exact name -> that style; otherwise a category prefix present in the file ->
+ * category; a piece without a name -> raw; anything else -> missing.
+ * Shared by the tray (ComboChips) and the style editor's Works with chips.
+ */
+export function resolveComboPart(
+  part: ComboPart,
+  inFile: readonly Style[],
+): ResolvedCombo | MissingCombo {
+  if (!part.name) return { type: 'raw', token: part.raw }
+  const exact = inFile.find((s) => s.name === part.name)
+  if (exact) {
+    return { type: 'style', token: part.name, style: exact, comment: part.comment }
+  }
+  const cat = part.name.split('_')[0]
+  if (cat && inFile.some((s) => s.category === cat)) {
+    return { type: 'category', token: part.name, category: cat, comment: part.comment }
+  }
+  return { type: 'missing', token: part.name, comment: part.comment }
+}
+
+/** Label of a resolved combo part, the same in the tray and in the editor. */
+export function comboPartLabel(resolved: ResolvedCombo | MissingCombo): string {
+  if (resolved.type === 'style') {
+    const token = resolved.token
+    return token.includes('_') ? token.split('_').slice(1).join(' ') : token
+  }
+  return resolved.token
+}
+
 /**
  * Resolve Combos tokens only among styles from the same source_file.
  * Named parts absent from that file are omitted. Parenthetical comments
@@ -150,31 +207,9 @@ export function resolveCombosInSourceFile(
   const inFile = styles.filter((s) => s.source_file === sourceFile)
   const out: ResolvedCombo[] = []
   for (const part of parseComboParts(description)) {
-    if (!part.name) {
-      out.push({ type: 'raw', token: part.raw })
-      continue
-    }
-    const exact = inFile.find((s) => s.name === part.name)
-    if (exact) {
-      out.push({
-        type: 'style',
-        token: part.name,
-        style: exact,
-        comment: part.comment,
-      })
-      continue
-    }
-    const cat = part.name.split('_')[0]
-    if (cat && inFile.some((s) => s.category === cat)) {
-      out.push({
-        type: 'category',
-        token: part.name,
-        category: cat,
-        comment: part.comment,
-      })
-      continue
-    }
-    // Named but not in this file — no chip.
+    const resolved = resolveComboPart(part, inFile)
+    // Named but not in this file — no chip in the tray.
+    if (resolved.type !== 'missing') out.push(resolved)
   }
   return out
 }

@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendToHost, WILDCARD_KIND_DECK, WILDCARD_KIND_DICE } from '../bridge'
-import { DECK_NEW_ARIA, DECK_RESTART_ARIA, DECK_STRIP_ARIA } from '../lib/wildcardLabels'
+import { DECK_NEW_ARIA, DECK_RESTART_ARIA, DECK_STRIP_ARIA } from '../lib/deckLabels'
 import { useStylesStore } from '../store/stylesStore'
 import { DeckStrip } from './DeckStrip'
 

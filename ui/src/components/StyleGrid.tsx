@@ -1,236 +1,269 @@
 import { memo, useCallback, useMemo, useState } from 'react'
+import { Dna, LayoutGrid, SearchX, Star } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { sendToHost, WILDCARD_KIND_DECK, type Style } from '../bridge'
-import { buildSliceSpec } from '../lib/wildcardSlice'
 import {
-  SLICE_ADD_DICE,
-  SLICE_ADD_DICE_ARIA,
-  SLICE_ADD_SHUFFLE,
+  sendToHost,
+  WILDCARD_KIND_DECK,
+  WILDCARD_KIND_DICE,
+  type Style,
+  type WildcardKind,
+} from '../bridge'
+import {
   SLICE_ADD_SHUFFLE_ARIA,
-  SLICE_BAR_TITLE_DICE,
-  SLICE_BAR_TITLE_SHUFFLE,
+  SLICE_MODE_GROUP_LABEL,
+  SLICE_MODE_RANDOM,
+  SLICE_MODE_SHUFFLE,
 } from '../lib/wildcardLabels'
+import { buildSliceSpec } from '../lib/wildcardSlice'
+import { useAppActions } from '../lib/appActions'
+import { sourceLabel } from '../lib/sourceLabel'
+import { quoteQuery } from '../lib/quoteQuery'
 import {
-  FAVORITES_VIEW,
-  RECENT_VIEW,
+  LORA_SOURCE,
+  LORA_VIEW,
+  matchesSearch,
   selectFilteredStyles,
   styleRowKey,
   useStylesStore,
 } from '../store/stylesStore'
+import { EmptyState, type EmptyStateAction } from './EmptyState'
 import { StyleCard } from './StyleCard'
-import { WildcardCategoryMenu } from './WildcardCategoryMenu'
 import { PresetList } from './PresetList'
+import { SegmentedControl, type SegmentOption } from './SegmentedControl'
+import { ViewportFixedMenu } from './ViewportFixedMenu'
+import { CategoryMenuItems } from './CategoryMenuItems'
 import { autoFillGridClass, VirtualStyleGrid } from './grid'
 
-/** Stable stubs — Favorites/Recent store churn must not invalidate All/category memos. */
+const FAVORITES_VIEW = '★ Favorites'
+/** Stable stub so Favorites store churn does not invalidate All/category memos. */
 const EMPTY_FAVORITES = new Set<string>()
-const EMPTY_RECENT: string[] = []
-
-function emptyCategoryLabel(cat: string): string {
-  if (cat === FAVORITES_VIEW) return 'Favorites'
-  if (cat === RECENT_VIEW) return 'Recent'
-  return cat
-}
-
-function EmptyStylesNotice({
-  search,
-  activeSource,
-  activeCategory,
-  ignoreCategory = false,
-  setSearch,
-  setActiveSource,
-  setCategory,
-}: {
-  search: string
-  activeSource: string | null
-  activeCategory: string | null
-  ignoreCategory?: boolean
-  setSearch: (q: string) => void
-  setActiveSource: (src: string | null) => void
-  setCategory: (cat: string | null) => void
-}) {
-  const hasSearch = search.trim().length > 0
-  const hasSource = Boolean(activeSource)
-  const hasCategory = !ignoreCategory && Boolean(activeCategory)
-
-  const parts: string[] = []
-  if (hasSearch) parts.push(`matching “${search.trim()}”`)
-  if (hasSource) parts.push(`from ${activeSource}`)
-  if (hasCategory && activeCategory) parts.push(`in ${emptyCategoryLabel(activeCategory)}`)
-
-  const reason = parts.length > 0
-    ? `No styles found ${parts.join(' ')}.`
-    : 'No styles found.'
-
-  const resetBtnClass =
-    'text-xs px-2.5 py-1 rounded border border-sg-border text-sg-muted hover:text-sg-text hover:bg-sg-surface/60 transition-colors'
-
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 h-32 text-sg-muted text-sm px-4 text-center">
-      <p>{reason}</p>
-      {(hasSearch || hasSource || hasCategory) && (
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {hasSearch && (
-            <button type="button" className={resetBtnClass} onClick={() => setSearch('')}>
-              Clear search
-            </button>
-          )}
-          {hasSource && (
-            <button type="button" className={resetBtnClass} onClick={() => setActiveSource(null)}>
-              All sources
-            </button>
-          )}
-          {hasCategory && (
-            <button type="button" className={resetBtnClass} onClick={() => setCategory(null)}>
-              All categories
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
+const SLICE_KIND_OPTIONS: ReadonlyArray<SegmentOption<WildcardKind>> = [
+  { value: WILDCARD_KIND_DICE, label: SLICE_MODE_RANDOM },
+  { value: WILDCARD_KIND_DECK, label: SLICE_MODE_SHUFFLE },
+]
 
 /**
- * Memo: App selectedStyles must not re-run grouping.
- * Profile (toggle N=5000): always-on recentNames/favorites made addToRecent
- * rebuild selectFilteredStyles + VirtualStyleGrid on every select click.
+ * Profile (P toggle N=5000): StyleGrid 18 hits; `selectFilteredStyles` 2.9% —
+ * the catalog filter memo must not re-run when selection changes the store.
+ * Subscribe to favorites only in that view; memoize group arrays.
  */
 export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowed?: boolean }) {
+  const [loraCatMenu, setLoraCatMenu] = useState<{ x: number; y: number; cat: string } | null>(null)
   const {
     styles, search, activeCategory, activeSource,
-    favorites, recentNames, presets,
-    compactMode, collapsedCategories, toggleCollapse,
+    favorites,
+    collapsedCategories, toggleCollapse, viewMode,
     selectAllInCategory,
-    categories,
-    categoryOrder,
     sliceMode, sliceSelection,
-    exitSliceMode, toggleSliceSelection,
+    exitSliceMode, toggleSliceSelection, setSliceKind,
     selectAllSlice, clearSliceSelection,
-    setSearch, setActiveSource, setCategory,
+    setSearch, setCategory, setActiveSource, stylesLoaded,
   } = useStylesStore(
-    useShallow((s) => {
+    useShallow(s => {
       const cat = s.activeCategory
       return {
         styles: s.styles,
         search: s.search,
         activeCategory: cat,
         activeSource: s.activeSource,
+        // P: selectFilteredStyles on toggle — avoid the favorites dep off that view
         favorites: cat === FAVORITES_VIEW ? s.favorites : EMPTY_FAVORITES,
-        recentNames: cat === RECENT_VIEW ? s.recentNames : EMPTY_RECENT,
-        presets: s.presets,
-        compactMode: s.compactMode,
         collapsedCategories: s.collapsedCategories,
+        viewMode: s.viewMode,
         toggleCollapse: s.toggleCollapse,
         selectAllInCategory: s.selectAllInCategory,
-        categories: s.categories,
-        // subscribe so sidebar reorder re-renders group order
-        categoryOrder: s.categoryOrder,
         sliceMode: s.sliceMode,
         sliceSelection: s.sliceSelection,
         exitSliceMode: s.exitSliceMode,
         toggleSliceSelection: s.toggleSliceSelection,
+        setSliceKind: s.setSliceKind,
         selectAllSlice: s.selectAllSlice,
         clearSliceSelection: s.clearSliceSelection,
         setSearch: s.setSearch,
-        setActiveSource: s.setActiveSource,
         setCategory: s.setCategory,
+        setActiveSource: s.setActiveSource,
+        stylesLoaded: s.stylesLoaded,
       }
-    }),
+    })
   )
-  const [catMenu, setCatMenu] = useState<{
-    x: number
-    y: number
-    cat: string
-    restoreFocusTo: HTMLElement | null
-  } | null>(null)
+  const appActions = useAppActions()
+
+  /**
+   * Empty grid area. Order: no CSV styles at all → empty Favorites /
+   * LoRA views → filters hide everything. Nothing before the first styles
+   * payload, so no empty state flashes while the panel loads.
+   */
+  const renderEmptyState = (opts?: { sliceCategory?: string | null }) => {
+    if (!stylesLoaded) return null
+    const sliceCat = opts?.sliceCategory ?? null
+    const view = sliceCat ? null : activeCategory
+
+    const hasCsvStyles = styles.some((s) => s.source_file !== LORA_SOURCE)
+    if (!hasCsvStyles && !sliceCat && view !== FAVORITES_VIEW && view !== LORA_VIEW) {
+      const actions: EmptyStateAction[] = []
+      if (appActions) {
+        actions.push({ label: 'Import CSV…', variant: 'primary', onClick: appActions.openImportExport })
+        // Same rule as the header's New style button: hidden when it is disabled.
+        if (appActions.canCreateStyle) {
+          actions.push({ label: 'New style', variant: 'secondary', onClick: appActions.openNewStyle })
+        }
+      }
+      return (
+        <EmptyState
+          kind="no-styles"
+          tone="accent"
+          icon={LayoutGrid}
+          title="No styles yet"
+          hint="Import a CSV pack or create your first style."
+          actions={actions}
+        />
+      )
+    }
+    if (view === FAVORITES_VIEW && !styles.some((s) => favorites.has(styleRowKey(s)))) {
+      return (
+        <EmptyState
+          kind="no-favorites"
+          tone="accent"
+          icon={Star}
+          title="No favorites yet"
+          hint="Use ★ on a tile or “Add to favorites” in its menu. Favorites from every source show up here."
+        />
+      )
+    }
+    if (view === LORA_VIEW && !styles.some((s) => s.source_file === LORA_SOURCE)) {
+      return (
+        <EmptyState
+          kind="no-loras"
+          tone="accent"
+          icon={Dna}
+          title="No LoRAs found"
+          hint="Put LoRA files in your WebUI LoRA folder, then reopen the panel."
+        />
+      )
+    }
+
+    // Filters hide everything. The LoRA view ignores the source filter.
+    const query = search.trim()
+    const sourceShown = activeSource && view !== LORA_VIEW ? sourceLabel(activeSource) : null
+    const scope = sliceCat ?? (
+      view === FAVORITES_VIEW ? 'Favorites'
+          : view === LORA_VIEW ? 'LoRA'
+            : view
+    )
+    const title =
+      (query ? `Nothing matches ${quoteQuery(query)}` : 'No styles') +
+      (sourceShown ? ` in ${sourceShown}` : '') +
+      (scope ? ` for ${scope}` : '')
+    const actions: EmptyStateAction[] = []
+    if (sourceShown) actions.push({ label: 'Search all sources', variant: 'primary', onClick: () => setActiveSource(null) })
+    if (query) actions.push({ label: 'Clear search', variant: 'secondary', onClick: () => setSearch('') })
+    if (scope) {
+      actions.push({
+        label: 'Show all categories',
+        variant: 'secondary',
+        onClick: () => {
+          if (sliceCat) exitSliceMode()
+          setCategory(null)
+        },
+      })
+    }
+    return <EmptyState kind="no-results" tone="muted" icon={SearchX} title={title} actions={actions} />
+  }
 
   const filtered = useMemo(
-    () => selectFilteredStyles(styles, search, activeCategory, activeSource, favorites, recentNames, presets),
-    [styles, search, activeCategory, activeSource, favorites, recentNames, presets]
+    () => selectFilteredStyles(styles, search, activeCategory, activeSource, favorites),
+    [styles, search, activeCategory, activeSource, favorites]
   )
 
   const sliceCategory = sliceMode?.category ?? null
 
-  /** Search/source-filtered styles for slice mode — ignores sidebar activeCategory. */
-  const sliceFiltered = useMemo(
-    () =>
-      sliceCategory
-        ? selectFilteredStyles(styles, search, null, activeSource, favorites, recentNames, presets)
-        : ([] as Style[]),
-    [sliceCategory, styles, search, activeSource, favorites, recentNames, presets],
+  /** Search/source-filtered styles without the sidebar category filter — slice mode may target another category. */
+  const sliceModeFiltered = useMemo(
+    () => selectFilteredStyles(styles, search, null, activeSource, favorites),
+    [styles, search, activeSource, favorites]
   )
 
-  /** Currently visible (search/filter-applied) cards for the slice category. */
+  /** Currently visible (search/filter-applied) cards for the slice category.
+   * Aggregate "LoRA" bypasses CSV source-scoping (all LoRA files).
+   * LoRA *subfolder* categories also keep LoRA-sourced rows even when a CSV
+   * activeSource is set — otherwise slice mode opened from an in-grid LoRA
+   * header would show "No styles". CSV rows still respect activeSource. */
   const visibleSliceStyles = useMemo(() => {
     if (!sliceCategory) return [] as Style[]
+    if (sliceCategory === 'LoRA') {
+      return styles.filter(s => s.source_file === LORA_SOURCE && matchesSearch(s, search))
+    }
     const want = sliceCategory.toLowerCase()
-    return sliceFiltered.filter((s) => (s.category || 'OTHER').toLowerCase() === want)
-  }, [sliceFiltered, sliceCategory])
+    const fromCsv = sliceModeFiltered.filter(
+      (s) => (s.category || 'OTHER').toLowerCase() === want,
+    )
+    const fromLora = styles.filter(
+      (s) =>
+        s.source_file === LORA_SOURCE &&
+        (s.category || 'OTHER').toLowerCase() === want &&
+        matchesSearch(s, search),
+    )
+    return fromCsv.length === 0 ? fromLora : fromCsv.concat(fromLora)
+  }, [styles, search, sliceModeFiltered, sliceCategory])
 
-  /** Unfiltered category total for the compactor (source-scoped, not search-scoped). */
+  /** Unfiltered category total for the compactor (source-scoped, not search-scoped).
+   * LoRA-sourced rows matching the category skip activeSource (same reason as above). */
   const allNamesInCategory = useMemo(() => {
     if (!sliceCategory) return [] as string[]
-    const want = sliceCategory.toLowerCase()
     return styles
       .filter((s) => {
-        if ((s.category || 'OTHER').toLowerCase() !== want) return false
-        if (activeSource && s.source_file !== activeSource) return false
-        return true
+          if (sliceCategory === 'LoRA') return s.source_file === LORA_SOURCE
+          if ((s.category || 'OTHER') !== sliceCategory) return false
+          if (s.source_file === LORA_SOURCE) return true
+          if (activeSource && s.source_file !== activeSource) return false
+          return true
       })
       .map((s) => s.name)
   }, [styles, sliceCategory, activeSource])
 
-  const gridClass = autoFillGridClass(compactMode, windowed)
-  const scrollResetKey = `${search}\0${activeCategory ?? ''}\0${activeSource ?? ''}`
+  const gridClass = autoFillGridClass(windowed)
 
-  // All-categories grouping (hooks before early returns). categoryOrder is a
-  // categories() dep not covered by filtered (profile: avoid O(N) on toggle).
-  const sortedGroups = useMemo(() => {
+  const isFlatCategory = Boolean(
+    activeCategory &&
+      activeCategory !== FAVORITES_VIEW &&
+      activeCategory !== LORA_VIEW,
+  )
+
+  // P: CardsRow/VirtualStyleGrid stack hits — new group arrays every parent render
+  // forced virtualizer row rebuilds even when `filtered` was referentially stable.
+  const flatGroups = useMemo(
+    (): Array<[string, Style[]]> =>
+      isFlatCategory && activeCategory ? [[activeCategory, filtered]] : [],
+    [isFlatCategory, activeCategory, filtered],
+  )
+
+  const sortedGroups = useMemo((): Array<[string, Style[]]> => {
+    if (isFlatCategory) return []
     const groups = filtered.reduce((acc, style) => {
       const cat = style.category || 'OTHER'
       if (!acc[cat]) acc[cat] = []
       acc[cat].push(style)
       return acc
     }, {} as Record<string, Style[]>)
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b))
+  }, [isFlatCategory, filtered])
 
-    const catOrder = categories()
-    return [
-      ...catOrder
-        .filter(cat => groups[cat])
-        .map(cat => [cat, groups[cat]] as [string, Style[]]),
-      ...Object.keys(groups)
-        .filter(cat => !catOrder.includes(cat))
-        .sort()
-        .map(cat => [cat, groups[cat]] as [string, Style[]]),
-    ]
-    // categoryOrder is read inside categories(); filtered does not cover reorder.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional categories() dep
-  }, [filtered, categories, categoryOrder])
-
-  const handleHeaderContextMenu = useCallback(
-    (cat: string, x: number, y: number, restoreFocusTo: HTMLElement) =>
-      setCatMenu({ x, y, cat, restoreFocusTo }),
-    [],
-  )
-
-  /** Flat single-group view — stable identity so VirtualStyleGrid skips row rebuilds. */
-  const flatCategoryGroups = useMemo((): Array<[string, Style[]]> => {
-    if (!activeCategory || activeCategory === 'presets') return []
-    return [[activeCategory, filtered]]
-  }, [activeCategory, filtered])
+  // Stable callback — fresh inline broke VirtualStyleGrid memo on every parent render.
+  const onHeaderContextMenu = useCallback((cat: string, x: number, y: number) => {
+    setLoraCatMenu({ x, y, cat })
+  }, [])
 
   const renderSliceCard = (style: Style) => {
     const checked = sliceSelection.includes(style.name)
-    const label = style.name.includes('_')
+    const label = style.display_name || (style.name.includes('_')
       ? style.name.split('_').slice(1).join(' ')
-      : style.name
+      : style.name)
     return (
       <div key={styleRowKey(style)} className="relative">
-        <StyleCard style={style} windowed={windowed} />
+        <StyleCard style={style} windowed={windowed} hoverActions={false} />
         <button
           type="button"
-          className={`absolute inset-0 z-20 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent ${
+          className={`absolute inset-0 z-20 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sg-accent focus-visible:ring-offset-1 focus-visible:ring-offset-sg-bg ${
             checked ? 'bg-sg-wildcard/15 ring-1 ring-sg-wildcard/50' : 'bg-transparent'
           }`}
           aria-pressed={checked}
@@ -260,6 +293,8 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
     if (!sliceMode) return null
     const cat = sliceMode.category
     const isDeck = sliceMode.kind === WILDCARD_KIND_DECK
+    // An empty selection compacts to spec "" = the whole category: not a slice.
+    const nothingPicked = sliceSelection.length === 0
     return (
       <div
         role="toolbar"
@@ -267,11 +302,19 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
         className="flex flex-wrap items-center gap-2 px-1 py-2 mb-2 rounded-md
                    border border-sg-wildcard/40 bg-sg-wildcard/10"
       >
-        <span className="text-sm text-sg-text font-medium">
-          {isDeck ? SLICE_BAR_TITLE_SHUFFLE : SLICE_BAR_TITLE_DICE}<span className="text-sg-wildcard-text">{cat}</span>
+        <span className="text-sm text-sg-text font-medium" data-sg-slice-title="true">
+          Wildcard from <span className="text-sg-wildcard-text">{cat}</span>
         </span>
-        <span className="text-xs text-sg-muted" aria-live="polite">
-          {sliceSelection.length} selected
+        <SegmentedControl
+          options={SLICE_KIND_OPTIONS}
+          value={sliceMode.kind}
+          onChange={setSliceKind}
+          ariaLabel={SLICE_MODE_GROUP_LABEL}
+          tone="wildcard"
+          data={{ 'data-sg-slice-kind': 'true' }}
+        />
+        <span className="text-xs text-sg-wildcard-text" aria-live="polite" data-sg-slice-count="true">
+          {sliceSelection.length} picked
         </span>
         <div className="flex-1" />
         <button
@@ -290,54 +333,58 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
                      hover:bg-sg-surface/60 transition-colors"
           onClick={() => clearSliceSelection()}
         >
-          Clear all
-        </button>
-        <button
-          type="button"
-          aria-label={isDeck ? SLICE_ADD_SHUFFLE_ARIA : SLICE_ADD_DICE_ARIA}
-          className="text-xs px-2.5 py-1 rounded bg-sg-wildcard/30 border border-sg-wildcard/50
-                     text-sg-text hover:bg-sg-wildcard/45 transition-colors font-medium"
-          onClick={() => {
-            const spec = buildSliceSpec(cat, sliceSelection, allNamesInCategory)
-            sendToHost({
-              type: 'SG_WILDCARD_SLICE',
-              category: cat,
-              spec,
-              ...(isDeck ? { kind: WILDCARD_KIND_DECK } : {}),
-            })
-            exitSliceMode()
-          }}
-        >
-          {isDeck ? SLICE_ADD_SHUFFLE : SLICE_ADD_DICE}
+          Clear
         </button>
         <button
           type="button"
           aria-label="Cancel wildcard slice selection"
-          className="text-xs px-2 py-1 rounded text-sg-muted hover:text-sg-text
+          className="text-xs px-2.5 h-7 rounded border border-sg-border text-sg-text
                      hover:bg-sg-surface/60 transition-colors"
           onClick={() => exitSliceMode()}
         >
           Cancel
         </button>
+        <button
+          type="button"
+          data-sg-slice-add="true"
+          aria-label={isDeck ? SLICE_ADD_SHUFFLE_ARIA : 'Add selection as random wildcard'}
+          disabled={nothingPicked}
+          aria-disabled={nothingPicked}
+          className={
+            nothingPicked
+              ? 'text-xs px-3 h-7 rounded font-medium bg-sg-wildcard/25 text-sg-muted cursor-not-allowed'
+              : 'text-xs px-3 h-7 rounded font-medium bg-sg-wildcard text-white hover:bg-sg-wildcard/85 transition-colors'
+          }
+          onClick={() => {
+            if (nothingPicked) return
+            const spec = buildSliceSpec(cat, sliceSelection, allNamesInCategory)
+            sendToHost(
+              isDeck
+                ? {
+                    type: 'SG_WILDCARD_SLICE',
+                    category: cat,
+                    spec,
+                    kind: WILDCARD_KIND_DECK,
+                  }
+                : { type: 'SG_WILDCARD_SLICE', category: cat, spec },
+            )
+            exitSliceMode()
+          }}
+        >
+          Add wildcard
+        </button>
       </div>
     )
   }
 
-  // Slice-selection mode: NOT virtualized (contract).
+  // Slice-selection mode: hide other categories; search still drives `filtered` → visibleSliceStyles.
+  // Slice mode is NOT virtualized (contract).
   if (sliceMode) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-2 flex-1 flex flex-col">
         {renderSliceModeBar()}
         {visibleSliceStyles.length === 0 ? (
-          <EmptyStylesNotice
-            search={search}
-            activeSource={activeSource}
-            activeCategory={activeCategory}
-            ignoreCategory
-            setSearch={setSearch}
-            setActiveSource={setActiveSource}
-            setCategory={setCategory}
-          />
+          renderEmptyState({ sliceCategory: sliceCategory })
         ) : (
           <div className={gridClass}>
             {visibleSliceStyles.map(renderSliceCard)}
@@ -352,28 +399,18 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
   }
 
   if (filtered.length === 0) {
-    return (
-      <EmptyStylesNotice
-        search={search}
-        activeSource={activeSource}
-        activeCategory={activeCategory}
-        setSearch={setSearch}
-        setActiveSource={setActiveSource}
-        setCategory={setCategory}
-      />
-    )
+    return renderEmptyState()
   }
 
-  // Specific category / Favorites / Recent — flat virtualized grid, no section headers.
-  if (activeCategory) {
+  // Specific category — flat virtualized grid, no headers
+  if (isFlatCategory) {
     return (
       <VirtualStyleGrid
-        groups={flatCategoryGroups}
+        groups={flatGroups}
         collapsedCategories={collapsedCategories}
-        compactMode={compactMode}
         windowed={windowed}
+        viewMode={viewMode}
         includeHeaders={false}
-        scrollResetKey={scrollResetKey}
         onToggleCollapse={toggleCollapse}
         onSelectAll={selectAllInCategory}
       />
@@ -384,22 +421,26 @@ export const StyleGrid = memo(function StyleGrid({ windowed = false }: { windowe
     <VirtualStyleGrid
       groups={sortedGroups}
       collapsedCategories={collapsedCategories}
-      compactMode={compactMode}
       windowed={windowed}
+      viewMode={viewMode}
       includeHeaders
-      scrollResetKey={scrollResetKey}
+      enableLoraContextMenu={activeCategory === LORA_VIEW}
       onToggleCollapse={toggleCollapse}
       onSelectAll={selectAllInCategory}
-      onHeaderContextMenu={handleHeaderContextMenu}
+      onHeaderContextMenu={onHeaderContextMenu}
     >
-      {catMenu && (
-        <WildcardCategoryMenu
-          category={catMenu.cat}
-          x={catMenu.x}
-          y={catMenu.y}
-          onClose={() => setCatMenu(null)}
-          restoreFocusTo={catMenu.restoreFocusTo}
-        />
+      {loraCatMenu && (
+        <ViewportFixedMenu
+          x={loraCatMenu.x}
+          y={loraCatMenu.y}
+          onClose={() => setLoraCatMenu(null)}
+        >
+          <CategoryMenuItems
+            category={loraCatMenu.cat}
+            onClose={() => setLoraCatMenu(null)}
+            lora
+          />
+        </ViewportFixedMenu>
       )}
     </VirtualStyleGrid>
   )

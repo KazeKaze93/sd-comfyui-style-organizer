@@ -1,23 +1,17 @@
-export const MENU_GROUP_RANDOM = 'Wildcard: random (can repeat)'
-export const MENU_GROUP_SHUFFLE = 'Wildcard: shuffle (no repeats between queue runs)'
-export const MENU_WHOLE_CATEGORY = 'Whole category'
-export const MENU_PICK_STYLES = 'Pick styles...'
-export const SLICE_BAR_TITLE_DICE = 'Slice: '
-export const SLICE_BAR_TITLE_SHUFFLE = 'Shuffle slice: '
-export const SLICE_ADD_DICE = 'Add as wildcard'
-export const SLICE_ADD_DICE_ARIA = 'Add selection as wildcard slice'
-export const SLICE_ADD_SHUFFLE = 'Add as shuffle wildcard'
+import { PLATFORM } from './platform'
+
+export const MENU_HEADING_PREFIX = 'Wildcard from '
+export const MENU_RANDOM = 'Random'
+export const MENU_RANDOM_SUB = 'whole category, may repeat'
+export const MENU_SHUFFLE = 'Shuffle'
+export const MENU_SHUFFLE_SUB = PLATFORM.shuffleMenuSub
+export const MENU_PICK_STYLES = 'Pick styles…'
+export const MENU_PICK_STYLES_SUB = 'choose Random or Shuffle in the bar'
+export const MENU_GENERATE_PREVIEWS = 'Generate previews…'
+export const SLICE_MODE_GROUP_LABEL = 'Wildcard mode'
+export const SLICE_MODE_RANDOM = 'Random'
+export const SLICE_MODE_SHUFFLE = 'Shuffle'
 export const SLICE_ADD_SHUFFLE_ARIA = 'Add selection as shuffle wildcard slice'
 export const SHUFFLE_CHIP_TITLE =
-  'Shuffle: each style is used once before any repeats (one step per queue run)'
+  `Shuffle: each style is used once before any repeats (${PLATFORM.shuffleChipScope})`
 export const PRESET_SHUFFLE_SUFFIX = '(shuffle)'
-
-export const DECK_STRIP_ARIA = 'Shuffle deck'
-export const DECK_STRIP_TITLE =
-  'Shuffle wildcards step through a deck, one draw per queue run. The position advances automatically.'
-export const DECK_SEED_LABEL = 'seed'
-export const DECK_NEXT_LABEL = 'next draw'
-export const DECK_RESTART = 'Restart'
-export const DECK_RESTART_ARIA = 'Restart the shuffle deck from the first draw'
-export const DECK_NEW = 'New deck'
-export const DECK_NEW_ARIA = 'Start a new shuffle deck with a new random seed'

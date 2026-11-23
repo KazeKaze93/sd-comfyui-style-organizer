@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Style } from '../bridge'
-import { sendToHost } from '../bridge'
 import {
   __resetAmbiguousToastForTests,
-  FAVORITES_VIEW,
-  filterFavoriteStyles,
-  migrateLegacyNameKeys,
+  resolvePresetMembers,
+  resolvePresetStyleEntry,
+  resolveSourceInList,
   styleRowKey,
   useStylesStore,
 } from './stylesStore'
@@ -30,29 +29,26 @@ function row(
     negative_prompt: extra.negative_prompt ?? `neg:${source_file}:${name}`,
     description: extra.description ?? '',
     category: extra.category ?? 'BODY',
-    has_thumbnail: false,
-    read_only: false,
   }
 }
 
-/** Id-form source_file as emitted by the server since dbe3f77. */
-const FILE_A = 'data/a.csv'
-const FILE_B = 'imports/b.csv'
+/** Id-form source_file as emitted by the server since aea4bfd. */
+const FILE_A = 'styles/a.csv'
+const FILE_B = 'webui/b.csv'
 
 function resetStore() {
   localStorage.clear()
   useStylesStore.setState({
     styles: [],
+    tab: 'txt2img',
     search: '',
     activeCategory: null,
     activeSource: null,
     sources: [],
     selectedStyles: [],
-    selectedKeySet: new Set(),
-    selectedCountByCategory: new Map(),
     conflicts: [],
     favorites: new Set(),
-    recentNames: [],
+    favoritesHydrated: true,
     presets: {},
     presetsCorrupt: null,
     activePresetName: null,
@@ -60,108 +56,64 @@ function resetStore() {
     activeWildcards: [],
     thumbVersions: {},
   })
-  vi.mocked(sendToHost).mockClear()
+}
+
+function mockJsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+  const status = init.status ?? (init.ok === false ? 500 : 200)
+  const ok = init.ok ?? (status >= 200 && status < 300)
+  return {
+    ok,
+    status,
+    json: async () => body,
+  } as Response
 }
 
 describe('style identity (name, source_file)', () => {
   beforeEach(() => {
     __resetAmbiguousToastForTests()
     resetStore()
+    vi.unstubAllGlobals()
   })
 
-  it('conflict: weighted pale skin vs bare negative is one conflict', () => {
-    const a = row('A', FILE_A, {
-      prompt: '(pale skin:1.2)',
-      negative_prompt: '',
-    })
-    const b = row('B', FILE_B, {
-      prompt: 'other',
-      negative_prompt: 'pale skin',
-    })
-    useStylesStore.getState().setStyles([a, b])
-    useStylesStore.getState().toggleStyle(a)
-    useStylesStore.getState().toggleStyle(b)
-    useStylesStore.getState().detectConflicts()
-    expect(useStylesStore.getState().conflicts).toHaveLength(1)
-  })
-
-  it('favorites A only then both; Favorites view lists the right packs', () => {
-    const a = row('X', FILE_A, { prompt: 'from-a' })
-    const b = row('X', FILE_B, { prompt: 'from-b' })
-    useStylesStore.getState().setStyles([a, b])
+  it('favorites two same-named styles from different files independently', () => {
+    const a = row('BODY_Ears', FILE_A)
+    const b = row('BODY_Ears', FILE_B)
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
     useStylesStore.getState().toggleFavorite(a)
-
-    expect(useStylesStore.getState().isFavorite(a)).toBe(true)
-    expect(useStylesStore.getState().isFavorite(b)).toBe(false)
-    expect(
-      filterFavoriteStyles([a, b], '', null, useStylesStore.getState().favorites),
-    ).toEqual([a])
-
     useStylesStore.getState().toggleFavorite(b)
-    expect(useStylesStore.getState().isFavorite(b)).toBe(true)
-    const favView = filterFavoriteStyles(
-      [a, b],
-      '',
-      null,
-      useStylesStore.getState().favorites,
-    )
-    expect(favView).toHaveLength(2)
-    expect(favView.map((s) => styleRowKey(s)).sort()).toEqual(
-      [styleRowKey(a), styleRowKey(b)].sort(),
-    )
+
+    const { favorites, isFavorite } = useStylesStore.getState()
+    expect(favorites.size).toBe(2)
+    expect(favorites.has(styleRowKey(a))).toBe(true)
+    expect(favorites.has(styleRowKey(b))).toBe(true)
+    expect(isFavorite(a)).toBe(true)
+    expect(isFavorite(b)).toBe(true)
   })
 
-  it('toggle A then B selects both; APPLY carries each source_file', () => {
-    const a = row('X', FILE_A, { prompt: 'from-a' })
-    const b = row('X', FILE_B, { prompt: 'from-b' })
-    useStylesStore.getState().setStyles([a, b])
+  it('selects two same-named styles from different files independently', () => {
+    const a = row('BODY_Ears', FILE_A, { prompt: 'core-only' })
+    const b = row('BODY_Ears', FILE_B, { prompt: 'ward-only' })
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
     useStylesStore.getState().toggleStyle(a)
     useStylesStore.getState().toggleStyle(b)
 
     const selected = useStylesStore.getState().selectedStyles
     expect(selected).toHaveLength(2)
-    expect(selected.map((s) => s.prompt).sort()).toEqual(['from-a', 'from-b'])
-
-    const applies = vi.mocked(sendToHost).mock.calls
-      .map((c) => c[0])
-      .filter((m) => m.type === 'SG_APPLY')
-    expect(applies).toHaveLength(2)
-    expect(applies.map((m) => (m.type === 'SG_APPLY' ? m.source_file : '')).sort()).toEqual(
-      [FILE_A, FILE_B].sort(),
+    expect(selected.map((s) => styleRowKey(s)).sort()).toEqual(
+      [styleRowKey(a), styleRowKey(b)].sort(),
     )
   })
 
-  it('unapply A sends source_file data/a.csv; B stays selected', () => {
-    const a = row('X', FILE_A, { prompt: 'from-a' })
-    const b = row('X', FILE_B, { prompt: 'from-b' })
-    useStylesStore.getState().setStyles([a, b])
-    useStylesStore.getState().toggleStyle(a)
-    useStylesStore.getState().toggleStyle(b)
-    vi.mocked(sendToHost).mockClear()
-
-    useStylesStore.getState().toggleStyle(a)
-
-    const unapplies = vi.mocked(sendToHost).mock.calls
-      .map((c) => c[0])
-      .filter((m) => m.type === 'SG_UNAPPLY')
-    expect(unapplies).toEqual([
-      { type: 'SG_UNAPPLY', styleId: 'X', source_file: FILE_A },
-    ])
-    const selected = useStylesStore.getState().selectedStyles
-    expect(selected).toHaveLength(1)
-    expect(selected[0].source_file).toBe(FILE_B)
-  })
-
-  it('loadPreset applies both packs; unapplyPreset removes both with source_file', () => {
-    const a = row('X', FILE_A, { prompt: 'from-a' })
-    const b = row('X', FILE_B, { prompt: 'from-b' })
-    useStylesStore.getState().setStyles([a, b])
+  it('loadPreset keeps both same-named members from different files', () => {
+    const a = row('BODY_Ears', FILE_A, { prompt: 'core-only' })
+    const b = row('BODY_Ears', FILE_B, { prompt: 'ward-only' })
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
     useStylesStore.setState({
       presets: {
         Duo: {
           styles: [
-            { name: 'X', source_file: FILE_A },
-            { name: 'X', source_file: FILE_B },
+            { name: 'BODY_Ears', source_file: FILE_A },
+            { name: 'BODY_Ears', source_file: FILE_B },
           ],
           wildcards: [],
           note: '',
@@ -171,225 +123,77 @@ describe('style identity (name, source_file)', () => {
     })
 
     useStylesStore.getState().loadPreset('Duo')
-    expect(useStylesStore.getState().selectedStyles).toHaveLength(2)
 
-    const applies = vi.mocked(sendToHost).mock.calls
-      .map((c) => c[0])
-      .filter((m) => m.type === 'SG_APPLY')
-    expect(applies.map((m) => (m.type === 'SG_APPLY' ? m.source_file : '')).sort()).toEqual(
-      [FILE_A, FILE_B].sort(),
-    )
-
-    vi.mocked(sendToHost).mockClear()
-    useStylesStore.getState().unapplyPreset('Duo')
-
-    const unapplies = vi.mocked(sendToHost).mock.calls
-      .map((c) => c[0])
-      .filter((m) => m.type === 'SG_UNAPPLY')
-    expect(unapplies).toHaveLength(2)
-    expect(
-      unapplies
-        .map((m) => (m.type === 'SG_UNAPPLY' ? m.source_file : ''))
-        .sort(),
-    ).toEqual([FILE_A, FILE_B].sort())
-    expect(useStylesStore.getState().selectedStyles).toHaveLength(0)
+    const selected = useStylesStore.getState().selectedStyles
+    expect(selected).toHaveLength(2)
+    expect(selected.map((s) => s.prompt).sort()).toEqual(['core-only', 'ward-only'])
   })
 
-  it('migrateLegacyNameKeys: unique upgrades; ambiguous and missing stay separate', () => {
-    const unique = row('CAMERA_Closeup', FILE_A)
+  it('setStyles leaves favorites untouched and posts nothing', () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockJsonResponse({ ok: true, items: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
     const a = row('X', FILE_A)
     const b = row('X', FILE_B)
-    const migrated = migrateLegacyNameKeys(
-      ['CAMERA_Closeup', 'X', 'GONE', styleRowKey(a)],
-      [unique, a, b],
+    const unlinked = 'BareLegacy'
+    useStylesStore.setState({
+      favorites: new Set([styleRowKey(a), unlinked]),
+      favoritesHydrated: true,
+    })
+
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
+
+    expect([...useStylesStore.getState().favorites].sort()).toEqual(
+      [styleRowKey(a), unlinked].sort(),
     )
-    expect(migrated.keys).toEqual([styleRowKey(unique), styleRowKey(a)])
-    expect(migrated.ambiguous).toEqual(['X'])
-    expect(migrated.missing).toEqual(['GONE'])
-    expect(migrated.identical).toEqual([])
-    expect(migrated.keys).not.toContain(styleRowKey(b))
-  })
-
-  it('setStyles keeps a missing-pack favorite key in localStorage', () => {
-    const a = row('X', FILE_A, { prompt: 'from-a' })
-    const b = row('X', FILE_B, { prompt: 'from-b' })
-    useStylesStore.getState().setStyles([a, b])
-    useStylesStore.getState().toggleFavorite(b)
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(
-      styleRowKey(b),
-    )
-
-    useStylesStore.getState().setStyles([a])
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(
-      styleRowKey(b),
-    )
-    expect(useStylesStore.getState().favorites.has(styleRowKey(b))).toBe(true)
-    expect(useStylesStore.getState().activeCategory).not.toBe(FAVORITES_VIEW)
-  })
-
-  it('toasts ambiguous bare favorites once per signature; missing never toasts', async () => {
-    const a = row('X', FILE_A, { prompt: 'from-a' })
-    const b = row('X', FILE_B, { prompt: 'from-b' })
-    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-
-    localStorage.setItem('sg_v2_favorites', JSON.stringify(['X']))
-    useStylesStore.getState().setStyles([a, b])
-    useStylesStore.getState().setStyles([a, b])
-    await Promise.resolve()
-    await Promise.resolve()
-
-    const ambiguousToasts = toastSpy.mock.calls.filter(([msg]) =>
-      String(msg).includes('differ between packs'),
-    )
-    expect(ambiguousToasts).toHaveLength(1)
-
-    localStorage.setItem(
-      'sg_v2_favorites',
-      JSON.stringify(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]').concat(['Y'])),
-    )
-    const c = row('Y', FILE_A, { prompt: 'y-a' })
-    const d = row('Y', FILE_B, { prompt: 'y-b' })
-    useStylesStore.getState().setStyles([a, b, c, d])
-    await Promise.resolve()
-    await Promise.resolve()
-
-    const afterY = toastSpy.mock.calls.filter(([msg]) =>
-      String(msg).includes('differ between packs'),
-    )
-    expect(afterY).toHaveLength(2)
-    expect(String(afterY[1][0])).toContain('Y')
-
-    toastSpy.mockClear()
-    localStorage.setItem('sg_v2_favorites', JSON.stringify(['MISSING_ONLY']))
-    useStylesStore.getState().setStyles([a, b])
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(toastSpy).not.toHaveBeenCalled()
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(
-      'MISSING_ONLY',
-    )
-
-    toastSpy.mockRestore()
-  })
-
-  it('remaps abs-path favorite to unique source id and persists', () => {
-    const a = row('X', 'data/a.csv', { prompt: 'from-a' })
-    const b = row('X', 'imports/b.csv', { prompt: 'from-b' })
-    const legacy = 'D:\\old\\style_grid\\a.csv\0X'
-    localStorage.setItem('sg_v2_favorites', JSON.stringify([legacy]))
-    useStylesStore.getState().setStyles([a, b])
-
-    const want = styleRowKey(a)
-    expect(useStylesStore.getState().favorites.has(want)).toBe(true)
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(want)
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).not.toContain(legacy)
     expect(
-      filterFavoriteStyles([a, b], '', null, useStylesStore.getState().favorites),
-    ).toEqual([a])
+      fetchMock.mock.calls.some((c) => String(c[0]).includes('/favorites/save')),
+    ).toBe(false)
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]).includes('/recent/save')),
+    ).toBe(false)
   })
 
-  it('keeps abs composite when leaf matches two packs with diverging content; toasts name only', async () => {
-    const a = row('X', 'data/a.csv', { prompt: 'from-a' })
-    const b = row('X', 'imports/a.csv', { prompt: 'from-b' })
-    const legacy = 'D:\\old\\style_grid\\a.csv\0X'
-    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-    localStorage.setItem('sg_v2_favorites', JSON.stringify([legacy]))
-    useStylesStore.getState().setStyles([a, b])
-    await Promise.resolve()
-    await Promise.resolve()
+  it('unlinked favorite entry survives a toggle of another style', () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockJsonResponse({ ok: true, items: [] }))
+    vi.stubGlobal('fetch', fetchMock)
 
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(legacy)
-    expect(useStylesStore.getState().favorites.has(legacy)).toBe(false)
-    expect(useStylesStore.getState().favorites.has(styleRowKey(a))).toBe(false)
-    const toasts = toastSpy.mock.calls.filter(([msg]) =>
-      String(msg).includes('differ between packs'),
-    )
-    expect(toasts).toHaveLength(1)
-    expect(String(toasts[0][0])).toContain('X')
-    expect(String(toasts[0][0])).not.toMatch(/D:\\|style_grid|data\/a|imports\/a/i)
-    toastSpy.mockRestore()
-  })
+    const a = row('X', FILE_A)
+    const unlinked = 'BareLegacy'
+    useStylesStore.setState({
+      favorites: new Set([unlinked]),
+      favoritesHydrated: true,
+    })
+    useStylesStore.getState().setStyles([a], 'txt2img')
+    useStylesStore.getState().toggleFavorite(a)
 
-  it('links bare favorite to every pack when content is identical; no toast', async () => {
-    const a = row('X', 'data/a.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const b = row('X', 'imports/b.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-    localStorage.setItem('sg_v2_favorites', JSON.stringify(['X']))
-    useStylesStore.getState().setStyles([a, b])
-    await Promise.resolve()
-    await Promise.resolve()
-
+    expect(useStylesStore.getState().favorites.has(unlinked)).toBe(true)
     expect(useStylesStore.getState().favorites.has(styleRowKey(a))).toBe(true)
-    expect(useStylesStore.getState().favorites.has(styleRowKey(b))).toBe(true)
-    const favView = filterFavoriteStyles(
-      [a, b],
-      '',
-      null,
-      useStylesStore.getState().favorites,
-    )
-    expect(favView).toHaveLength(2)
-    expect(toastSpy).not.toHaveBeenCalled()
-    toastSpy.mockRestore()
+    const [, init] = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes('/favorites/save'),
+    )!
+    const body = JSON.parse(String((init as RequestInit).body)) as { items: string[] }
+    expect(body.items.sort()).toEqual([unlinked, styleRowKey(a)].sort())
   })
 
-  it('bare favorite with diverging prompts stays unlinked and toasts X', async () => {
-    const a = row('X', 'data/a.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const b = row('X', 'imports/b.csv', { prompt: 'p2', negative_prompt: 'n1' })
+  it('toasts ambiguous favorites once per signature; max 5 names; empty skips', async () => {
     const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-    localStorage.setItem('sg_v2_favorites', JSON.stringify(['X']))
-    useStylesStore.getState().setStyles([a, b])
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(useStylesStore.getState().favorites.size).toBe(0)
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain('X')
-    const toasts = toastSpy.mock.calls.filter(([msg]) =>
-      String(msg).includes('differ between packs'),
-    )
-    expect(toasts).toHaveLength(1)
-    expect(String(toasts[0][0])).toContain('X')
-    toastSpy.mockRestore()
-  })
-
-  it('bare recent with identical multi-pack content stays bare in LS; no toast', async () => {
-    const a = row('X', 'data/a.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const b = row('X', 'imports/b.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-    localStorage.setItem('sg_v2_recent', JSON.stringify(['X']))
-    useStylesStore.getState().setStyles([a, b])
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(useStylesStore.getState().recentNames).toEqual([])
-    expect(JSON.parse(localStorage.getItem('sg_v2_recent') || '[]')).toContain('X')
-    expect(toastSpy).not.toHaveBeenCalled()
-    toastSpy.mockRestore()
-  })
-
-  it('links abs composite favorite to every same-leaf pack when content is identical', () => {
-    const a = row('X', 'data/a.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const b = row('X', 'imports/a.csv', { prompt: 'p1', negative_prompt: 'n1' })
-    const legacy = 'D:\\old\\a.csv\0X'
-    localStorage.setItem('sg_v2_favorites', JSON.stringify([legacy]))
-    useStylesStore.getState().setStyles([a, b])
-
-    expect(useStylesStore.getState().favorites.has(styleRowKey(a))).toBe(true)
-    expect(useStylesStore.getState().favorites.has(styleRowKey(b))).toBe(true)
-    const stored = JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]') as string[]
-    expect(stored).toContain(styleRowKey(a))
-    expect(stored).toContain(styleRowKey(b))
-    expect(stored).not.toContain(legacy)
-  })
-
-  it('toast lists 5 diverging favorite names then (+K more)', async () => {
     const names = Array.from({ length: 12 }, (_, i) => `N${String(i).padStart(2, '0')}`)
-    const styles = names.flatMap((name) => [
-      row(name, 'data/a.csv', { prompt: `p-${name}-a`, negative_prompt: 'n' }),
-      row(name, 'imports/b.csv', { prompt: `p-${name}-b`, negative_prompt: 'n' }),
-    ])
-    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-    localStorage.setItem('sg_v2_favorites', JSON.stringify(names))
-    useStylesStore.getState().setStyles(styles)
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/style_grid/favorites') {
+        return mockJsonResponse({
+          items: names,
+          persisted: true,
+          ambiguous: names,
+        })
+      }
+      return mockJsonResponse({ ok: false }, { ok: false })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await useStylesStore.getState().hydrateFavorites()
     await Promise.resolve()
     await Promise.resolve()
 
@@ -400,52 +204,103 @@ describe('style identity (name, source_file)', () => {
     const msg = String(toasts[0][0])
     expect(msg).toContain('12 favorites match styles that differ between packs')
     expect(msg).toContain('(+7 more)')
-    const listed = names.filter((n) => msg.includes(n))
-    expect(listed).toHaveLength(5)
-    toastSpy.mockRestore()
-  })
+    expect(names.filter((n) => msg.includes(n))).toHaveLength(5)
 
-  it('keeps id composite when that pack is unloaded; no toast, no remap to other pack', async () => {
-    const other = row('X', 'imports/gone.csv', { prompt: 'from-imports' })
-    const stored = 'data/gone.csv\0X'
-    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
-    localStorage.setItem('sg_v2_favorites', JSON.stringify([stored]))
-    useStylesStore.getState().setStyles([other])
+    await useStylesStore.getState().hydrateFavorites()
     await Promise.resolve()
     await Promise.resolve()
+    expect(
+      toastSpy.mock.calls.filter(([m]) => String(m).includes('differ between packs')),
+    ).toHaveLength(1)
 
-    expect(JSON.parse(localStorage.getItem('sg_v2_favorites') || '[]')).toContain(stored)
-    expect(useStylesStore.getState().favorites.has(stored)).toBe(true)
-    expect(useStylesStore.getState().favorites.has(styleRowKey(other))).toBe(false)
+    toastSpy.mockClear()
+    __resetAmbiguousToastForTests()
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/style_grid/favorites') {
+        return mockJsonResponse({ items: ['X'], persisted: true, ambiguous: [] })
+      }
+      return mockJsonResponse({ ok: false }, { ok: false })
+    })
+    await useStylesStore.getState().hydrateFavorites()
+    await Promise.resolve()
     expect(toastSpy).not.toHaveBeenCalled()
     toastSpy.mockRestore()
   })
 
-  it('restores sg_v2_last_source by unique leaf; ambiguous leaf stays null', () => {
-    const pack = row('X', 'imports/pack.csv')
-    const other = row('Y', 'data/other.csv')
-    localStorage.setItem('sg_v2_last_source', 'C:\\x\\imports\\pack.csv')
-    useStylesStore.getState().setStyles([other, pack])
-    expect(useStylesStore.getState().activeSource).toBe('imports/pack.csv')
-    expect(localStorage.getItem('sg_v2_last_source')).toBe('imports/pack.csv')
+  it('re-GETs favorites for ambiguous after a successful migrate', async () => {
+    const toastSpy = vi.spyOn(useStylesStore.getState(), 'showToast')
+    localStorage.setItem('sg_v2_favorites', JSON.stringify(['Dup']))
+    let migrated = false
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/style_grid/favorites' && (!init || !init.method || init.method === 'GET')) {
+        if (!migrated) {
+          return mockJsonResponse({ items: [], persisted: false, ambiguous: [] })
+        }
+        return mockJsonResponse({
+          items: ['Dup'],
+          persisted: true,
+          ambiguous: ['Dup'],
+        })
+      }
+      if (url === '/style_grid/favorites/migrate') {
+        migrated = true
+        return mockJsonResponse({ ok: true, migrated: true, items: ['Dup'] })
+      }
+      return mockJsonResponse({ ok: false }, { ok: false })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await useStylesStore.getState().hydrateFavorites()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(
+      fetchMock.mock.calls.filter((c) => String(c[0]) === '/style_grid/favorites'),
+    ).toHaveLength(2)
+    const toasts = toastSpy.mock.calls.filter(([msg]) =>
+      String(msg).includes('differ between packs'),
+    )
+    expect(toasts).toHaveLength(1)
+    expect(String(toasts[0][0])).toContain('Dup')
+    toastSpy.mockRestore()
+  })
+
+  it('resolveSourceInList: id exact, legacy unique leaf, ambiguous null, id miss stays null', () => {
+    const sources = ['styles/pack.csv', 'webui/other.csv', 'samples/pack.csv']
+    expect(resolveSourceInList(sources, 'styles/pack.csv')).toBe('styles/pack.csv')
+    expect(resolveSourceInList(sources, 'C:\\old\\other.csv')).toBe('webui/other.csv')
+    expect(resolveSourceInList(sources, 'D:/x/pack.csv')).toBeNull()
+    expect(resolveSourceInList(sources, 'styles/missing.csv')).toBeNull()
+  })
+
+  it('restores sg_v2_last_source_tab by unique leaf and writes the id', () => {
+    const pack = row('X', 'styles/pack.csv')
+    const other = row('Y', 'webui/other.csv')
+    localStorage.setItem('sg_v2_last_source_txt2img', 'C:\\x\\styles\\pack.csv')
+    useStylesStore.getState().setStyles([other, pack], 'txt2img')
+    expect(useStylesStore.getState().activeSource).toBe('styles/pack.csv')
+    expect(localStorage.getItem('sg_v2_last_source_txt2img')).toBe('styles/pack.csv')
+    expect(localStorage.getItem('sg_v2_last_source')).toBeNull()
 
     resetStore()
-    localStorage.setItem('sg_v2_last_source', 'C:\\x\\imports\\pack.csv')
-    const dataPack = row('X', 'data/pack.csv')
-    const importsPack = row('X', 'imports/pack.csv')
-    useStylesStore.getState().setStyles([dataPack, importsPack])
+    localStorage.setItem('sg_v2_last_source_txt2img', 'C:\\x\\styles\\pack.csv')
+    const stylesPack = row('X', 'styles/pack.csv')
+    const samplesPack = row('X', 'samples/pack.csv')
+    useStylesStore.getState().setStyles([stylesPack, samplesPack], 'txt2img')
     expect(useStylesStore.getState().activeSource).toBeNull()
-    expect(localStorage.getItem('sg_v2_last_source')).toBe('C:\\x\\imports\\pack.csv')
+    expect(localStorage.getItem('sg_v2_last_source_txt2img')).toBe('C:\\x\\styles\\pack.csv')
   })
 
   it('copies abs thumb version key to unique source-id key without deleting old', () => {
-    const a = row('X', 'data/a.csv')
-    const b = row('X', 'imports/b.csv')
+    const a = row('X', 'styles/a.csv')
+    const b = row('X', 'webui/b.csv')
     const absKey = 'D:\\old\\style_grid\\a.csv\0X'
     const newKey = styleRowKey(a)
     localStorage.setItem(`sg_thumb_v_${absKey}`, 'v42')
     useStylesStore.setState({ thumbVersions: { [absKey]: 'v42' } })
-    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
 
     expect(localStorage.getItem(`sg_thumb_v_${absKey}`)).toBe('v42')
     expect(localStorage.getItem(`sg_thumb_v_${newKey}`)).toBe('v42')
@@ -454,22 +309,93 @@ describe('style identity (name, source_file)', () => {
   })
 
   it('does not overwrite an existing id thumb version on later setStyles', () => {
-    const a = row('X', 'data/a.csv')
-    const b = row('X', 'imports/b.csv')
+    const a = row('X', 'styles/a.csv')
+    const b = row('X', 'webui/b.csv')
     const absKey = 'D:\\old\\style_grid\\a.csv\0X'
     const newKey = styleRowKey(a)
     localStorage.setItem(`sg_thumb_v_${absKey}`, 'v1')
     useStylesStore.setState({ thumbVersions: { [absKey]: 'v1' } })
-    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
     expect(localStorage.getItem(`sg_thumb_v_${newKey}`)).toBe('v1')
-    expect(useStylesStore.getState().thumbVersions[newKey]).toBe('v1')
 
     useStylesStore.getState().bumpThumbVersion(newKey, 'v2')
-    useStylesStore.getState().setStyles([a, b])
+    useStylesStore.getState().setStyles([a, b], 'txt2img')
 
     expect(localStorage.getItem(`sg_thumb_v_${newKey}`)).toBe('v2')
     expect(useStylesStore.getState().thumbVersions[newKey]).toBe('v2')
     expect(localStorage.getItem(`sg_thumb_v_${absKey}`)).toBe('v1')
     expect(useStylesStore.getState().thumbVersions[absKey]).toBe('v1')
+  })
+})
+
+describe('preset member resolution: exact (file, name), then unambiguous name', () => {
+  const FILE_C = 'webui/c.csv'
+  const same = { prompt: 'shared prompt', negative_prompt: 'shared neg' }
+
+  it('exact (file, name) hit wins even when other files hold diverging rows', () => {
+    const a = row('BODY_Ears', FILE_A)
+    const b = row('BODY_Ears', FILE_B)
+    expect(resolvePresetStyleEntry({ name: 'BODY_Ears', source_file: FILE_B }, [a, b])).toBe(b)
+  })
+
+  it('single candidate by name resolves when the stored file is gone', () => {
+    const b = row('BODY_Ears', FILE_B)
+    expect(resolvePresetStyleEntry({ name: 'BODY_Ears', source_file: FILE_A }, [b])).toBe(b)
+  })
+
+  it('several byte-identical candidates resolve by name', () => {
+    const b = row('BODY_Ears', FILE_B, same)
+    const c = row('BODY_Ears', FILE_C, same)
+    const hit = resolvePresetStyleEntry({ name: 'BODY_Ears', source_file: FILE_A }, [b, c])
+    expect(hit).toBe(b)
+  })
+
+  it('several diverging candidates are Missing: prompt differs', () => {
+    const b = row('BODY_Ears', FILE_B, same)
+    const c = row('BODY_Ears', FILE_C, { ...same, prompt: 'other prompt' })
+    expect(
+      resolvePresetStyleEntry({ name: 'BODY_Ears', source_file: FILE_A }, [b, c]),
+    ).toBeUndefined()
+  })
+
+  it('several diverging candidates are Missing: only negative_prompt differs', () => {
+    const b = row('BODY_Ears', FILE_B, same)
+    const c = row('BODY_Ears', FILE_C, { ...same, negative_prompt: 'other neg' })
+    expect(
+      resolvePresetStyleEntry({ name: 'BODY_Ears', source_file: FILE_A }, [b, c]),
+    ).toBeUndefined()
+  })
+
+  it('zero candidates are Missing', () => {
+    const b = row('BODY_Tail', FILE_B)
+    expect(
+      resolvePresetStyleEntry({ name: 'BODY_Ears', source_file: FILE_A }, [b]),
+    ).toBeUndefined()
+  })
+
+  it('legacy bare-name entries follow the same name rule', () => {
+    const b = row('BODY_Ears', FILE_B, same)
+    const c = row('BODY_Ears', FILE_C, same)
+    const d = row('BODY_Ears', FILE_A)
+    expect(resolvePresetStyleEntry('BODY_Ears', [b])).toBe(b)
+    expect(resolvePresetStyleEntry('BODY_Ears', [b, c])).toBe(b)
+    expect(resolvePresetStyleEntry('BODY_Ears', [b, c, d])).toBeUndefined()
+    expect(resolvePresetStyleEntry('BODY_Ears', [])).toBeUndefined()
+  })
+
+  it('resolvePresetMembers reports ambiguous and absent members as missing with their pack', () => {
+    const b = row('BODY_Ears', FILE_B)
+    const c = row('BODY_Ears', FILE_C)
+    const members = resolvePresetMembers(
+      [
+        { name: 'BODY_Ears', source_file: FILE_B },
+        { name: 'BODY_Ears', source_file: FILE_A },
+        { name: 'BODY_Gone', source_file: FILE_A },
+      ],
+      [b, c],
+    )
+    expect(members.map((m) => m.status)).toEqual(['found', 'missing', 'missing'])
+    expect(members[1]).toMatchObject({ status: 'missing', name: 'BODY_Ears', pack: 'a' })
+    expect(members[2]).toMatchObject({ status: 'missing', name: 'BODY_Gone', pack: 'a' })
   })
 })

@@ -4,7 +4,6 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Style Grid tokens — channels live in index.css (:root / data-sg-theme)
         'sg-bg': 'rgb(var(--sg-bg) / <alpha-value>)',
         'sg-surface': 'rgb(var(--sg-surface) / <alpha-value>)',
         'sg-popover': 'rgb(var(--sg-popover) / <alpha-value>)',
@@ -21,7 +20,7 @@ export default {
         'sg-info': 'rgb(var(--sg-info) / <alpha-value>)',
         'sg-wildcard': 'rgb(var(--sg-wildcard) / <alpha-value>)',
         'sg-wildcard-text': 'rgb(var(--sg-wildcard-text) / <alpha-value>)',
-        // shadcn (CSS variables aliased to sg in index.css)
+        // shadcn (CSS variables)
         border: 'var(--border)',
         input: 'var(--input)',
         ring: 'var(--ring)',
@@ -55,6 +54,23 @@ export default {
           DEFAULT: 'var(--card)',
           foreground: 'var(--card-foreground)',
         },
+        sidebar: {
+          DEFAULT: 'var(--sidebar)',
+          foreground: 'var(--sidebar-foreground)',
+          primary: 'var(--sidebar-primary)',
+          'primary-foreground': 'var(--sidebar-primary-foreground)',
+          accent: 'var(--sidebar-accent)',
+          'accent-foreground': 'var(--sidebar-accent-foreground)',
+          border: 'var(--sidebar-border)',
+          ring: 'var(--sidebar-ring)',
+        },
+        chart: {
+          1: 'var(--chart-1)',
+          2: 'var(--chart-2)',
+          3: 'var(--chart-3)',
+          4: 'var(--chart-4)',
+          5: 'var(--chart-5)',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -62,9 +78,25 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        // Stack ends on system sans only — no serif fallback.
-        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        heading: ['var(--font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Named system sans only — no serif / ui-serif in the chain.
+        sans: [
+          'var(--font-sans)',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'Noto Sans',
+          'sans-serif',
+        ],
+        heading: [
+          'var(--font-heading)',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'Noto Sans',
+          'sans-serif',
+        ],
       },
     },
   },
