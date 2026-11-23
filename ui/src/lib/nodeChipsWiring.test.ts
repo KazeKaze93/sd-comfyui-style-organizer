@@ -1,27 +1,13 @@
 /** @vitest-environment jsdom */
 /**
  * Extension host: the chip row wired into the Style Grid node — node height
- * arithmetic (web/js/node_chips.js), the widget in web/js/style_grid.js, and
- * proof that the non-serialized chip widget leaves widgets_values unchanged.
+ * arithmetic (web/js/node_chips.js), the ledger reorder, and proof that the
+ * non-serialized chip widget leaves widgets_values unchanged. The wiring in
+ * style_grid.js is covered by hostBehavior.test.ts.
  */
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { reorderLedgerEntries } from '../../../web/js/host_actions.js'
 import { chipRowsHeight, createChipRow, nextNodeHeight } from '../../../web/js/node_chips.js'
-
-const HERE = path.dirname(fileURLToPath(import.meta.url))
-const HOST_SRC = fs.readFileSync(path.resolve(HERE, '../../../web/js/style_grid.js'), 'utf8')
-
-/** Body of a top-level function in style_grid.js (up to the next top-level declaration). */
-function fnBody(name: string): string {
-  const start = HOST_SRC.indexOf(`function ${name}(`)
-  expect(start, `function ${name} in style_grid.js`).toBeGreaterThanOrEqual(0)
-  const rest = HOST_SRC.slice(start + 1)
-  const end = rest.search(/\n(?:async )?function |\nconst |\nlet |\napp\.registerExtension/)
-  return HOST_SRC.slice(start, end < 0 ? undefined : start + 1 + end)
-}
 
 describe('nextNodeHeight', () => {
   it('same row height → null (no setSize)', () => {
@@ -91,91 +77,6 @@ describe('chip row CSS', () => {
     createChipRow({ doc: document, onOpen: () => {}, onRemoveStyle: () => {}, onRemoveWildcard: () => {} }).destroy()
     const css = document.getElementById('sg-node-chips-style')?.textContent || ''
     expect(css).toContain('.sg-chips [hidden]{display:none!important}')
-  })
-})
-
-describe('the sg_chips widget in style_grid.js', () => {
-  const addChips = fnBody('addNodeChips')
-
-  it('is a DOM widget with both serialize flags off, only when addDOMWidget exists', () => {
-    expect(addChips).toMatch(/if \(typeof node\.addDOMWidget !== "function"\) return;/)
-    expect(addChips).toMatch(/node\.addDOMWidget\(CHIP_WIDGET, "sg-chips", state\.row\.el, \{\s*serialize: false,\s*hideOnZoom: true,/)
-    expect(addChips).toContain('widget.serialize = false;')
-    expect(addChips).toContain('getMinHeight: () => state.height,')
-    expect(addChips).toContain('getMaxHeight: () => state.height,')
-    expect(addChips).toContain('widget.hidden = true;')
-    expect(HOST_SRC).toContain('const CHIP_WIDGET = "sg_chips";')
-  })
-
-  it('is added before the Browse Styles button, whose handler still toggles', () => {
-    const created = HOST_SRC.slice(HOST_SRC.indexOf('async nodeCreated(node) {'))
-    const chips = created.indexOf('addNodeChips(node);')
-    const button = created.indexOf('node.addWidget("button", "Browse Styles", null, () => openStyleBrowser(node));')
-    expect(chips).toBeGreaterThan(0)
-    expect(button).toBeGreaterThan(chips)
-    expect(fnBody('openStyleBrowser')).toMatch(
-      /if \(overlay && overlay\.style\.display === "block" && currentNode === node\) \{\s*closeStyleBrowser\(\);/,
-    )
-  })
-
-  it('chip body / +N never closes the panel', () => {
-    const show = fnBody('showStyleBrowserFor')
-    expect(show).not.toContain('closeStyleBrowser')
-    expect(show).toContain('openStyleBrowser(node);')
-    expect(addChips).toContain('onOpen: () => showStyleBrowserFor(node),')
-  })
-
-  it('✕ reuses the SG_UNAPPLY and SG_REMOVE_WILDCARD paths, then syncs the panel and records an undo step', () => {
-    expect(HOST_SRC).toMatch(/if \(msg\.type === "SG_UNAPPLY" && currentNode\) \{\s*unapplyFromMessage\(currentNode, msg, postInfoToast\);/)
-    expect(HOST_SRC).toMatch(/if \(msg\.type === "SG_REMOVE_WILDCARD" && currentNode\) \{\s*removeWildcardCategory\(currentNode, msg\.category, msg\.spec \|\| "", msg\.kind\);/)
-    const removeStyle = fnBody('removeStyleChip')
-    expect(removeStyle).toMatch(/unapplyFromMessage\(\s*node,\s*\{ type: "SG_UNAPPLY", styleId: name, source_file \},/)
-    expect(removeStyle).toMatch(/syncPanelForNode\(node\);\s*captureUndoStep\(\);/)
-    const removeWildcard = fnBody('removeWildcardChip')
-    expect(removeWildcard).toMatch(/removeWildcardCategory\(node, category, spec \|\| "", kind\);\s*syncPanelForNode\(node\);\s*captureUndoStep\(\);/)
-    expect(fnBody('captureUndoStep')).toContain('tracker.captureCanvasState()')
-  })
-
-  it('the panel sync after ✕ is gated to the panel node with the panel open', () => {
-    expect(fnBody('syncPanelForNode')).toMatch(
-      /if \(!shouldSyncPanel\(node, currentNode\) \|\| !isPanelOpen\(\)\) return;\s*postToIframe\(\{ type: "SG_CLEAR_SELECTION" \}\);\s*postAppliedStyles\(node\);\s*syncWildcards\(node\);/,
-    )
-  })
-
-  it('legacy chips read the catalog without writing the ledger', () => {
-    const entries = fnBody('chipLedgerEntries')
-    expect(entries).not.toMatch(/appliedByNode\.set|legacyShown\.set|ensureLedger/)
-    expect(fnBody('legacyPresentStyles')).not.toMatch(/appliedByNode\.set|legacyShown\.set|ensureLedger/)
-  })
-
-  it('every sync point refreshes the chips', () => {
-    for (const fn of [
-      'applyStyleToNode',
-      'unapplyStyleFromNode',
-      'insertWildcardCategory',
-      'removeWildcardCategory',
-      'reorderWildcardCategories',
-      'reorderStylesInNode',
-      'rehydrate',
-      'refreshFromServer',
-      'setStylesCache',
-    ]) {
-      expect(fnBody(fn), fn).toContain('refreshNodeChips(')
-    }
-    expect(HOST_SRC).toMatch(/clearNodePrompts\(currentNode, \{[\s\S]{0,200}\}\);\s*if \(currentNode\) refreshNodeChips\(currentNode\);/)
-    expect(HOST_SRC).toMatch(/refreshFromServer\(false\);[\s\S]{0,120}for \(const n of renamed\) refreshNodeChips\(n\);/)
-    expect(HOST_SRC).toMatch(/node\.onConfigure = function \(o\) \{[\s\S]{0,600}refreshNodeChips\(this, \{ fit: true \}\);\s*\};/)
-    expect(HOST_SRC).toMatch(/loadedGraphNode\(node\) \{[\s\S]{0,600}refreshNodeChips\(node, \{ fit: true \}\);/)
-    expect(fnBody('hookChipInputs')).toMatch(/addEventListener\("input", onInput\)/)
-    expect(HOST_SRC).toContain('const CHIP_INPUT_DEBOUNCE_MS = 150;')
-  })
-
-  it('node removal destroys the row and clears the timers', () => {
-    const destroy = fnBody('destroyNodeChips')
-    expect(destroy).toContain('clearTimeout(state.timer);')
-    expect(destroy).toContain('cancelAnimationFrame(state.frame)')
-    expect(destroy).toContain('state.row.destroy();')
-    expect(addChips).toMatch(/node\.onRemoved = function[\s\S]{0,160}destroyNodeChips\(this\);/)
   })
 })
 
