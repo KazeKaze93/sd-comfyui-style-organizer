@@ -1,863 +1,870 @@
 /**
- * Keyboard a11y prod-bench assertions (Comfy Style Organizer).
- *
- * Target contract (same matrix as WebUI twin KEYS-E2E):
- *   Tab into/out of grid · arrows · Enter/Space select · Home/End/Ctrl/PageDown
- *   focus survives 3-screen scroll · ContextMenu/Shift+F10 + Escape restore
- *   Escape layering · dialog trap+restore · no body focus
- *
- * READ-ONLY app code. Incomplete / crashing keyboard UI → FAIL (not skipped).
+ * Keyboard contract assertions (target behavior from KEYS-E2E brief).
+ * Harness reports FAIL with reasons when UI keyboard is incomplete — does not implement app keys.
  */
-
-export const CARD_SEL = '[data-sg-card="true"]'
-export const GRID_SEL = '[role="grid"][data-sg-item-count]'
-export const MAX_TAB_STEPS = 60
+import { sleep } from '../profile/lib.mjs'
+import {
+  clearSearch,
+  closeCount,
+  collapseFirstHeader,
+  describeActive,
+  dismissOverlays,
+  ensureSaveSetDialogOpen,
+  ensureSomethingSelected,
+  findOpenDialog,
+  findOpenMenu,
+  focusSearch,
+  focusedCellVisible,
+  openCardContextMenuMouse,
+  press,
+  resetCloseCounter,
+  searchValue,
+  selectedCount,
+  tabTrail,
+  tryFocusFirstCard,
+} from './focusHelpers.mjs'
 
 /**
- * @typedef {{ id: string, ok: boolean, detail: string }} AssertionResult
+ * @typedef {{ id: string, name: string, pass: boolean, detail: string }} AssertionResult
  */
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function installCloseProbe(page) {
-  await page.evaluate(() => {
-    window.__sgKeysClose = []
-    if (window.__sgKeysCloseListening) return
-    window.__sgKeysCloseListening = true
-    window.addEventListener('message', (e) => {
-      if (e.data && e.data.type === 'SG_CLOSE_REQUEST') {
-        window.__sgKeysClose.push(Date.now())
-      }
-    })
-  })
-}
-
-/**
- * @param {import('playwright').Page} page
- * @param {string[]} [bucket]
- * @returns {{ getErrors: () => string[], attach: (p: import('playwright').Page) => void }}
- */
-export function installPageErrorProbe(page, bucket = []) {
-  const attach = (/** @type {import('playwright').Page} */ p) => {
-    p.on('pageerror', (err) => {
-      bucket.push(err.message)
-    })
-  }
-  attach(page)
-  return {
-    getErrors: () => bucket.slice(),
-    attach,
-  }
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function clearCloseProbe(page) {
-  await page.evaluate(() => {
-    window.__sgKeysClose = []
-  })
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function closeCount(page) {
-  return page.evaluate(() => (window.__sgKeysClose || []).length)
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function focusSnapshot(page) {
-  return page.evaluate(({ cardSel, gridSel }) => {
-    const el = document.activeElement
-    if (!el || el === document.body || el === document.documentElement) {
-      return {
-        kind: 'body',
-        tag: el?.tagName || 'NONE',
-        role: null,
-        tabIndex: -1,
-        isCard: false,
-        inGrid: false,
-        isDialog: false,
-        isMenu: false,
-        label: '',
-        selected: false,
-        rootAlive: (document.getElementById('root')?.childElementCount ?? 0) > 0,
-      }
-    }
-    const card = el.closest(cardSel) || (el.matches?.(cardSel) ? el : null)
-    const gridcell = el.getAttribute('role') === 'gridcell' ? el : el.closest('[role="gridcell"]')
-    const grid = el.closest(gridSel)
-    const dialog = el.closest('[role="dialog"], [role="alertdialog"]')
-    const menuHost = el.closest('[role="menu"]') || el.closest('.fixed')
-    const menu =
-      menuHost &&
-      /Select|Deselect|Favorite|Edit|Duplicate|Delete|Copy/i.test(menuHost.textContent || '')
-        ? menuHost
-        : null
-    return {
-      kind: card || gridcell ? 'card' : dialog ? 'dialog' : menu ? 'menu' : grid ? 'grid' : 'other',
-      tag: el.tagName,
-      role: el.getAttribute('role'),
-      tabIndex: el.tabIndex,
-      isCard: Boolean(card || (gridcell && gridcell.hasAttribute('data-sg-card'))),
-      inGrid: Boolean(grid || card || gridcell),
-      isDialog: Boolean(dialog),
-      isMenu: Boolean(menu),
-      label: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 80),
-      selected:
-        el.getAttribute('aria-selected') === 'true' ||
-        Boolean(
-          card &&
-            (card.querySelector('.sr-only')?.textContent || '').includes('Selected'),
-        ),
-      rootAlive: (document.getElementById('root')?.childElementCount ?? 0) > 0,
-    }
-  }, { cardSel: CARD_SEL, gridSel: GRID_SEL })
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function selectedCardCount(page) {
-  return page.evaluate((cardSel) => {
-    return [...document.querySelectorAll(cardSel)].filter(
-      (c) =>
-        c.getAttribute('aria-selected') === 'true' ||
-        (c.querySelector('.sr-only')?.textContent || '').includes('Selected'),
-    ).length
-  }, CARD_SEL)
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function isContextMenuOpen(page) {
-  return page.evaluate(() => {
-    return [...document.querySelectorAll('button')].some((b) => {
-      const t = (b.textContent || '').trim()
-      if (!/Select|Deselect|Favorites|Copy prompt|Edit|Duplicate|Delete/i.test(t)) {
-        return false
-      }
-      return Boolean(b.closest('.fixed') || b.closest('[role="menu"]'))
-    })
-  })
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function isSourcePickerOpen(page) {
-  return page.evaluate(() => {
-    // Source picker items are portaled buttons (pack_*.csv stems), not the toolbar <select>.
-    return [...document.querySelectorAll('.fixed button')].some((b) =>
-      /pack_|_alpha|_beta|_gamma|\.csv/i.test((b.textContent || '').trim()),
-    )
-  })
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-async function dismissOverlays(page) {
-  for (let i = 0; i < 3; i += 1) {
-    if (!(await isContextMenuOpen(page)) && !(await isSourcePickerOpen(page))) {
-      return
-    }
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(40)
-  }
-  // Backdrop click fallback (ViewportFixedMenu).
-  const backdrop = page.locator('.fixed.inset-0').first()
-  if (await backdrop.count()) {
-    await backdrop.click({ position: { x: 2, y: 2 }, timeout: 1_000 }).catch(() => {})
-    await page.waitForTimeout(40)
-  }
-}
-
-/**
- * Wait for App mount autofocus onto a grid card/cell.
- * @param {import('playwright').Page} page
- */
-export async function waitForCardFocus(page) {
-  for (let i = 0; i < 40; i += 1) {
-    const snap = await focusSnapshot(page)
-    if (snap.rootAlive && (snap.isCard || snap.role === 'gridcell')) return snap
-    await page.waitForTimeout(50)
-  }
-  return focusSnapshot(page)
-}
-
-/**
- * Ensure a style **card** is focused (not a header gridcell).
- * Avoids toolbar `.focus()` — that currently stack-overflows.
- * @param {import('playwright').Page} page
- */
-export async function ensureCardFocus(page) {
-  let snap = await focusSnapshot(page)
-  if (snap.rootAlive && snap.isCard) return snap
-  await page.evaluate((cardSel) => {
-    const el =
-      document.querySelector(`${cardSel}[tabindex="0"]`) ||
-      document.querySelector(`${cardSel}[role="gridcell"]`) ||
-      document.querySelector(cardSel)
-    if (el instanceof HTMLElement) el.focus()
-  }, CARD_SEL)
-  await page.waitForTimeout(30)
-  snap = await focusSnapshot(page)
-  if (snap.isCard) return snap
-  // Arrow off headers onto a card.
-  for (let i = 0; i < 12; i += 1) {
-    await page.keyboard.press('ArrowDown')
-    await page.waitForTimeout(20)
-    snap = await focusSnapshot(page)
-    if (snap.isCard) return snap
-  }
-  return snap
-}
-
-/**
- * Tab from search toward the grid. Records crash if chrome focus loops.
- * @param {import('playwright').Page} page
- * @param {() => string[]} getErrors
- */
-export async function tabUntilCard(page, getErrors) {
-  const alive = await page.evaluate(
-    () => (document.getElementById('root')?.childElementCount ?? 0) > 0,
-  )
-  if (!alive) {
-    return {
-      ok: false,
-      steps: 0,
-      snap: await focusSnapshot(page),
-      detail: 'root unmounted before Tab probe',
-    }
-  }
-
-  // Search focus is safe; toolbar button .focus() currently stack-overflows.
-  const search = page.locator('#root input').first()
-  if (await search.count()) {
-    await search.focus({ timeout: 5_000 })
-  }
-
-  for (let i = 0; i < MAX_TAB_STEPS; i += 1) {
-    const errsBefore = getErrors().length
-    await page.keyboard.press('Tab')
-    await page.waitForTimeout(20)
-    const errs = getErrors()
-    if (errs.length > errsBefore) {
-      return {
-        ok: false,
-        steps: i + 1,
-        snap: await focusSnapshot(page),
-        detail: `pageerror on Tab #${i + 1}: ${errs[errs.length - 1]}`,
-      }
-    }
-    const snap = await focusSnapshot(page)
-    if (!snap.rootAlive) {
-      return {
-        ok: false,
-        steps: i + 1,
-        snap,
-        detail: `React root unmounted after Tab #${i + 1}`,
-      }
-    }
-    if (snap.isCard || snap.role === 'gridcell') {
-      return { ok: true, steps: i + 1, snap, detail: `focused card after ${i + 1} Tabs` }
-    }
-  }
-  return {
-    ok: false,
-    steps: MAX_TAB_STEPS,
-    snap: await focusSnapshot(page),
-    detail: `no card/gridcell after ${MAX_TAB_STEPS} Tabs from search`,
-  }
-}
-
-/**
- * @param {import('playwright').Page} page
- */
-export async function scrollGridToTop(page) {
-  await page.evaluate(() => {
-    const grid = document.querySelector('[data-sg-item-count]')
-    const scrollEl = grid?.parentElement
-    if (scrollEl) scrollEl.scrollTop = 0
-  })
-  await page.waitForTimeout(80)
-}
-
-/**
- * Click the card context-menu Select action (not category "Select All").
- * @param {import('playwright').Page} page
- */
-async function clickMenuSelect(page) {
-  const item = page
-    .locator('.fixed button')
-    .filter({ hasText: /^(✓ Select|✕ Deselect)$/ })
-    .first()
-  if (await item.count()) {
-    await item.click({ timeout: 5_000 })
-    return
-  }
-  // Fallback: any fixed-portal Select that is not "Select All"
-  await page
-    .locator('.fixed button')
-    .filter({ hasText: /^✓?\s*Select$/ })
-    .first()
-    .click({ timeout: 5_000 })
-}
-
-/**
- * Move to a card where Enter toggles selection (skip multi-source picker).
- * @param {import('playwright').Page} page
- */
-async function focusSelectableCard(page) {
-  await scrollGridToTop(page)
-  await dismissOverlays(page)
-  await ensureCardFocus(page)
-  // Synthetic catalogs attach duplicate sources to early unique names first —
-  // skip several pages so Enter toggles selection instead of opening the picker.
-  for (let i = 0; i < 6; i += 1) {
-    await page.keyboard.press('PageDown')
-    await page.waitForTimeout(30)
-  }
-  await dismissOverlays(page)
-  let stuck = 0
-  let prevLabel = ''
-  for (let i = 0; i < 80; i += 1) {
-    const snap = await focusSnapshot(page)
-    if (!snap.isCard) {
-      await page.keyboard.press('ArrowDown')
-      await page.waitForTimeout(20)
-      continue
-    }
-    const before = await selectedCardCount(page)
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(40)
-    if (await isSourcePickerOpen(page)) {
-      await dismissOverlays(page)
-      await page.keyboard.press(i % 2 === 0 ? 'ArrowRight' : 'ArrowDown')
-      await page.waitForTimeout(20)
-      continue
-    }
-    if (await isContextMenuOpen(page)) {
-      await dismissOverlays(page)
-    }
-    const after = await selectedCardCount(page)
-    if (after !== before) {
-      // Return to unselected for caller by pressing Enter again.
-      await page.keyboard.press('Enter')
-      await page.waitForTimeout(40)
-      return true
-    }
-    await page.keyboard.press(i % 3 === 2 ? 'ArrowDown' : 'ArrowRight')
-    await page.waitForTimeout(20)
-    const now = (await focusSnapshot(page)).label
-    if (now === prevLabel) {
-      stuck += 1
-      if (stuck >= 3) {
-        await page.keyboard.press('ArrowDown')
-        stuck = 0
-      }
-    } else {
-      stuck = 0
-      prevLabel = now
-    }
-  }
-  return false
-}
 
 /**
  * @param {string} id
- * @param {() => Promise<{ ok: boolean, detail: string }>} fn
- * @returns {Promise<AssertionResult>}
+ * @param {string} name
+ * @param {boolean} pass
+ * @param {string} detail
+ * @returns {AssertionResult}
  */
-async function wrap(id, fn) {
-  try {
-    const r = await fn()
-    return { id, ok: r.ok, detail: r.detail }
-  } catch (err) {
-    return {
-      id,
-      ok: false,
-      detail: `exception: ${err instanceof Error ? err.message : String(err)}`,
-    }
-  }
+function result(id, name, pass, detail) {
+  return { id, name, pass: Boolean(pass), detail: String(detail) }
 }
 
 /**
  * @param {import('playwright').Page} page
- * @param {{
- *   scrollThreeScreens: (p: import('playwright').Page) => Promise<void>
- *   getErrors: () => string[]
- *   reopen: () => Promise<import('playwright').Page>
- *   getPage: () => import('playwright').Page
- * }} helpers
+ * @param {import('playwright').Frame} frame
+ * @param {number} n
  * @returns {Promise<AssertionResult[]>}
  */
-export async function runKeyAssertions(page, helpers) {
+export async function runKeyAssertions(page, frame, n) {
+  /** @type {AssertionResult[]} */
+  const out = []
+
+  /**
+   * @param {string} id
+   * @param {string} name
+   * @param {() => Promise<AssertionResult | AssertionResult[]>} fn
+   */
+  async function safe(id, name, fn) {
+    try {
+      await dismissOverlays(page, frame).catch(() => {})
+      await resetCloseCounter(page)
+      const r = await fn()
+      if (Array.isArray(r)) out.push(...r)
+      else out.push(r)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      out.push(result(id, name, false, `harness error: ${msg.slice(0, 240)}`))
+    }
+  }
+
+  await dismissOverlays(page, frame).catch(() => {})
+  await resetCloseCounter(page)
+
+  await safe('tab-grid-once', 'Tab enters grid exactly once; one more Tab leaves', () =>
+    assertTabGridOnce(page, frame),
+  )
+  await safe('arrows-traverse', 'Arrows traverse cards, header cells, collapsed groups', () =>
+    assertArrowTraversal(page, frame),
+  )
+  await safe('enter-space-toggle', 'Enter and Space toggle selection (selected count)', () =>
+    assertEnterSpaceToggle(page, frame),
+  )
+  await safe('nav-keys-visible', 'Home/End/Ctrl+Home/Ctrl+End/PageDown; focused cell visible', () =>
+    assertNavKeys(page, frame),
+  )
+  await safe('focus-after-scroll', 'Focused card stays focused after 3-screen keyboard scroll', () =>
+    assertFocusAfterKeyboardScroll(page, frame),
+  )
+  await safe('menu-contextmenu', 'ContextMenu opens card menu; arrows move; Escape closes; focus returns', () =>
+    assertContextMenuKey(page, frame, 'ContextMenu'),
+  )
+  await safe('menu-shift-f10', 'Shift+F10 opens card menu; arrows move; Escape closes; focus returns', () =>
+    assertContextMenuKey(page, frame, 'Shift+F10'),
+  )
+  await safe('esc-layering', 'Escape layering', () => assertEscapeLayering(page, frame))
+  await safe('dialog-trap', 'Dialogs trap Tab and restore focus', () => assertDialogFocusTrap(page, frame))
+  await safe('no-body-focus', 'No focus on document.body after keyboard ops', () =>
+    assertNeverBodyFocus(page, frame, out),
+  )
+
+  void n
+  return out
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertTabGridOnce(page, frame) {
+  const name = 'Tab enters grid exactly once; one more Tab leaves'
+  // SelectedBar after the grid needs a selection, else Tab leaves into document.body.
+  await ensureSomethingSelected(frame)
+  await sleep(80)
+  const focused = await focusSearch(frame)
+  if (!focused.ok) {
+    return result('tab-grid-once', name, false, focused.reason)
+  }
+  const start = await describeActive(frame)
+  if (start.kind !== 'search') {
+    return result('tab-grid-once', name, false, `could not focus search (got kind=${start.kind})`)
+  }
+
+  const trail = await tabTrail(page, frame, 40)
+  // Composite-widget enter = focus on a grid cell (card/header), not Select All chrome.
+  let enters = 0
+  let firstEnterIdx = -1
+  let wasIn = false
+  let tabStopsInsideGrid = 0
+  for (let i = 0; i < trail.length; i += 1) {
+    const snap = trail[i]
+    if (snap.inGrid) tabStopsInsideGrid += 1
+    const now = Boolean(snap.inGridCell)
+    if (now && !wasIn) {
+      enters += 1
+      if (firstEnterIdx < 0) firstEnterIdx = i
+    }
+    wasIn = now
+  }
+
+  if (enters === 0) {
+    return result(
+      'tab-grid-once',
+      name,
+      false,
+      `Tab×40 from search never focused a grid cell (card/header). ` +
+        `inGridChromeStops=${tabStopsInsideGrid} last=${trail.at(-1)?.kind}/${trail.at(-1)?.tag}`,
+    )
+  }
+
+  if (enters !== 1) {
+    return result(
+      'tab-grid-once',
+      name,
+      false,
+      `entered grid cells ${enters} times (want 1 — composite widget / single tab stop)`,
+    )
+  }
+
+  // From inside grid cell, one Tab should leave the grid entirely.
+  await focusSearch(frame)
+  for (let i = 0; i <= firstEnterIdx; i += 1) {
+    await press(page, frame, 'Tab')
+  }
+  const inside = await describeActive(frame)
+  if (!inside.inGridCell) {
+    return result(
+      'tab-grid-once',
+      name,
+      false,
+      `lost grid-cell focus at enter index ${firstEnterIdx} (kind=${inside.kind})`,
+    )
+  }
+  await press(page, frame, 'Tab')
+  const after = await describeActive(frame)
+  if (after.inGrid) {
+    return result(
+      'tab-grid-once',
+      name,
+      false,
+      `Tab from focused grid cell stayed in grid (kind=${after.kind}) — expect single leave`,
+    )
+  }
+  if (after.isBody) {
+    return result('tab-grid-once', name, false, 'after leaving grid, focus landed on document.body')
+  }
+  return result('tab-grid-once', name, true, `enter@Tab${firstEnterIdx + 1}; leave→${after.kind}`)
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertArrowTraversal(page, frame) {
+  const name = 'Arrows traverse cards, header cells, collapsed groups'
+  const focus = await tryFocusFirstCard(page, frame)
+  if (!focus.ok) {
+    return result(
+      'arrows-traverse',
+      name,
+      false,
+      `no focusable card/header (via=${focus.via}, kind=${focus.snap.kind}) — arrow nav unavailable`,
+    )
+  }
+
+  const before = await describeActive(frame)
+  await press(page, frame, 'ArrowRight')
+  await sleep(40)
+  const right = await describeActive(frame)
+  await press(page, frame, 'ArrowDown')
+  await sleep(40)
+  const down = await describeActive(frame)
+
+  // Grid position first (cards have no unique visible title), then title, then kind.
+  const changed = (a, b) =>
+    (a.cellId && b.cellId ? a.cellId !== b.cellId : false) ||
+    (a.title && a.title !== b.title) ||
+    a.kind !== b.kind
+  const moved = changed(right, before) || changed(down, before)
+
+  if (!moved) {
+    return result(
+      'arrows-traverse',
+      name,
+      false,
+      `ArrowRight/Down did not move focus (stuck at ${before.kind}:${before.cellId || before.title || before.tag})`,
+    )
+  }
+
+  const isHeaderCell = (snap) => Boolean(snap.isHeaderCell)
+
+  // Ctrl+Home → first grid cell (category header).
+  await press(page, frame, 'Control+Home')
+  await sleep(60)
+  let sawHeader = isHeaderCell(await describeActive(frame))
+  if (!sawHeader) {
+    for (let i = 0; i < 8 && !sawHeader; i += 1) {
+      await press(page, frame, 'ArrowUp')
+      sawHeader = isHeaderCell(await describeActive(frame))
+    }
+  }
+  if (!sawHeader) {
+    return result(
+      'arrows-traverse',
+      name,
+      false,
+      `ArrowRight/Down moved, but Ctrl+Home/ArrowUp never focused a header cell (at ${JSON.stringify(await describeActive(frame))})`,
+    )
+  }
+
+  // Collapsed group: collapse while on header, ArrowDown should still land on a grid cell.
+  const headerBeforeCollapse = await describeActive(frame)
+  const collapsed = await collapseFirstHeader(frame)
+  await sleep(100)
+  // Synthetic collapse click does not move focus — return to header via Ctrl+Home.
+  await frame.evaluate(() => {
+    const grid = document.querySelector('[role="grid"]')
+    if (grid instanceof HTMLElement) {
+      const cell = grid.querySelector('[data-cell-row][data-cell-col]')
+      if (cell instanceof HTMLElement) cell.focus()
+    }
+  })
+  await press(page, frame, 'Control+Home')
+  await sleep(60)
+  const onCollapsedHeader = isHeaderCell(await describeActive(frame))
+  await press(page, frame, 'ArrowDown')
+  await sleep(40)
+  const afterCollapsedNav = await describeActive(frame)
+  const collapsedNavOk =
+    onCollapsedHeader &&
+    (afterCollapsedNav.inGridCell || afterCollapsedNav.kind === 'card' || isHeaderCell(afterCollapsedNav))
+
+  if (!collapsedNavOk) {
+    return result(
+      'arrows-traverse',
+      name,
+      false,
+      `header ok (${headerBeforeCollapse.title}) but collapsed-group arrow nav failed ` +
+        `(collapsed=${collapsed.category} onHeader=${onCollapsedHeader} after=${afterCollapsedNav.kind})`,
+    )
+  }
+
+  return result(
+    'arrows-traverse',
+    name,
+    true,
+    `moved ${before.kind}@${before.cellId}→${right.kind}@${right.cellId}/${down.kind}@${down.cellId}; header+collapsed ok (${collapsed.category})`,
+  )
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertEnterSpaceToggle(page, frame) {
+  const name = 'Enter and Space toggle selection (selected count)'
+  const focus = await tryFocusFirstCard(page, frame)
+  if (!focus.ok) {
+    return result(
+      'enter-space-toggle',
+      name,
+      false,
+      `cannot focus card for Enter/Space (kind=${focus.snap.kind})`,
+    )
+  }
+
+  const before = await selectedCount(frame)
+  await press(page, frame, 'Enter')
+  await sleep(80)
+  const afterEnter = await selectedCount(frame)
+  await press(page, frame, 'Space')
+  await sleep(80)
+  const afterSpace = await selectedCount(frame)
+
+  const enterChanged = afterEnter !== before
+  const spaceChanged = afterSpace !== afterEnter
+
+  if (!enterChanged && !spaceChanged) {
+    return result(
+      'enter-space-toggle',
+      name,
+      false,
+      `selected count unchanged after Enter+Space (count=${before}; Save set bar / accent chrome)`,
+    )
+  }
+  if (!enterChanged || !spaceChanged) {
+    return result(
+      'enter-space-toggle',
+      name,
+      false,
+      `partial: before=${before} afterEnter=${afterEnter} afterSpace=${afterSpace}`,
+    )
+  }
+  return result(
+    'enter-space-toggle',
+    name,
+    true,
+    `count ${before}→${afterEnter} (Enter)→${afterSpace} (Space)`,
+  )
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertNavKeys(page, frame) {
+  const name = 'Home/End/Ctrl+Home/Ctrl+End/PageDown; focused cell visible'
+  const focus = await tryFocusFirstCard(page, frame)
+  if (!focus.ok) {
+    return result(
+      'nav-keys-visible',
+      name,
+      false,
+      `cannot focus grid cell to start navigation (kind=${focus.snap.kind})`,
+    )
+  }
+
+  const keys = ['Home', 'End', 'Control+Home', 'Control+End', 'PageDown']
+  /** @type {string[]} */
+  const fails = []
+  /** @type {string[]} */
+  const okKeys = []
+
+  for (const key of keys) {
+    await press(page, frame, key)
+    await sleep(60)
+    const snap = await describeActive(frame)
+    const vis = await focusedCellVisible(frame)
+    if (!snap.inGrid || snap.isBody) {
+      fails.push(`${key}: focus left grid (kind=${snap.kind})`)
+      continue
+    }
+    if (!vis.ok) {
+      fails.push(`${key}: ${vis.reason}`)
+      continue
+    }
+    okKeys.push(key)
+  }
+
+  if (fails.length) {
+    return result(
+      'nav-keys-visible',
+      name,
+      false,
+      `ok=[${okKeys.join(',')}] fail=[${fails.join('; ')}]`,
+    )
+  }
+  return result('nav-keys-visible', name, true, `all keys kept focus visible: ${okKeys.join(', ')}`)
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertFocusAfterKeyboardScroll(page, frame) {
+  const name = 'Focused card stays focused after 3-screen keyboard scroll'
+  const focus = await tryFocusFirstCard(page, frame)
+  if (!focus.ok) {
+    return result(
+      'focus-after-scroll',
+      name,
+      false,
+      `cannot focus card before scroll (kind=${focus.snap.kind})`,
+    )
+  }
+
+  const before = await describeActive(frame)
+  for (let i = 0; i < 3; i += 1) {
+    await press(page, frame, 'PageDown')
+    await sleep(100)
+  }
+  await frame.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+  )
+
+  const after = await describeActive(frame)
+  if (after.isBody) {
+    return result('focus-after-scroll', name, false, 'activeElement is document.body after PageDown×3')
+  }
+  if (!after.inGrid) {
+    return result(
+      'focus-after-scroll',
+      name,
+      false,
+      `activeElement left grid after PageDown×3 (kind=${after.kind} tag=${after.tag})`,
+    )
+  }
+  // Prefer the same cell (position, then title) when still mounted; still PASS if any grid cell keeps focus.
+  const same =
+    (before.cellId && after.cellId && before.cellId === after.cellId) ||
+    (before.title && after.title && before.title === after.title)
+  return result(
+    'focus-after-scroll',
+    name,
+    true,
+    same
+      ? `same card focused after PageDown×3 (${after.title})`
+      : `activeElement still in grid (before=${before.title || before.kind}, after=${after.title || after.kind})`,
+  )
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ * @param {string} key
+ */
+async function assertContextMenuKey(page, frame, key) {
+  const id = key === 'Shift+F10' ? 'menu-shift-f10' : 'menu-contextmenu'
+  const name = `${key} opens card menu; arrows move; Escape closes; focus returns`
+  await dismissOverlays(page, frame)
+
+  const focus = await tryFocusFirstCard(page, frame)
+  if (!focus.ok) {
+    return result(id, name, false, `cannot focus card before ${key} (kind=${focus.snap.kind})`)
+  }
+  const cardBefore = await describeActive(frame)
+
+  await press(page, frame, key)
+  await sleep(150)
+  const menu = await findOpenMenu(frame)
+  if (!menu.found) {
+    return result(
+      id,
+      name,
+      false,
+      `${key} did not open card menu (no role=menu / fixed portal). Cards are mouse contextmenu-only today.`,
+    )
+  }
+  if (!menu.inViewport) {
+    return result(
+      id,
+      name,
+      false,
+      `menu opened but overflows viewport (${JSON.stringify(menu.overflow)})`,
+    )
+  }
+
+  // Arrow through items — focused control or aria-activedescendant should change.
+  const itemBefore = await frame.evaluate(() => {
+    const ae = document.activeElement
+    return {
+      tag: ae?.tagName,
+      text: (ae?.textContent || '').trim().slice(0, 40),
+      activeDesc: ae?.getAttribute?.('aria-activedescendant') || null,
+    }
+  })
+  await press(page, frame, 'ArrowDown')
+  await sleep(40)
+  await press(page, frame, 'ArrowDown')
+  await sleep(40)
+  const itemAfter = await frame.evaluate(() => {
+    const ae = document.activeElement
+    return {
+      tag: ae?.tagName,
+      text: (ae?.textContent || '').trim().slice(0, 40),
+      activeDesc: ae?.getAttribute?.('aria-activedescendant') || null,
+    }
+  })
+  const arrowsMoved =
+    itemBefore.text !== itemAfter.text ||
+    itemBefore.activeDesc !== itemAfter.activeDesc ||
+    itemBefore.tag !== itemAfter.tag
+
+  if (!arrowsMoved) {
+    await press(page, frame, 'Escape')
+    return result(id, name, false, 'menu open in viewport but ArrowDown did not move menu focus')
+  }
+
+  await resetCloseCounter(page)
+  await press(page, frame, 'Escape')
+  await sleep(80)
+  const menuAfter = await findOpenMenu(frame)
+  const closes = await closeCount(page)
+  const focusAfter = await describeActive(frame)
+
+  if (menuAfter.found) {
+    return result(id, name, false, 'Escape did not close menu')
+  }
+  if (closes > 0) {
+    return result(id, name, false, `Escape closed menu but also posted SG_CLOSE_REQUEST (count=${closes})`)
+  }
+  if (focusAfter.kind !== 'card') {
+    return result(
+      id,
+      name,
+      false,
+      `focus did not return to card (got kind=${focusAfter.kind}, was=${cardBefore.title})`,
+    )
+  }
+  return result(id, name, true, `menu ok; arrows moved; Escape restore→${focusAfter.title}`)
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertEscapeLayering(page, frame) {
+  const namePrefix = 'Escape layering'
   /** @type {AssertionResult[]} */
   const results = []
-  let active = page
-  const { getErrors, reopen, getPage } = helpers
 
-  const syncPage = () => {
-    active = getPage()
-    return active
-  }
-
-  const rootAlive = async () =>
-    active.evaluate(() => (document.getElementById('root')?.childElementCount ?? 0) > 0)
-
-  const ensureLive = async () => {
-    syncPage()
-    if (await rootAlive()) {
-      await installCloseProbe(active)
-      return active
+  // (a) menu → Escape closes only menu
+  await dismissOverlays(page, frame)
+  await clearSearch(frame)
+  await resetCloseCounter(page)
+  {
+    let menu = await findOpenMenu(frame)
+    if (!menu.found) {
+      const focus = await tryFocusFirstCard(page, frame)
+      if (focus.ok) {
+        await press(page, frame, 'Shift+F10')
+        await sleep(120)
+        menu = await findOpenMenu(frame)
+      }
     }
-    active = await reopen()
-    await installCloseProbe(active)
-    await waitForCardFocus(active)
-    return active
+    if (!menu.found) {
+      await openCardContextMenuMouse(frame)
+      await sleep(120)
+      menu = await findOpenMenu(frame)
+    }
+    if (!menu.found) {
+      results.push(
+        result(
+          'esc-menu',
+          `${namePrefix}: menu → Escape closes only menu`,
+          false,
+          'could not open card menu (keyboard or mouse) to probe Escape layering',
+        ),
+      )
+    } else {
+      await clearSearch(frame)
+      await resetCloseCounter(page)
+      await press(page, frame, 'Escape')
+      await sleep(80)
+      const still = await findOpenMenu(frame)
+      const closes = await closeCount(page)
+      const pass = !still.found && closes === 0
+      results.push(
+        result(
+          'esc-menu',
+          `${namePrefix}: menu → Escape closes only menu`,
+          pass,
+          pass
+            ? 'menu dismissed; no SG_CLOSE_REQUEST'
+            : `menuOpen=${still.found} SG_CLOSE_REQUEST=${closes} (menu has no Escape handler; App falls through)`,
+        ),
+      )
+      if (still.found) {
+        await frame.evaluate(() => {
+          const backdrops = [...document.body.querySelectorAll(':scope > div.fixed')].filter((el) => {
+            const r = el.getBoundingClientRect()
+            return r.width >= window.innerWidth - 2 && r.height >= window.innerHeight - 2
+          })
+          for (const b of backdrops) b.click()
+        })
+      }
+    }
   }
 
-  await installCloseProbe(active)
-  await waitForCardFocus(active)
+  // (b) dialog → Escape closes only dialog
+  await dismissOverlays(page, frame)
+  await clearSearch(frame)
+  await resetCloseCounter(page)
+  {
+    const open = await ensureSaveSetDialogOpen(frame)
+    await sleep(100)
+    const dlg = await findOpenDialog(frame)
+    if (!open.ok || !dlg.found) {
+      results.push(
+        result(
+          'esc-dialog',
+          `${namePrefix}: dialog → Escape closes only dialog`,
+          false,
+          `Save set dialog not open (${open.reason || 'missing'})`,
+        ),
+      )
+    } else {
+      await clearSearch(frame)
+      await resetCloseCounter(page)
+      await press(page, frame, 'Escape')
+      await sleep(100)
+      const dlgAfter = await findOpenDialog(frame)
+      const closes = await closeCount(page)
+      const pass = !dlgAfter.found && closes === 0
+      results.push(
+        result(
+          'esc-dialog',
+          `${namePrefix}: dialog → Escape closes only dialog`,
+          pass,
+          pass
+            ? 'dialog closed; no SG_CLOSE_REQUEST'
+            : `dialogOpen=${dlgAfter.found} SG_CLOSE_REQUEST=${closes}`,
+        ),
+      )
+    }
+  }
 
-  // Non-destructive grid ops first (Tab into/out can crash the tree today).
-  results.push(
-    await wrap('arrow_nav', async () => {
-      const p = await ensureLive()
-      const start = await ensureCardFocus(p)
-      if (!start.isCard && start.role !== 'gridcell') {
-        return { ok: false, detail: 'precondition: no card focus' }
-      }
-      const before = await focusSnapshot(p)
-      await p.keyboard.press('ArrowRight')
-      const mid = await focusSnapshot(p)
-      await p.keyboard.press('ArrowDown')
-      const after = await focusSnapshot(p)
-      if ([before, mid, after].some((s) => s.kind === 'body' || !s.rootAlive)) {
-        return { ok: false, detail: 'arrow nav lost focus / crashed' }
-      }
-      const moved = mid.label !== before.label || after.label !== before.label
-      if (!moved || !mid.inGrid || !after.inGrid) {
-        return {
-          ok: false,
-          detail: `arrows did not move card focus ("${before.label}" → "${mid.label}" → "${after.label}")`,
-        }
-      }
-      return {
-        ok: true,
-        detail: `ArrowRight/Down moved focus ("${before.label}" → "${after.label}")`,
-      }
-    }),
-  )
-
-  results.push(
-    await wrap('enter_space_select', async () => {
-      const p = await ensureLive()
-      const found = await focusSelectableCard(p)
-      if (!found) {
-        return {
-          ok: false,
-          detail: 'could not find single-source card where Enter toggles selection',
-        }
-      }
-      const before = await selectedCardCount(p)
-      await p.keyboard.press('Enter')
-      await p.waitForTimeout(40)
-      const afterEnter = await selectedCardCount(p)
-      await p.keyboard.press('Space')
-      await p.waitForTimeout(40)
-      const afterSpace = await selectedCardCount(p)
-      if (afterEnter === before || afterSpace === afterEnter) {
-        return {
-          ok: false,
-          detail: `Enter/Space did not toggle selection (${before}→${afterEnter}→${afterSpace})`,
-        }
-      }
-      return {
-        ok: true,
-        detail: `Enter/Space toggled selection (${before}→${afterEnter}→${afterSpace})`,
-      }
-    }),
-  )
-
-  results.push(
-    await wrap('home_end_ctrl_pagedown', async () => {
-      const p = await ensureLive()
-      await ensureCardFocus(p)
-      const start = await focusSnapshot(p)
-      await p.keyboard.press('End')
-      const atEnd = await focusSnapshot(p)
-      await p.keyboard.press('Home')
-      const atHome = await focusSnapshot(p)
-      await p.keyboard.press('Control+End')
-      const atCtrlEnd = await focusSnapshot(p)
-      await p.keyboard.press('Control+Home')
-      const atCtrlHome = await focusSnapshot(p)
-      await p.keyboard.press('PageDown')
-      const atPgDn = await focusSnapshot(p)
-
-      const snaps = [atEnd, atHome, atCtrlEnd, atCtrlHome, atPgDn]
-      if (snaps.some((s) => s.kind === 'body' || !s.rootAlive)) {
-        return { ok: false, detail: 'Home/End/Ctrl/PageDown lost focus to body/crash' }
-      }
-      const anyMove =
-        atEnd.label !== start.label ||
-        atHome.label !== atEnd.label ||
-        atPgDn.label !== atHome.label ||
-        atCtrlEnd.label !== atHome.label
-      if (!anyMove || !snaps.every((s) => s.inGrid)) {
-        return {
-          ok: false,
-          detail: `nav keys did not move within grid (end="${atEnd.label}" home="${atHome.label}" pgdn="${atPgDn.label}")`,
-        }
-      }
-      return {
-        ok: true,
-        detail: `Home/End/Ctrl/PageDown kept grid focus (pgdn="${atPgDn.label}")`,
-      }
-    }),
-  )
-
-  results.push(
-    await wrap('focus_survives_scroll3', async () => {
-      const p = await ensureLive()
-      const before = await ensureCardFocus(p)
-      if (!before.isCard && before.role !== 'gridcell') {
-        return { ok: false, detail: 'precondition: no card focus' }
-      }
-      await helpers.scrollThreeScreens(p)
-      await p.waitForTimeout(100)
-      const after = await focusSnapshot(p)
-      if (!after.rootAlive) return { ok: false, detail: 'root dead after scroll' }
-      if (after.kind === 'body') {
-        return {
-          ok: false,
-          detail: `focus lost to body after 3-screen scroll (was "${before.label}")`,
-        }
-      }
-      if (!after.isCard && !after.inGrid) {
-        return {
-          ok: false,
-          detail: `focus left grid after scroll (kind=${after.kind} "${after.label}")`,
-        }
-      }
-      return {
-        ok: true,
-        detail: `focus remained in grid after scroll3 ("${after.label}")`,
-      }
-    }),
-  )
-
-  results.push(
-    await wrap('contextmenu_shift_f10_escape', async () => {
-      const p = await ensureLive()
-      await scrollGridToTop(p)
-      await ensureCardFocus(p)
-      const cardLabel = (await focusSnapshot(p)).label
-      await clearCloseProbe(p)
-      await p.keyboard.press('Shift+F10')
-      await p.waitForTimeout(80)
-      let open = await isContextMenuOpen(p)
-      if (!open) {
-        await p.keyboard.press('ContextMenu')
-        await p.waitForTimeout(80)
-        open = await isContextMenuOpen(p)
-      }
-      if (!open) {
-        return {
-          ok: false,
-          detail: 'Shift+F10/ContextMenu did not open card context menu',
-        }
-      }
-      await p.keyboard.press('Escape')
-      await p.waitForTimeout(80)
-      const stillOpen = await isContextMenuOpen(p)
-      const closes = await closeCount(p)
-      const after = await focusSnapshot(p)
-      if (stillOpen) return { ok: false, detail: 'Escape did not dismiss context menu' }
-      if (closes > 0) {
-        return {
-          ok: false,
-          detail: `Escape on menu sent SG_CLOSE_REQUEST (${closes})`,
-        }
-      }
-      if (!after.isCard && !after.inGrid) {
-        return {
-          ok: false,
-          detail: `focus not restored to card (kind=${after.kind} "${after.label}", was "${cardLabel}")`,
-        }
-      }
-      return {
-        ok: true,
-        detail: `menu via keyboard; Escape restored "${after.label}" without panel close`,
-      }
-    }),
-  )
-
-  results.push(
-    await wrap('escape_layering', async () => {
-      let p = await ensureLive()
-      await scrollGridToTop(p)
-      /** @type {string[]} */
-      const parts = []
-
-      await p.locator(CARD_SEL).first().click({ button: 'right', timeout: 10_000 })
-      await p.waitForTimeout(80)
-      if (!(await isContextMenuOpen(p))) {
-        return { ok: false, detail: 'setup: right-click did not open context menu' }
-      }
-      await clearCloseProbe(p)
-      await p.keyboard.press('Escape')
-      await p.waitForTimeout(80)
-      if ((await isContextMenuOpen(p)) || (await closeCount(p)) > 0) {
-        return {
-          ok: false,
-          detail: `menu Escape: open=${await isContextMenuOpen(p)} closeMsg=${await closeCount(p)}`,
-        }
-      }
-      parts.push('menu:ok')
-
-      await ensureCardFocus(p)
-      await p.keyboard.press('Shift+F10')
-      await p.waitForTimeout(80)
-      if (!(await isContextMenuOpen(p))) {
-        return { ok: false, detail: 'setup: Shift+F10 menu missing before Save set' }
-      }
-      await clickMenuSelect(p)
-      await p.waitForTimeout(80)
-      const saveBtn = p.getByRole('button', { name: /Save set/i })
-      if (!(await saveBtn.count())) {
-        return { ok: false, detail: 'setup: Save set button missing after select' }
-      }
-      await saveBtn.click()
-      await p.waitForSelector('[role="dialog"]', { timeout: 5_000 })
-      await clearCloseProbe(p)
-      await p.keyboard.press('Escape')
-      await p.waitForTimeout(100)
-      const dialogStill = await p.locator('[role="dialog"]').count()
-      const dialogCloses = await closeCount(p)
-      if (dialogStill > 0 || dialogCloses > 0) {
-        return {
-          ok: false,
-          detail: `dialog Escape: dialogCount=${dialogStill} SG_CLOSE_REQUEST=${dialogCloses}`,
-        }
-      }
-      parts.push('dialog:ok')
-
-      // Isolate search/panel probes on a fresh page (dialog path can leave chrome unstable).
-      p = await reopen()
-      syncPage()
-      await installCloseProbe(p)
-      await waitForCardFocus(p)
-
-      const searchBox = p.getByRole('combobox', { name: /Search styles/i })
-      if (!(await searchBox.count())) {
-        return { ok: false, detail: 'setup: search combobox missing after reopen' }
-      }
-      // No-suggestion query so Escape clears via App (not popover-only first press).
-      await searchBox.click()
-      await searchBox.pressSequentially('ZZZNOMATCH', { delay: 15 })
-      await p.waitForTimeout(80)
-      const filled = await p.evaluate(() => {
-        const input = document.querySelector('input[aria-label="Search styles"]')
-        return input instanceof HTMLInputElement ? input.value : ''
+  // (c) search text → Escape clears visible input text (panel stays)
+  await dismissOverlays(page, frame)
+  await clearSearch(frame)
+  await resetCloseCounter(page)
+  {
+    // Ensure no dialog layer can steal the first Escape.
+    await dismissOverlays(page, frame)
+    const fs = await focusSearch(frame)
+    if (!fs.ok) {
+      results.push(
+        result(
+          'esc-search',
+          `${namePrefix}: search text → Escape clears text`,
+          false,
+          fs.reason,
+        ),
+      )
+    } else {
+      await page.keyboard.type('zzznomatch999', { delay: 10 })
+      await sleep(60)
+      await focusSearch(frame)
+      // Close suggestion popover via ✕ clear is wrong; click outside, then restore typed value
+      // if empty. Prefer a query with zero suggestions so the list stays closed.
+      await frame.evaluate(() => {
+        document.body.dispatchEvent(
+          new MouseEvent('mousedown', {
+            bubbles: true,
+            cancelable: true,
+            clientX: 4,
+            clientY: 4,
+            view: window,
+          }),
+        )
       })
-      if (filled !== 'ZZZNOMATCH') {
-        return {
-          ok: false,
-          detail: `setup: search type failed (dom="${filled}")`,
-        }
+      await sleep(40)
+      await focusSearch(frame)
+      let before = await searchValue(frame)
+      if (!before) {
+        await page.keyboard.type('zzznomatch999', { delay: 10 })
+        before = await searchValue(frame)
       }
-
-      await clearCloseProbe(p)
-      await p.keyboard.press('Escape')
-      await p.waitForTimeout(120)
-      const afterSearch = await p.evaluate(() => {
-        const input = document.querySelector('input[aria-label="Search styles"]')
-        return {
-          exists: input instanceof HTMLInputElement,
-          value: input instanceof HTMLInputElement ? input.value : '__missing__',
-          root: (document.getElementById('root')?.childElementCount ?? 0) > 0,
-          expanded: input?.getAttribute('aria-expanded'),
-        }
-      })
-      const searchCloses = await closeCount(p)
-      if (
-        !afterSearch.exists ||
-        !afterSearch.root ||
-        afterSearch.value !== '' ||
-        searchCloses > 0
-      ) {
-        return {
-          ok: false,
-          detail: `search Escape: value="${afterSearch.value}" exists=${afterSearch.exists} root=${afterSearch.root} expanded=${afterSearch.expanded} SG_CLOSE_REQUEST=${searchCloses}`,
-        }
+      const pre = await frame.evaluate(() => ({
+        ariaExpanded: document
+          .querySelector('input[placeholder="Search styles..."]')
+          ?.getAttribute('aria-expanded'),
+        roleMenu: Boolean(document.querySelector('[role="menu"]')),
+        dialog: Boolean(document.querySelector('[role="dialog"]')),
+      }))
+      if (pre.dialog) {
+        results.push(
+          result(
+            'esc-search',
+            `${namePrefix}: search text → Escape clears text`,
+            false,
+            `blocked: dialog still open before Escape (${JSON.stringify(pre)})`,
+          ),
+        )
+      } else {
+        await resetCloseCounter(page)
+        await press(page, frame, 'Escape')
+        await sleep(80)
+        const after = await searchValue(frame)
+        const closes = await closeCount(page)
+        const pass = Boolean(before && before.length > 0 && after === '' && closes === 0)
+        results.push(
+          result(
+            'esc-search',
+            `${namePrefix}: search text → Escape clears text`,
+            pass,
+            pass
+              ? `cleared "${before}"→""; no close`
+              : `before=${JSON.stringify(before)} after=${JSON.stringify(after)} closes=${closes} ` +
+                `pre=${JSON.stringify(pre)}` +
+                (before && after === before
+                  ? ' (Escape did not clear visible search text)'
+                  : ''),
+          ),
+        )
       }
-      parts.push('search:ok')
+    }
+  }
 
-      await ensureCardFocus(p)
-      await clearCloseProbe(p)
-      await p.keyboard.press('Escape')
-      await p.waitForTimeout(80)
-      const panelCloses = await closeCount(p)
-      if (panelCloses < 1) {
-        return {
-          ok: false,
-          detail: `idle Escape: SG_CLOSE_REQUEST=${panelCloses}`,
-        }
-      }
-      parts.push('panel:ok')
-      return { ok: true, detail: parts.join(' · ') }
-    }),
-  )
-
+  // (d) nothing open → Escape posts SG_CLOSE_REQUEST
+  await dismissOverlays(page, frame)
+  await clearSearch(frame)
+  {
+    const fs = await focusSearch(frame)
+    if (!fs.ok) {
+      results.push(
+        result(
+          'esc-close',
+          `${namePrefix}: nothing open → Escape posts SG_CLOSE_REQUEST`,
+          false,
+          fs.reason,
+        ),
+      )
+      return results
+    }
+  }
+  await resetCloseCounter(page)
+  await press(page, frame, 'Escape')
+  await sleep(80)
+  const closes = await closeCount(page)
   results.push(
-    await wrap('dialog_trap_restore', async () => {
-      const p = await ensureLive()
-      await scrollGridToTop(p)
-      await ensureCardFocus(p)
-      await p.keyboard.press('Shift+F10')
-      await p.waitForTimeout(80)
-      if (!(await isContextMenuOpen(p))) {
-        return { ok: false, detail: 'setup: Shift+F10 did not open menu' }
-      }
-      await clickMenuSelect(p)
-      await p.waitForTimeout(80)
-      const saveBtn = p.getByRole('button', { name: /Save set/i })
-      if (!(await saveBtn.count())) {
-        return { ok: false, detail: 'setup: Save set missing' }
-      }
-      await saveBtn.click()
-      await p.waitForSelector('[role="dialog"]', { timeout: 5_000 })
-
-      /** @type {string[]} */
-      const escaped = []
-      for (let i = 0; i < 12; i += 1) {
-        await p.keyboard.press('Tab')
-        const snap = await focusSnapshot(p)
-        if (!snap.isDialog) escaped.push(`${snap.kind}/${snap.tag}`)
-      }
-      if (escaped.length) {
-        return {
-          ok: false,
-          detail: `Tab escaped dialog trap (${escaped.slice(0, 4).join(', ')})`,
-        }
-      }
-
-      await clearCloseProbe(p)
-      await p.keyboard.press('Escape')
-      await p.waitForTimeout(100)
-      const dialogLeft = await p.locator('[role="dialog"]').count()
-      const closes = await closeCount(p)
-      const after = await focusSnapshot(p)
-      if (dialogLeft > 0) return { ok: false, detail: 'Escape did not close dialog' }
-      if (closes > 0) {
-        return { ok: false, detail: `dialog Escape sent SG_CLOSE_REQUEST (${closes})` }
-      }
-      if (after.kind === 'body') {
-        return { ok: false, detail: 'focus restored to body after dialog close' }
-      }
-      const restored = /Save set/i.test(after.label) || after.isCard || after.inGrid
-      if (!restored) {
-        return {
-          ok: false,
-          detail: `focus not restored (got ${after.kind} "${after.label}")`,
-        }
-      }
-      return {
-        ok: true,
-        detail: `trap held 12 Tabs; Escape restored "${after.label}"`,
-      }
-    }),
-  )
-
-  // Destructive Tab probes last — reopen between them.
-  results.push(
-    await wrap('tab_into_grid', async () => {
-      const p = await ensureLive()
-      const r = await tabUntilCard(p, getErrors)
-      return { ok: r.ok, detail: r.detail || (r.ok ? 'ok' : 'fail') }
-    }),
-  )
-
-  results.push(
-    await wrap('tab_out_of_grid', async () => {
-      const p = await ensureLive()
-      const start = await ensureCardFocus(p)
-      if (!start.isCard && start.role !== 'gridcell') {
-        return { ok: false, detail: 'precondition: no card focus' }
-      }
-      for (let i = 0; i < MAX_TAB_STEPS; i += 1) {
-        const errsBefore = getErrors().length
-        await p.keyboard.press('Tab')
-        await p.waitForTimeout(20)
-        if (getErrors().length > errsBefore) {
-          return {
-            ok: false,
-            detail: `pageerror on Tab out #${i + 1}: ${getErrors().at(-1)}`,
-          }
-        }
-        const snap = await focusSnapshot(p)
-        if (!snap.rootAlive) {
-          return { ok: false, detail: `root unmounted on Tab out #${i + 1}` }
-        }
-        if (snap.kind === 'body') {
-          return { ok: false, detail: 'Tab from grid landed on body' }
-        }
-        if (!snap.inGrid && !snap.isCard) {
-          return {
-            ok: true,
-            detail: `left grid after ${i + 1} Tabs → ${snap.tag} "${snap.label}"`,
-          }
-        }
-      }
-      return { ok: false, detail: `still inside grid after ${MAX_TAB_STEPS} Tabs` }
-    }),
-  )
-
-  results.push(
-    await wrap('no_body_focus', async () => {
-      const p = await ensureLive()
-      await ensureCardFocus(p)
-      const keys = [
-        'ArrowDown',
-        'ArrowRight',
-        'ArrowUp',
-        'ArrowLeft',
-        'Home',
-        'End',
-        'PageDown',
-        'PageUp',
-      ]
-      for (const k of keys) {
-        await p.keyboard.press(k)
-        const snap = await focusSnapshot(p)
-        if (!snap.rootAlive) return { ok: false, detail: `root dead after ${k}` }
-        if (snap.kind === 'body') {
-          return { ok: false, detail: `body focus after key ${k}` }
-        }
-      }
-      await p.keyboard.press('Tab')
-      const afterTab = await focusSnapshot(p)
-      if (!afterTab.rootAlive) {
-        return { ok: false, detail: 'root dead after Tab (chrome focus crash)' }
-      }
-      if (afterTab.kind === 'body') {
-        return { ok: false, detail: 'body focus after Tab from card' }
-      }
-      return {
-        ok: true,
-        detail: `no body focus across ${keys.length} nav keys + Tab (final=${afterTab.kind})`,
-      }
-    }),
+    result(
+      'esc-close',
+      `${namePrefix}: nothing open → Escape posts SG_CLOSE_REQUEST`,
+      closes >= 1,
+      closes >= 1 ? `SG_CLOSE_REQUEST count=${closes}` : 'no SG_CLOSE_REQUEST posted',
+    ),
   )
 
   return results
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ */
+async function assertDialogFocusTrap(page, frame) {
+  const name = 'Dialogs trap Tab and restore focus'
+  await dismissOverlays(page, frame)
+
+  const open = await ensureSaveSetDialogOpen(frame)
+  await sleep(100)
+  if (!open.ok) {
+    return result('dialog-trap', name, false, open.reason || 'dialog not opened')
+  }
+
+  const triggerSnap = await frame.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      /Save set\s*\(\d+\)/.test(b.textContent || ''),
+    )
+    return btn ? (btn.textContent || '').trim() : null
+  })
+
+  // Focus should be inside dialog after open.
+  let snap = await describeActive(frame)
+  if (snap.kind !== 'dialog') {
+    // SaveSetDialog focuses input — kind may be 'control' inside dialog.
+    const inside = await frame.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]')
+      return Boolean(dlg && dlg.contains(document.activeElement))
+    })
+    if (!inside) {
+      return result('dialog-trap', name, false, `focus not inside dialog after open (kind=${snap.kind})`)
+    }
+  }
+
+  /** @type {string[]} */
+  const focusIds = []
+  for (let i = 0; i < 12; i += 1) {
+    await press(page, frame, 'Tab')
+    const inside = await frame.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]')
+      const ae = document.activeElement
+      if (!dlg || !ae) return { inside: false, id: 'none' }
+      return {
+        inside: dlg.contains(ae),
+        id: `${ae.tagName}:${(ae.getAttribute('aria-label') || ae.textContent || '').trim().slice(0, 24)}`,
+      }
+    })
+    focusIds.push(inside.id)
+    if (!inside.inside) {
+      return result(
+        'dialog-trap',
+        name,
+        false,
+        `Tab escaped dialog at step ${i + 1} → ${inside.id}`,
+      )
+    }
+  }
+
+  // Close via Cancel / Escape — prefer button to avoid panel-close side effect for restore check.
+  await frame.evaluate(() => {
+    const dlg = document.querySelector('[role="dialog"]')
+    const cancel = dlg && [...dlg.querySelectorAll('button')].find((b) => /cancel/i.test(b.textContent || ''))
+    if (cancel) cancel.click()
+  })
+  await sleep(80)
+  const dlgGone = !(await findOpenDialog(frame)).found
+  if (!dlgGone) {
+    await press(page, frame, 'Escape')
+    await sleep(80)
+  }
+
+  const after = await describeActive(frame)
+  const restored = await frame.evaluate((label) => {
+    const ae = document.activeElement
+    if (!ae || !label) return false
+    return (ae.textContent || '').includes('Save set')
+  }, triggerSnap)
+
+  if (!restored) {
+    return result(
+      'dialog-trap',
+      name,
+      false,
+      `Tab stayed in dialog (${[...new Set(focusIds)].join('|')}) but focus not restored to Save set (kind=${after.kind})`,
+    )
+  }
+  return result('dialog-trap', name, true, 'Tab cycled inside dialog; focus restored to Save set')
+}
+
+/**
+ * Meta-check: none of the recorded ops left body focus when a pass claimed success,
+ * plus a final activeElement probe.
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Frame} frame
+ * @param {AssertionResult[]} prior
+ */
+async function assertNeverBodyFocus(page, frame, prior) {
+  const name = 'No focus on document.body after keyboard ops'
+  void page
+  const final = await describeActive(frame)
+  // Soft: if every prior assertion failed due to missing focusability, body focus is expected.
+  const anyPass = prior.some((r) => r.pass)
+  if (final.isBody && anyPass) {
+    return result(
+      'no-body-focus',
+      name,
+      false,
+      'activeElement is document.body after suite (lost focus)',
+    )
+  }
+  if (final.isBody && !anyPass) {
+    return result(
+      'no-body-focus',
+      name,
+      false,
+      'activeElement is document.body (expected until grid cells are focusable; still FAIL per contract)',
+    )
+  }
+  return result('no-body-focus', name, true, `final focus kind=${final.kind} tag=${final.tag}`)
 }

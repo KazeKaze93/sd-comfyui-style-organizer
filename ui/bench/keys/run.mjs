@@ -1,204 +1,283 @@
-#!/usr/bin/env node
 /**
- * KEYS-E2E prod bench (ComfyUI Style Organizer).
+ * KEYS-E2E — Playwright keyboard / focus contract against PROD bench preview.
  *
- * Playwright + vite build → ui/bench/.tmp/dist (never writes web/ui).
- * Asserts keyboard contract at N ∈ {500, 5000}. Incomplete UI → FAIL.
+ * Scope: ui/bench/keys/** only (+ npm script wiring). Does not implement app keyboard.
+ * Host: ui/bench/vite.config.ts → .preview-dist (same pattern as menu/blur/profile).
  *
  * Usage (from ui/):
  *   npm run bench:keys
- *   node bench/keys/run.mjs --sizes 500,5000
- *   node bench/keys/run.mjs --skip-build
+ *   node bench/keys/run.mjs
  *   node bench/keys/run.mjs --sizes 500 --headed
+ *   node bench/keys/run.mjs --dev
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { buildBenchFixture } from '../generateStyles.mjs'
 import {
-  TMP_DIST,
-  buildToTmp,
-  openBenchPage,
-  scrollThreeScreens,
-  setDensity,
-  startStaticServer,
-} from '../lib/benchHost.mjs'
-import { installPageErrorProbe, runKeyAssertions } from './assertions.mjs'
-import { installSafeFakeIframe } from './fakeIframe.mjs'
+  installRouteStubs,
+  selectFirstSource,
+  sleep,
+  startVite,
+  waitForGridStable,
+  waitForUrl,
+  VIEWPORT,
+} from '../profile/lib.mjs'
+import { runKeyAssertions } from './assertions.mjs'
+import { installCloseListener } from './focusHelpers.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const OUT_DIR = path.join(__dirname, 'out')
-const REPORT_MD = path.join(__dirname, 'report.md')
-const RAW_JSON = path.join(OUT_DIR, 'keys-e2e.json')
-const PREVIEW_PORT = 4193
+const KEYS_ROOT = __dirname
+const OUT_DIR = path.join(KEYS_ROOT, 'out')
+const RAW_JSON = path.join(OUT_DIR, 'keys-e2e.raw.json')
+const REPORT_MD = path.join(KEYS_ROOT, 'report.md')
+
 const DEFAULT_SIZES = [500, 5000]
 
-/**
- * @param {string[]} argv
- */
 function parseArgs(argv) {
-  /** @type {{ sizes: number[], skipBuild: boolean, headed: boolean }} */
   const out = {
-    sizes: [...DEFAULT_SIZES],
-    skipBuild: false,
+    port: 5191,
     headed: false,
+    dev: false,
+    sizes: [...DEFAULT_SIZES],
   }
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
-    if (a === '--sizes') {
-      out.sizes = argv[++i]
+    if (a === '--port') out.port = Number(argv[++i]) || 5191
+    else if (a === '--headed') out.headed = true
+    else if (a === '--dev') out.dev = true
+    else if (a === '--sizes') {
+      out.sizes = String(argv[++i])
         .split(',')
         .map((s) => Number(s.trim()))
-        .filter((n) => n > 0)
-    } else if (a === '--skip-build') out.skipBuild = true
-    else if (a === '--headed') out.headed = true
-    else if (a === '--help' || a === '-h') {
-      console.log(
-        'Usage: node bench/keys/run.mjs [--sizes 500,5000] [--skip-build] [--headed]',
-      )
-      process.exit(0)
+        .filter((n) => Number.isInteger(n) && n > 0)
     }
   }
-  if (!out.sizes.length) throw new Error('--sizes empty')
+  if (out.sizes.length === 0) out.sizes = [...DEFAULT_SIZES]
   return out
 }
 
 /**
- * @param {{ n: number, results: import('./assertions.mjs').AssertionResult[] }[]} suites
+ * @param {import('playwright').Browser} browser
+ * @param {string} baseUrl
+ * @param {number} n
  */
-function formatReport(suites) {
-  const generated = new Date().toISOString()
-  const lines = [
-    '# KEYS-E2E report (ComfyUI)',
-    '',
-    `Generated: ${generated}`,
-    '',
-    '## Scope',
-    '',
-    '- Prod build → `ui/bench/.tmp/dist` (read-only `ui/src`, `web/ui`)',
-    '- Playwright Chromium · stub `/style_grid/**` · `SG_INIT` synthetic catalog',
-    '- Fake iframe: `frameElement` is a sibling marker (not an ancestor of `#root`)',
-    '- Sizes: N=500 and N=5000 (default)',
-    '- Contract: Tab into/out · arrows · Enter/Space · Home/End/Ctrl/PageDown ·',
-    '  focus survives scroll×3 · ContextMenu/Shift+F10 + Escape restore ·',
-    '  Escape layering · dialog trap+restore · no body focus',
-    '',
-    '## Results',
-    '',
-  ]
+async function openKeysBench(browser, baseUrl, n) {
+  const fixture = buildBenchFixture(n)
+  const { styles, favorites, selected } = fixture
+  const context = await browser.newContext({
+    viewport: VIEWPORT,
+    deviceScaleFactor: 1,
+  })
+  const page = await context.newPage()
+  await installRouteStubs(page)
 
-  let failTotal = 0
-  let passTotal = 0
-  for (const suite of suites) {
-    lines.push(`### N=${suite.n}`, '')
-    lines.push('| id | result | detail |', '|---|---|---|')
-    for (const r of suite.results) {
-      if (r.ok) passTotal += 1
-      else failTotal += 1
-      const detail = r.detail.replace(/\|/g, '\\|')
-      lines.push(`| \`${r.id}\` | ${r.ok ? 'PASS' : 'FAIL'} | ${detail} |`)
+  await page.addInitScript((payload) => {
+    window.__BENCH__ = payload
+    if (Array.isArray(payload.favorites) && payload.favorites.length > 0) {
+      try {
+        localStorage.setItem('sg_v2_favorites', JSON.stringify(payload.favorites))
+      } catch {
+        // ignore
+      }
     }
+    try {
+      localStorage.removeItem('sg_v2_last_source')
+      localStorage.removeItem('sg_v2_last_source_txt2img')
+      localStorage.removeItem('sg_v2_last_source_img2img')
+    } catch {
+      // ignore
+    }
+  }, { styles, favorites, selected, tab: 'txt2img', n })
+
+  await page.goto(`${baseUrl}/bench/host.html?n=${n}&keys=1`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60_000,
+  })
+  await installCloseListener(page)
+  await page.waitForFunction(
+    () => window.__BENCH_HOST__ && window.__BENCH_HOST__.initAcked === true,
+    null,
+    { timeout: 60_000 },
+  )
+
+  const iframeHandle = await page.locator('#panel').elementHandle()
+  if (!iframeHandle) {
+    await context.close()
+    throw new Error('Panel iframe missing')
+  }
+  const frame = await iframeHandle.contentFrame()
+  if (!frame) {
+    await context.close()
+    throw new Error('Panel frame missing')
+  }
+  await frame.waitForSelector('#root', { timeout: 60_000 })
+
+  return {
+    context,
+    page,
+    frame,
+    fixture,
+    async close() {
+      await iframeHandle.dispose().catch(() => {})
+      await context.close()
+    },
+  }
+}
+
+/**
+ * @param {Array<{ id: string, name: string, pass: boolean, detail: string }>} assertions
+ * @param {number} n
+ */
+function printTable(assertions, n) {
+  console.log('')
+  console.log(`KEYS-E2E N=${n}`)
+  console.log(`${'ID'.padEnd(22)} ${'PASS'.padEnd(6)} NAME`)
+  console.log('-'.repeat(72))
+  for (const a of assertions) {
+    const mark = a.pass ? 'PASS' : 'FAIL'
+    console.log(`${a.id.padEnd(22)} ${mark.padEnd(6)} ${a.name}`)
+    if (!a.pass) console.log(`${''.padEnd(22)}        → ${a.detail}`)
+  }
+  const passN = assertions.filter((a) => a.pass).length
+  console.log('-'.repeat(72))
+  console.log(`${passN}/${assertions.length} passed`)
+  console.log('')
+}
+
+/**
+ * @param {object} payload
+ */
+function buildReport(payload) {
+  const lines = []
+  lines.push('# KEYS-E2E report')
+  lines.push('')
+  lines.push(`Generated: ${payload.createdAt}`)
+  lines.push('')
+  lines.push('## Scope')
+  lines.push('')
+  lines.push('- Target: PROD bench preview (`ui/bench/vite.config.ts` → `.preview-dist`)')
+  lines.push('- Data: realistic `buildBenchFixture` at N∈{500,5000}')
+  lines.push('- Ownership: `ui/bench/keys/**` only — does **not** implement app keyboard')
+  lines.push('- Contract: Tab/arrows/selection/nav/menu/Escape/dialog focus (see assertions)')
+  lines.push('')
+  lines.push('## Pass / fail')
+  lines.push('')
+
+  for (const block of payload.sizes) {
+    lines.push(`### N=${block.n}`)
+    lines.push('')
+    lines.push('| ID | Result | Assertion | Detail |')
+    lines.push('|---|---|---|---|')
+    for (const a of block.assertions) {
+      const mark = a.pass ? 'PASS' : 'FAIL'
+      const detail = String(a.detail).replace(/\|/g, '\\|').replace(/\n/g, ' ')
+      lines.push(`| \`${a.id}\` | **${mark}** | ${a.name} | ${detail} |`)
+    }
+    const passN = block.assertions.filter((a) => a.pass).length
+    lines.push('')
+    lines.push(`**${passN}/${block.assertions.length} passed** at N=${block.n}`)
     lines.push('')
   }
 
-  lines.push(
-    '## Summary',
-    '',
-    `- PASS: ${passTotal}`,
-    `- FAIL: ${failTotal}`,
-    `- Verdict: ${failTotal === 0 ? 'PASS' : 'FAIL'}`,
-    '',
-  )
+  lines.push('## Gaps (from FAIL details)')
+  lines.push('')
+  const gapIds = new Set()
+  for (const block of payload.sizes) {
+    for (const a of block.assertions) {
+      if (!a.pass) gapIds.add(a.id)
+    }
+  }
+  if (gapIds.size === 0) {
+    lines.push('- None — all assertions passed.')
+  } else {
+    lines.push('Known Wave-0 gaps (see `docs/plans/KEY_AUDIT.md`) that this harness expects to FAIL until keyboard lands:')
+    lines.push('')
+    lines.push('- Style cards / category headers are mouse-only (`div`, no `tabIndex` / roving focus)')
+    lines.push('- No arrow-key grid navigation')
+    lines.push('- Enter/Space do not toggle selection on cards')
+    lines.push('- ContextMenu / Shift+F10 do not open card menu')
+    lines.push('- `ViewportFixedMenu` has no Escape dismiss / menu keyboard')
+    lines.push('- Escape layering incomplete (menu/dialog can fall through to `SG_CLOSE_REQUEST`)')
+    lines.push('- Dialog Tab trap / focus restore incomplete for custom `role="dialog"` surfaces')
+    lines.push('')
+    lines.push(`Failed IDs this run: ${[...gapIds].map((id) => `\`${id}\``).join(', ')}`)
+  }
+  lines.push('')
+  lines.push('Raw JSON: `out/keys-e2e.raw.json`')
+  lines.push('')
   return lines.join('\n')
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  await mkdir(OUT_DIR, { recursive: true })
+  fs.mkdirSync(OUT_DIR, { recursive: true })
 
-  if (!args.skipBuild) {
-    console.log('[keys] building →', TMP_DIST)
-    await buildToTmp()
-  } else {
-    console.log('[keys] skip-build; using', TMP_DIST)
-  }
-
-  const server = await startStaticServer(TMP_DIST, PREVIEW_PORT)
-  const browser = await chromium.launch({ headless: !args.headed })
-  /** @type {{ n: number, results: import('./assertions.mjs').AssertionResult[] }[]} */
-  const suites = []
-  let failed = 0
-
-  try {
-    for (const n of args.sizes) {
-      console.log(`[keys] N=${n} opening…`)
-      const { context, page } = await openBenchPage(browser, {
-        baseUrl: server.baseUrl,
-        n,
-        seedSelected: false,
-      })
-      // Repair shared benchHost fake iframe: frameElement must NOT ancestor #root.
-      await installSafeFakeIframe(page)
-      const errorProbe = installPageErrorProbe(page)
-      /** @type {{ context: import('playwright').BrowserContext, page: import('playwright').Page }} */
-      let session = { context, page }
-      const reopen = async () => {
-        await session.context.close().catch(() => {})
-        const next = await openBenchPage(browser, {
-          baseUrl: server.baseUrl,
-          n,
-          seedSelected: false,
-        })
-        await installSafeFakeIframe(next.page)
-        errorProbe.attach(next.page)
-        await setDensity(next.page, 'normal')
-        await next.page.waitForTimeout(150)
-        session = { context: next.context, page: next.page }
-        return next.page
-      }
-
-      try {
-        await setDensity(page, 'normal')
-        await page.waitForTimeout(150)
-        console.log(`[keys] N=${n} running assertions…`)
-        const results = await runKeyAssertions(session.page, {
-          scrollThreeScreens,
-          getErrors: errorProbe.getErrors,
-          reopen,
-          getPage: () => session.page,
-        })
-        suites.push({ n, results })
-
-        for (const r of results) {
-          const mark = r.ok ? 'PASS' : 'FAIL'
-          if (!r.ok) failed += 1
-          console.log(`  [${mark}] ${r.id} — ${r.detail}`)
-        }
-      } finally {
-        await session.context.close().catch(() => {})
-      }
-    }
-  } finally {
-    await browser.close()
-    await server.close()
-  }
-
-  const report = formatReport(suites)
-  await writeFile(REPORT_MD, report, 'utf8')
-  await writeFile(
-    RAW_JSON,
-    JSON.stringify({ generated: new Date().toISOString(), suites }, null, 2),
-    'utf8',
+  console.log(
+    `[keys] sizes=${args.sizes.join(',')} vite=${args.dev ? 'dev' : 'preview'} port=${args.port}`,
   )
 
-  console.log('')
-  console.log(`[keys] report → ${REPORT_MD}`)
-  console.log(`[keys] raw → ${RAW_JSON}`)
-  console.log(`[keys] verdict: ${failed === 0 ? 'PASS' : `FAIL (${failed})`}`)
-  process.exit(failed === 0 ? 0 : 1)
+  const vite = await startVite(args.port, { mode: args.dev ? 'dev' : 'preview' })
+  const browser = await chromium.launch({
+    headless: !args.headed,
+    args: ['--disable-dev-shm-usage', '--disable-gpu'],
+  })
+
+  /** @type {Array<{ n: number, assertions: object[], passCount: number, total: number }>} */
+  const sizeBlocks = []
+  let anyFail = false
+
+  try {
+    const baseUrl = await vite.ready
+    await waitForUrl(`${baseUrl}/bench/host.html`)
+    console.log(`[keys] vite ready at ${baseUrl}`)
+
+    for (const n of args.sizes) {
+      console.log(`[keys] N=${n} opening bench…`)
+      const bench = await openKeysBench(browser, baseUrl, n)
+      try {
+        await waitForGridStable(bench.frame, n)
+        await selectFirstSource(bench.frame)
+        await sleep(150)
+
+        console.log(`[keys] N=${n} running assertions…`)
+        const assertions = await runKeyAssertions(bench.page, bench.frame, n)
+        printTable(assertions, n)
+
+        const passCount = assertions.filter((a) => a.pass).length
+        if (passCount < assertions.length) anyFail = true
+        sizeBlocks.push({
+          n,
+          assertions,
+          passCount,
+          total: assertions.length,
+        })
+      } finally {
+        await bench.close()
+      }
+    }
+
+    const payload = {
+      createdAt: new Date().toISOString(),
+      viewport: VIEWPORT,
+      viteMode: args.dev ? 'dev' : 'preview',
+      sizes: sizeBlocks,
+    }
+    fs.writeFileSync(RAW_JSON, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+    const md = buildReport(payload)
+    fs.writeFileSync(REPORT_MD, md, 'utf8')
+    console.log(`[keys] wrote ${REPORT_MD}`)
+    console.log(`[keys] wrote ${RAW_JSON}`)
+
+    if (anyFail) process.exitCode = 1
+  } finally {
+    await browser.close()
+    await vite.stop()
+  }
 }
 
 main().catch((err) => {
-  console.error('[keys] fatal:', err)
-  process.exit(2)
+  console.error('[keys] FAILED', err)
+  process.exitCode = 1
 })

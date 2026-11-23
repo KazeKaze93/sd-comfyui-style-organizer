@@ -7,28 +7,27 @@ Searchable, categorized visual card grid for browsing and applying prompt styles
 ![Style Grid overview](docs/screenshots/grid-overview.png)
 
 - Search and category filtering across your style packs
-- Multi-select with conflict detection
-- Favorites and recently used
-- Presets: save and load groups of styles at once
-- Create, edit, duplicate, and delete styles from the grid
-- Move styles between categories
-- Thumbnail previews with manual upload
+- Multi-select with conflict detection (per-pair **Remove** / **Keep both**)
+- Grid and Gallery views; the gallery shows each style's preview image
+- Favorites, saved on the server (`user/style_grid/favorites.json`)
+- Presets as cards: save, apply, rename and delete groups of styles
+- Create, edit (including rename), duplicate, move and delete styles from the panel
+- Thumbnail previews by **upload** (Style Grid does not generate previews)
 - Import and export styles and presets as JSON
-- Manual Backup: zip snapshot of user-dir CSVs + presets under `user/style_grid/backups/`
+- Backup & restore: zip snapshots under `user/style_grid/backups/`, restored from the panel
 - Wildcard support: `{sg:category}` picks a random style from that category at node execution, driven by the node's **seed**; `{sg:category:spec}` limits the pool to a slice (include / exclude / glob). Shuffle wildcards `{sgd:category}` / `{sgd:category:spec}` draw without repeats, one step per queue run
 - Keyboard shortcuts: `/` focuses search; Escape closes dialogs/menus, clears search, or closes the panel; arrow keys move in the grid; Enter/Space toggles the focused style
 - Combos: styles can list related names in their description (`Combos: …`); the card shows clickable “Works with” chips to select those styles or jump to a category
 
 ![Wildcard category](docs/screenshots/wildcards.png)
 
-Right-click a category in the **sidebar** for wildcard actions, in two groups: **random** (`{sg:…}`, can repeat) and **shuffle** (`{sgd:…}`, no repeats between queue runs):
+Right-click a category in the **sidebar** (or focus it and press Shift+F10) for its wildcard menu. While a category row is hovered or focused, the line at the bottom of the sidebar reads *CATEGORY: right-click for options*.
 
 | Item | What it does |
 |---|---|
-| **Whole category** (random) | Inserts `{sg:<category>}` into the active text field |
-| **Pick styles…** (random) | Opens slice-selection mode: tick styles (search and source filter still apply; **Select all** covers the currently visible list). **Add as wildcard** inserts a compact `{sg:<category>:<spec>}` for that selection |
-| **Whole category** (shuffle) | Inserts `{sgd:<category>}` |
-| **Pick styles…** (shuffle) | Same slice selection, but **Add as shuffle wildcard** inserts `{sgd:<category>:<spec>}` |
+| **Random** | Inserts `{sg:<category>}` (whole category, may repeat) into the node's text |
+| **Shuffle** | Inserts `{sgd:<category>}` (whole category, no repeats between queue runs) |
+| **Pick styles…** | Opens the slice bar over the grid: **Wildcard from CATEGORY**, a **Random / Shuffle** toggle and the picked count, then **Select all**, **Clear**, **Cancel** and **Add wildcard**. Tick styles (search and source filter still apply; **Select all** covers the visible list). **Add wildcard** inserts a compact `{sg:<category>:<spec>}` or `{sgd:<category>:<spec>}`; it stays disabled while nothing is picked |
 
 **How `{sg:…}` works**
 
@@ -108,64 +107,85 @@ separate "Convert text to input" menu step.
 
 ## Working with styles
 
-The toolbar (icon buttons with tooltips) includes **Backup**,
-**Import/Export**, **Clear all selected styles**, **Compact mode**,
-**Expand/Collapse all**, **New style** (needs a writable CSV source),
-fullscreen, and close. When multi-select finds conflicts, a red warning
-badge with a count appears — **click** it to open a popover listing each
-conflict; you can remove the conflicting style from there.
+**Header** (one row): source filter, search, the **Grid / Gallery** toggle,
+**Clear prompts and selection**, **New style** (needs a writable CSV
+source), **⋯ More** (Import / Export…, Backup & restore…), fullscreen and
+close. Toolbar tooltips open on hover or Tab focus.
+
+**Clear prompts and selection** empties **both** text fields of the node
+(`text` and `negative_text`) completely, your own text included, and
+clears the selection, the active wildcards and the applied-styles record.
+
 Applying a style keeps the first occurrence of a tag (and its weight) so unapply can restore the prompt exactly; at generation the node dedups weighted duplicates and keeps the highest weight, unless one occurrence is a de-emphasis (below 1.0), in which case the first occurrence wins.
 
-Favorite styles show a **star** on the tile; selected styles show a
-**check** badge. Right-click any style card for Select/Deselect, Add/Remove
-Favorites, Copy prompt, Edit, Duplicate, Move to category, Upload preview
-image, Delete preview (when one exists), and Delete. **Delete** asks for
-confirmation in a dialog before removing the CSV row.
+**Conflicts:** when one selected style's negative prompt removes another
+one's tags, a warning shows the count. Click it for the list of pairs;
+each pair offers **Remove** for either style or **Keep both**.
+
+Favorite styles show a **star**; selected tiles are highlighted.
+Right-click a style card (or press Shift+F10) for Select/Deselect,
+Add/Remove favorites, Copy prompt, Edit…, Duplicate, Move to category…,
+Upload preview…, Remove preview (when one exists) and Delete…. In the
+gallery, ★ and ⋯ also appear on the tile on hover. **Delete** asks for
+confirmation first.
 
 ![Style card context menu](docs/screenshots/style-card-context-menu.png)
 
-**Edit** opens a form for the style's description, category, prompt,
-and negative prompt (the name itself isn't editable here — renaming is
-Duplicate-then-delete-the-original, kept separate to avoid orphaning
-CSV rows).
+**Edit** changes the category, name, prompt, negative prompt, description
+and its **Works with** chips. A changed name renames the CSV row in its
+own file; the preview, favorites and presets follow. If the style is
+applied on the node, the node text is updated to the saved version.
 
 ![Edit dialog](docs/screenshots/edit-dialog.png)
 
-**Move to category** offers existing categories as quick-pick chips.
+**Move to category** offers the existing categories.
 
 ![Move to category](docs/screenshots/move-category-dialog.png)
 
-**Duplicate** works on any style, including ones from the read-only
-sample pack — it's the way to turn a demo style into your own editable
-copy. Edit, Move, and Delete are blocked on styles from `samples/`:
+**Duplicate** works on any style. On a style from the read-only sample
+pack it writes the copy to `user/style_grid/<same file>` and switches the
+source filter there; **New style** while the samples source is active does
+the same. Edit, Move and Delete are blocked on styles from `samples/`:
 
 ![Read-only sample style](docs/screenshots/read-only-samples.png)
 
-**Presets** let you save and reload a set of selected styles at once.
-Clicking an already-loaded preset unloads it.
+**Presets** show as cards in the **Presets** view: **Apply** merges a set
+into your selection, an applied set offers **Remove**, and ⋯ renames or
+deletes it. The last tile saves the current selection as a new set.
 
 ![Presets](docs/screenshots/presets.png)
 
-**Import/Export** (toolbar import icon) opens a small menu with
-**Export** and **Import from file…**. Export downloads styles and presets
-as JSON. Import accepts that JSON, or a Backup zip
-(CSVs + presets). Importing a preset whose name already exists
-**overwrites** the existing preset with the imported definition.
+**Import / Export…** (⋯ More) exports styles and presets as JSON, and
+imports that JSON or a backup zip. An imported style that is a true
+duplicate (same name **and** identical prompt and negative prompt as a
+style already in a pack, or earlier in the same file) is skipped and
+listed; a style that shares a name but differs is imported. Re-importing
+your own export therefore adds nothing. Imported styles go into a new
+CSV under `user/style_grid/imports/`. An imported preset replaces a preset
+of the same name.
 
-**Backup** (toolbar save icon) writes a manual zip snapshot of your
-user-dir CSVs (`style_grid/` and `style_grid/imports/`) plus `presets.json`
-into `style_grid/backups/` (bundled `samples/` is excluded). It is not
-automatic, and it is separate from Export.
+**Backup & restore…** (⋯ More) lists the snapshots and creates new ones
+(optionally with thumbnails). A snapshot holds your packs
+(`user/style_grid/` and `imports/`), presets, favorites and the category
+order; bundled `samples/` is never included. **Restore** shows what the
+snapshot will put back, writes a safety snapshot of the current state
+first, then replaces those files. The newest 20 snapshots are kept.
 
 ![Import/Export menu](docs/screenshots/import-export-menu.png)
 
-**Search** with autocomplete suggestions as you type:
+**Search** with autocomplete suggestions as you type. When nothing
+matches, or a view is empty (no favorites, no presets, no styles yet),
+the grid says why and offers the next step (clear the search, show all
+categories, import a CSV…).
 
 ![Search autocomplete](docs/screenshots/search-autocomplete.png)
 
-**Thumbnails** show on hover once uploaded via the card menu. Preview files are keyed by **style name + source CSV**, so the same UNIVERSAL name in two packs keeps independent previews. Older name-only files migrate when the name maps to one pack, or when every pack that shares the name has **byte-identical** `prompt` and `negative_prompt`. If the same name appears in multiple packs with **diverging** content, regenerate each preview.
+**Thumbnails:** upload one from the card menu (**Upload preview…**); the
+**Gallery** view shows them. Style Grid does not generate previews. Preview
+files are keyed by **style name + source CSV**, so the same UNIVERSAL name in two packs keeps independent previews. Older name-only files migrate when the name maps to one pack, or when every pack that shares the name has **byte-identical** `prompt` and `negative_prompt`. If the same name appears in multiple packs with **diverging** content, upload each preview again.
 
-![Thumbnail hover preview](docs/screenshots/thumbnail-hover-preview.png)
+**Favorites** are stored on the server. Favorites kept in the browser by
+older versions are moved there once, on the first open.
 
 The panel supports fullscreen for browsing large packs:
 
@@ -194,8 +214,9 @@ Style Grid writes runtime data under ComfyUI's
 |------|-----------|------------------|
 | `user/style_grid/*.csv` | Your own style packs (created via New style, or Duplicate/Move/Edit on non-protected styles) | Only if you don't need them — this is your data |
 | `user/style_grid/imports/*.csv` | Style packs created by the Import feature (including restore from a Backup zip) | Yes, anytime |
-| `user/style_grid/backups/` | Manual Backup `.zip` archives (CSVs + `presets.json`; Backup button). Oldest auto-pruned past 20 | Yes |
+| `user/style_grid/backups/` | Backup snapshots (`.zip`: packs, `presets.json`, `favorites.json`, `category_order.json`, optionally thumbnails), including the `_safety` snapshot written before each restore. Oldest auto-pruned past 20 | Yes |
 | `user/style_grid/presets.json` | Saved presets. Corrupt/unreadable JSON returns HTTP **409** and is not overwritten — restore from sibling `.bak` (atomic writes keep `.bak` / `.bak.2` / `.bak.3`). | Only if you don't need them |
+| `user/style_grid/favorites.json` | Favorite styles (`<source>` + name keys) | Only if you don't need them |
 | `user/style_grid/category_order.json` | Persisted sidebar category order | Yes — order falls back to defaults |
 | `user/style_grid/thumbnails/` | Uploaded preview images | Yes, previews just won't show until re-uploaded |
 
@@ -208,8 +229,8 @@ the copy looks right. CSVs placed in the extension's `data/` folder are not load
 
 `samples/demo.csv` (the bundled demo pack) stays inside the extension and
 is read-only by design — Edit, Move, and Delete are blocked on styles from
-this file. Use Duplicate to create an editable copy in `user/style_grid/`
-first.
+this file. Duplicate a style (or create one while the samples source is
+active) to get an editable copy in `user/style_grid/demo.csv`.
 
 ## Security note
 

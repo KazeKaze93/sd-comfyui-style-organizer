@@ -12,8 +12,10 @@ dist
 dist-ssr
 *.local
 
-# Bench harness scratch (results/*.json are kept)
-bench/.tmp/
+# Local bench metrics (never commit)
+bench/results/*.json
+!bench/results/.gitkeep
+bench/.preview-dist/
 
 # Editor directories and files
 .vscode/*

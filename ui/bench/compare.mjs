@@ -1,21 +1,16 @@
-#!/usr/bin/env node
 /**
  * Compare baseline / phase-a / phase-b bench JSON; print table + PERFORMANCE GATE at N=5000.
- *
- * PERFORMANCE GATE (candidate = phase-b if present else phase-a) at N=5000, 4x CPU:
- *   initMs <= 1000, toggleP50Ms <= 100, searchKeyP50Ms <= 100, scrollTbtMs <= 300
  *
  * Usage:
  *   node bench/compare.mjs
  *   node bench/compare.mjs --baseline results/baseline.json --phase-a results/phase-a.json --phase-b results/phase-b.json
  */
-
-import { access, readFile } from 'node:fs/promises'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url))
-const RESULTS_DIR = path.join(BENCH_DIR, 'results')
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const RESULTS_DIR = path.join(__dirname, 'results')
 
 const GATE_N = 5000
 const GATE = Object.freeze({
@@ -33,9 +28,7 @@ const METRICS = Object.freeze([
   'longTasks',
 ])
 
-/** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ baseline: string, phaseA: string, phaseB: string }} */
   const out = {
     baseline: path.join(RESULTS_DIR, 'baseline.json'),
     phaseA: path.join(RESULTS_DIR, 'phase-a.json'),
@@ -50,41 +43,21 @@ function parseArgs(argv) {
   return out
 }
 
-/** Resolve CLI paths from cwd, bench/, or bench/results/. */
-async function resolveResultPath(filePath) {
-  const candidates = [
-    path.resolve(filePath),
-    path.resolve(BENCH_DIR, filePath),
-    path.resolve(RESULTS_DIR, path.basename(filePath)),
-  ]
-  for (const candidate of candidates) {
-    try {
-      await access(candidate)
-      return candidate
-    } catch {
-      // try next
-    }
+function loadJson(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Missing results file: ${filePath}`)
   }
-  throw new Error(`result file not found: ${filePath} (tried: ${candidates.join(' | ')})`)
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'))
 }
 
-/** @param {string} filePath */
-async function loadResult(filePath) {
-  const resolved = await resolveResultPath(filePath)
-  const raw = await readFile(resolved, 'utf8')
-  return { path: resolved, doc: JSON.parse(raw) }
-}
-
-/** @param {string} filePath */
-async function tryLoadResult(filePath) {
+function tryLoadJson(filePath) {
   try {
-    return await loadResult(filePath)
+    return loadJson(filePath)
   } catch {
     return null
   }
 }
 
-/** @param {number[]} values */
 function medianOf(values) {
   const sorted = [...values].filter((v) => typeof v === 'number' && !Number.isNaN(v)).sort((a, b) => a - b)
   if (sorted.length === 0) return null
@@ -94,35 +67,23 @@ function medianOf(values) {
     : sorted[mid]
 }
 
-/**
- * Prefer sizes[n].median[key], then top-level sizes[n][key], then median of runs.
- * @param {Record<string, unknown> | null} doc
- * @param {number} n
- * @param {string} key
- */
+/** Prefer top-level medians; fall back to per-run medians. */
 function metricAt(doc, n, key) {
-  const block = /** @type {Record<string, unknown> | undefined} */ (doc?.sizes?.[String(n)])
+  const block = doc?.sizes?.[String(n)]
   if (!block) return null
-  const median = /** @type {Record<string, unknown> | undefined} */ (block.median)
-  if (median && typeof median[key] === 'number') return /** @type {number} */ (median[key])
-  if (typeof block[key] === 'number') return /** @type {number} */ (block[key])
+  if (typeof block[key] === 'number') return block[key]
   if (Array.isArray(block.runs)) {
-    return medianOf(
-      /** @type {Array<Record<string, number>>} */ (block.runs).map((r) => r[key]),
-    )
+    return medianOf(block.runs.map((r) => r[key]))
   }
   return null
 }
 
-/** @param {number | null} v */
 function fmt(v) {
   if (v == null || Number.isNaN(v)) return '—'
   return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(1) : String(v)
 }
 
-/** @param {Record<string, unknown>} doc */
 function evaluateGate(doc) {
-  /** @type {Array<{ key: string, value: number | null, limit: number, pass: boolean | null }>} */
   const results = []
   for (const [key, limit] of Object.entries(GATE)) {
     const v = metricAt(doc, GATE_N, key)
@@ -139,37 +100,29 @@ function evaluateGate(doc) {
   return { n: GATE_N, results, allPass }
 }
 
-async function main() {
+function main() {
   const args = parseArgs(process.argv.slice(2))
-  const baselineLoaded = await loadResult(args.baseline)
-  const phaseALoaded = await tryLoadResult(args.phaseA)
-  const phaseBLoaded = await tryLoadResult(args.phaseB)
-
-  const baseline = baselineLoaded.doc
-  const phaseA = phaseALoaded?.doc ?? null
-  const phaseB = phaseBLoaded?.doc ?? null
+  const baseline = loadJson(args.baseline)
+  const phaseA = tryLoadJson(args.phaseA)
+  const phaseB = tryLoadJson(args.phaseB)
 
   const sizes = [500, 2000, 5000]
-  /** @type {Array<{ n: number, key: string, baseline: number | null, phaseA: number | null, phaseB: number | null }>} */
   const rows = []
 
   for (const n of sizes) {
     for (const key of METRICS) {
-      rows.push({
-        n,
-        key,
-        baseline: metricAt(baseline, n, key),
-        phaseA: phaseA ? metricAt(phaseA, n, key) : null,
-        phaseB: phaseB ? metricAt(phaseB, n, key) : null,
-      })
+      const b = metricAt(baseline, n, key)
+      const a = phaseA ? metricAt(phaseA, n, key) : null
+      const p = phaseB ? metricAt(phaseB, n, key) : null
+      rows.push({ n, key, baseline: b, phaseA: a, phaseB: p })
     }
   }
 
   console.log('')
   console.log('Style Grid bench compare (3-way)')
-  console.log(`baseline: ${baselineLoaded.path}`)
-  console.log(`phase-a:  ${phaseALoaded ? phaseALoaded.path : '(missing)'}`)
-  console.log(`phase-b:  ${phaseBLoaded ? phaseBLoaded.path : '(missing)'}`)
+  console.log(`baseline: ${args.baseline}`)
+  console.log(`phase-a:  ${phaseA ? args.phaseA : '(missing)'}`)
+  console.log(`phase-b:  ${phaseB ? args.phaseB : '(missing)'}`)
   console.log('')
   console.log(
     [
@@ -215,7 +168,4 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+main()
