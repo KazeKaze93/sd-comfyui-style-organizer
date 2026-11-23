@@ -17,9 +17,11 @@ npm run build
 - `src/App.tsx`: top-level layout and toolbar actions.
 - `src/store/stylesStore.ts`: Zustand state, actions, `categories()`, and exported pure **`selectFilteredStyles(...)`** (filtered + deduped list for the grid — not a store method).
 - `src/bridge.ts`: typed SG_* postMessage contract with host.
-- `src/components/StyleGrid.tsx`: main grid; subscribes with **`useShallow`** and **`useMemo(selectFilteredStyles(...))`**; sidebar **Presets** view renders preset names with `StyleCard` (`presetName` + `SG_LOAD_PRESET`).
+- `src/components/StyleGrid.tsx`: main grid; subscribes with **`useShallow`** and **`useMemo(selectFilteredStyles(...))`**; the sidebar **Presets** view renders `PresetList` / `PresetCard`.
+- `src/components/grid/`: the virtualized grid (`VirtualStyleGrid.tsx`, fixed row height from `constants.ts`); `GridTileFace.tsx` is the tile's look, shared by `StyleCard` and `ExpandedTileOverlay.tsx`, which shows a truncated name whole on hover or keyboard focus (`lib/tileExpand.ts`, `lib/tileLabelMetrics.ts`, `lib/isFocusVisible.ts`).
 - `src/components/Sidebar.tsx`: category list; **`useShallow`** subscription to limit re-renders.
-- `src/components/StyleCard.tsx` / `ThumbnailPreview.tsx`: style tiles; optional `presetName` disables context menu and hover thumbnail preview.
+- `src/components/StyleCard.tsx`: style tiles and the card context menu.
+- `src/lib/platform.ts`: the few differences from the WebUI build of the same `src/` tree (no LoRA, deck strip, frame-element fullscreen, …).
 - `src/components/*`: other UI (sidebar, modals, etc.).
 
 ## Theme
