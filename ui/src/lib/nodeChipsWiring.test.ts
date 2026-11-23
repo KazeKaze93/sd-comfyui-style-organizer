@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { reorderLedgerEntries } from '../../../web/js/host_actions.js'
 import { chipRowsHeight, createChipRow, nextNodeHeight } from '../../../web/js/node_chips.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -45,6 +46,35 @@ describe('nextNodeHeight', () => {
   it('fit (load / new catalog): only grows to the minimum, never by the difference', () => {
     expect(nextNodeHeight({ currentHeight: 300, minHeight: 332, prevRowsHeight: 0, newRowsHeight: 32, fit: true })).toBe(332)
     expect(nextNodeHeight({ currentHeight: 400, minHeight: 332, prevRowsHeight: 0, newRowsHeight: 32, fit: true })).toBeNull()
+  })
+})
+
+describe('reorderLedgerEntries (SG_REORDER_STYLES → node chip order)', () => {
+  const entry = (source_file: string, name: string) => ({ name, source_file, prompt: name, negative_prompt: '' })
+  const ledgerOf = (...es: ReturnType<typeof entry>[]) => new Map(es.map((e) => [`${e.source_file}\0${e.name}`, e]))
+  const anklet = entry('data/a.csv', 'ACC_Anklet')
+  const bangles = entry('data/a.csv', 'ACC_Bangles_Stacked')
+  const charm = entry('data/a.csv', 'ACC_Bracelet_Charm')
+  const keys = (m: Map<string, unknown>) => [...m.keys()]
+
+  it('follows the tray order given as styleRowKeys', () => {
+    const ledger = ledgerOf(anklet, bangles, charm)
+    const next = reorderLedgerEntries(ledger, ['data/a.csv\0ACC_Bangles_Stacked', 'data/a.csv\0ACC_Anklet', 'data/a.csv\0ACC_Bracelet_Charm'])
+    expect(keys(next)).toEqual(['data/a.csv\0ACC_Bangles_Stacked', 'data/a.csv\0ACC_Anklet', 'data/a.csv\0ACC_Bracelet_Charm'])
+    expect(keys(ledger)).toEqual(['data/a.csv\0ACC_Anklet', 'data/a.csv\0ACC_Bangles_Stacked', 'data/a.csv\0ACC_Bracelet_Charm'])
+  })
+
+  it('entries the message does not name keep their order after the named ones; unknown ids are ignored', () => {
+    const next = reorderLedgerEntries(ledgerOf(anklet, bangles, charm), ['data/a.csv\0ACC_Bracelet_Charm', 'data/x.csv\0Gone'])
+    expect(keys(next)).toEqual(['data/a.csv\0ACC_Bracelet_Charm', 'data/a.csv\0ACC_Anklet', 'data/a.csv\0ACC_Bangles_Stacked'])
+  })
+
+  it('same name in two packs: each key moves on its own; a bare name only when it is unique', () => {
+    const otherAnklet = entry('imports/b.csv', 'ACC_Anklet')
+    const ledger = ledgerOf(anklet, otherAnklet, charm)
+    expect(keys(reorderLedgerEntries(ledger, ['imports/b.csv\0ACC_Anklet']))[0]).toBe('imports/b.csv\0ACC_Anklet')
+    expect(keys(reorderLedgerEntries(ledger, ['ACC_Anklet']))).toEqual(keys(ledger))
+    expect(keys(reorderLedgerEntries(ledger, ['ACC_Bracelet_Charm']))[0]).toBe('data/a.csv\0ACC_Bracelet_Charm')
   })
 })
 
@@ -125,6 +155,7 @@ describe('the sg_chips widget in style_grid.js', () => {
       'insertWildcardCategory',
       'removeWildcardCategory',
       'reorderWildcardCategories',
+      'reorderStylesInNode',
       'rehydrate',
       'refreshFromServer',
       'setStylesCache',

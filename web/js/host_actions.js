@@ -95,6 +95,33 @@ export function renameLedgerEntries(nodes, msg, deps) {
     return changed;
 }
 
+/**
+ * SG_REORDER_STYLES: the node's ledger in the tray's new order, so the node
+ * chips and the tray after a reopen follow the drag. styleIds are styleRowKey
+ * strings ("<source_file>\0<name>"); a bare name counts only when exactly one
+ * entry has it. Entries the message does not name keep their order after the
+ * named ones. Returns a new Map; the input is not changed.
+ *
+ * @param {Map<string, {name: string, source_file: string}>} ledger
+ * @param {string[]} styleIds
+ * @returns {Map<string, *>}
+ */
+export function reorderLedgerEntries(ledger, styleIds) {
+    const next = new Map();
+    for (const id of styleIds || []) {
+        let key = typeof id === "string" && ledger.has(id) ? id : null;
+        if (key === null && typeof id === "string" && !id.includes(STYLE_KEY_SEP)) {
+            const hits = [...ledger.keys()].filter((k) => ledger.get(k).name === id);
+            if (hits.length === 1) key = hits[0];
+        }
+        if (key !== null && !next.has(key)) next.set(key, ledger.get(key));
+    }
+    for (const [key, entry] of ledger) {
+        if (!next.has(key)) next.set(key, entry);
+    }
+    return next;
+}
+
 /** WebUI's toast for styles that left the library while applied. */
 export function vanishedToastMessage(names) {
     return names.length === 1

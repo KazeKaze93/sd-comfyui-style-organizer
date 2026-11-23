@@ -14,6 +14,7 @@ import {
     clearNodePrompts,
     refreshCatalog,
     renameLedgerEntries,
+    reorderLedgerEntries,
     shouldSyncPanel,
     uploadPreview,
 } from "./host_actions.js";
@@ -472,7 +473,12 @@ function reorderStylesInNode(node, styleIds) {
 
     if (text) text.value = rebuild(currentText, "prompt");
     if (neg) neg.value = rebuild(currentNeg, "negative_prompt");
+    // The ledger follows the tray too (wrap styles included): the node chips and
+    // the tray after a reopen are built in ledger order. A legacy node gets its
+    // ledger here, as on any other first change.
+    appliedByNode.set(node, reorderLedgerEntries(ensureLedger(node), styleIds));
     node.graph?.setDirtyCanvas(true, true);
+    refreshNodeChips(node);
 }
 
 function buildSgToken(category, spec, kind) {
