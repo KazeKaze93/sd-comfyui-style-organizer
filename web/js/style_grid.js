@@ -679,11 +679,38 @@ function postAppliedStyles(node) {
     }
 }
 
+/**
+ * The catalog the panel and the chips share. A filled cache is used as it is
+ * (SG_REFRESH is what reloads it) unless a reload failed; otherwise one
+ * GET /style_grid/styles, shared by every caller while it is in flight.
+ */
+let catalogInFlight = null;
+/** A reload failed after the library changed: the cache may be stale, the next load fetches. */
+let catalogStale = false;
+function loadCatalog() {
+    if (allStylesCache.length && !catalogStale) return Promise.resolve(allStylesCache);
+    if (!catalogInFlight) {
+        catalogInFlight = fetch("/style_grid/styles")
+            .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then((data) => {
+                if (!allStylesCache.length || catalogStale) {
+                    setStylesCache(Object.values(data.categories || {}).flat());
+                }
+                return allStylesCache;
+            })
+            .finally(() => {
+                catalogInFlight = null;
+            });
+    }
+    return catalogInFlight;
+}
+
 function rehydrate() {
-    return fetch("/style_grid/styles")
-        .then((r) => r.json())
-        .then((data) => {
-            setStylesCache(Object.values(data.categories || {}).flat());
+    return loadCatalog()
+        .then(() => {
             postToIframe({
                 type: "SG_INIT",
                 styles: allStylesCache,
@@ -758,6 +785,7 @@ function refreshFromServer(quietVanished) {
         if (currentNode) refreshNodeChips(currentNode);
     }).catch((err) => {
         console.warn("[Style Grid] refresh failed", err);
+        catalogStale = true;
         postToIframe({ type: "SG_TOAST", message: "Refresh failed", variant: "error" });
     });
 }
@@ -784,6 +812,7 @@ let catalogKeys = null;
 /** Replace the catalog the panel and the chips share, then rebuild every node's chips. */
 function setStylesCache(styles) {
     allStylesCache = styles;
+    catalogStale = false;
     for (const node of styleGridNodes()) refreshNodeChips(node, { fit: true });
 }
 
@@ -806,14 +835,7 @@ function hostToast(severity, detail) {
 /** Legacy nodes need the catalog to show chips; load it once, into the panel's cache. */
 function ensureCatalogLoaded() {
     if (catalogLoad || allStylesCache.length) return;
-    catalogLoad = fetch("/style_grid/styles")
-        .then((r) => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
-        })
-        .then((data) => {
-            if (!allStylesCache.length) setStylesCache(Object.values(data.categories || {}).flat());
-        })
+    catalogLoad = loadCatalog()
         .catch((err) => {
             console.warn("[Style Grid] style library load failed", err);
             hostToast("warn", "Could not load the style library; chips are not shown for nodes from older workflows.");
