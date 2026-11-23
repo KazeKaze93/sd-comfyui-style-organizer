@@ -15,6 +15,19 @@ export function ledgerKey(name, sourceFile) {
     return `${sourceFile || ""}${STYLE_KEY_SEP}${name}`;
 }
 
+/**
+ * Node-scoped panel state (wildcards, applied styles, selection) goes to the
+ * iframe only for the node the panel is bound to; another node's change must
+ * not overwrite the panel's view of the current node.
+ *
+ * @param {*} node the node whose state changed
+ * @param {*} currentNode the node the panel is open for (or null)
+ * @returns {boolean}
+ */
+export function shouldSyncPanel(node, currentNode) {
+    return node != null && node === currentNode;
+}
+
 function textWidgets(node) {
     return {
         text: node?.widgets?.find((w) => w.name === "text"),
