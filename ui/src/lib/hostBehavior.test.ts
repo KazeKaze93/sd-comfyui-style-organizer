@@ -66,6 +66,14 @@ const flush = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0))
 }
 const stylesFetches = () => fetchMock.mock.calls.filter(([url]) => url === '/style_grid/styles').length
+/** Catalog requests that are revalidations (If-None-Match), and full loads. */
+const revalidations = () =>
+  fetchMock.mock.calls.filter(
+    ([url, init]) =>
+      url === '/style_grid/styles' && !!(init?.headers as Record<string, string> | undefined)?.['If-None-Match'],
+  ).length
+const fullLoads = () => stylesFetches() - revalidations()
+const catalogEtag = () => `v-${catalog.map((s) => `${s.source_file}:${s.name}:${s.prompt}`).join('|').length}-${catalog.length}`
 
 async function loadHost() {
   vi.resetModules()
@@ -176,11 +184,21 @@ const apply = (s: Style) =>
 beforeEach(async () => {
   catalog = BASE
   posted = []
-  fetchMock = vi.fn(async (url: string) => ({
-    ok: true,
-    status: 200,
-    json: async () => (url === '/style_grid/check_update' ? { changed: false } : { categories: byCategory(catalog) }),
-  }))
+  // Like the server: GET /style_grid/styles carries an ETag of the catalog and
+  // answers 304 to a matching If-None-Match.
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const etag = catalogEtag()
+    const conditional = (init?.headers as Record<string, string> | undefined)?.['If-None-Match']
+    if (url === '/style_grid/styles' && conditional === etag) {
+      return { ok: false, status: 304, headers: new Headers(), json: async () => { throw new Error('no body') } }
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(url === '/style_grid/styles' ? { ETag: etag } : {}),
+      json: async () => (url === '/style_grid/check_update' ? { changed: false } : { categories: byCategory(catalog) }),
+    }
+  })
   vi.stubGlobal('fetch', fetchMock)
   await loadHost()
 })
@@ -300,16 +318,58 @@ describe('the panel', () => {
     expect(overlayShown()).toBe(true)
   })
 
-  it('opening again reuses the filled catalog: one GET /style_grid/styles', async () => {
+  it('opening again revalidates the loaded catalog: unchanged (304) → the copy is reused', async () => {
     const node = await addNode(makeNode(1))
     await openPanel(node)
-    expect(stylesFetches()).toBe(1)
+    expect(fullLoads()).toBe(1)
     browse(node)
     browse(node)
     await flush()
     expect(overlayShown()).toBe(true)
-    expect(stylesFetches()).toBe(1)
-    expect(posted.filter((m) => m.type === 'SG_INIT')).toHaveLength(2)
+    expect(fullLoads()).toBe(1)
+    expect(revalidations()).toBe(1)
+    const init = posted.filter((m) => m.type === 'SG_INIT')
+    expect(init).toHaveLength(2)
+    expect((init[1].styles as Style[]).map((s) => s.name)).toEqual(['BODY_Tall', 'HAIR_Red'])
+  })
+
+  it('a CSV edited on disk shows on the next open, even after a queue run consumed check_update', async () => {
+    const node = await loadNode(1, 'tall', 'short', [BASE[0]])
+    await openPanel(node)
+    browse(node)
+    // The pack changed on disk; the node's run already read it, so check_update would say "unchanged".
+    catalog = [{ ...BASE[0], name: 'BODY_Tall_Renamed' }, BASE[1]]
+    posted = []
+    browse(node)
+    await flush()
+    expect(revalidations()).toBe(1)
+    const init = posted.filter((m) => m.type === 'SG_INIT')
+    expect((init[0].styles as Style[]).map((s) => s.name)).toEqual(['BODY_Tall_Renamed', 'HAIR_Red'])
+    // The node's chip of the style that left the library is struck through.
+    expect(chipRow(node).querySelector('.sg-chip--missing .sg-chip-label')?.textContent).toBe('Tall')
+    // And the next open is a 304 again.
+    browse(node)
+    browse(node)
+    await flush()
+    expect(revalidations()).toBe(2)
+    expect(fullLoads()).toBe(1)
+  })
+
+  it('a failed revalidation keeps the loaded catalog and still opens the panel', async () => {
+    const node = await addNode(makeNode(1))
+    await openPanel(node)
+    browse(node)
+    const served = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<unknown>
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === '/style_grid/styles') throw new Error('offline')
+      return served(url, init)
+    })
+    posted = []
+    browse(node)
+    await flush()
+    expect(overlayShown()).toBe(true)
+    const init = posted.filter((m) => m.type === 'SG_INIT')
+    expect((init[0].styles as Style[]).map((s) => s.name)).toEqual(['BODY_Tall', 'HAIR_Red'])
   })
 
   it('a failed SG_REFRESH leaves no stale catalog: the next open fetches it again', async () => {
@@ -343,7 +403,8 @@ describe('the panel', () => {
     expect(chipLabels(legacy)).toEqual(['Tall', 'Red'])
     expect(ledgerNames(legacy)).toBeUndefined()
     await openPanel(legacy)
-    expect(stylesFetches()).toBe(1)
+    expect(fullLoads()).toBe(1)
+    expect(revalidations()).toBe(1)
     expect(posted.filter((m) => m.type === 'SG_STYLE_APPLIED').map((m) => (m.style as Style).name)).toEqual([
       'BODY_Tall',
       'HAIR_Red',

@@ -225,10 +225,11 @@ files are keyed by **style name + source CSV**, so the same UNIVERSAL name in tw
 older versions are moved there once, on the first open.
 
 **Style library loading:** the panel and the node chips share one copy of
-the library, loaded once per page. Changes made in the panel (edit, create,
-duplicate, move, delete, import, restore) reload it at once. A CSV file
-edited outside the panel shows after the next such change or after
-reloading the ComfyUI page.
+the library. Changes made in the panel (edit, create, duplicate, move,
+delete, import, restore) reload it at once. Each time the panel opens it
+asks the server whether the library changed (a small conditional request);
+a CSV file edited outside the panel shows on the next open, and an
+unchanged library is not downloaded again.
 
 The panel supports fullscreen for browsing large packs:
 

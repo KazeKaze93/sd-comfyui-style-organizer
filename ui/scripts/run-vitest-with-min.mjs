@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 
 /** Pinned floor — raise when the suite grows; never lower without an intentional cull. */
-const MIN_TESTS = 863;
+const MIN_TESTS = 865;
 
 const result = spawnSync("npx", ["vitest", "run", ...process.argv.slice(2)], {
   encoding: "utf8",
