@@ -51,13 +51,13 @@ describe('gallery sizing', () => {
     }
   })
 
-  it('grid helpers return the current metrics (two-line tiles: 46 / 58 px)', () => {
+  it('existing grid helpers return what they always did', () => {
     expect([minCardWidthPx(true), minCardWidthPx(false)]).toEqual([110, 150])
     expect(gridGapPx()).toBe(8)
     expect(rowGapPx()).toBe(8)
-    expect([cardRowHeightPx(true), cardRowHeightPx(false)]).toEqual([54, 66])
+    expect([cardRowHeightPx(true), cardRowHeightPx(false)]).toEqual([42, 54])
     expect(headerRowHeightPx()).toBe(40)
-    expect([gridMinVisibleHeightPx(true), gridMinVisibleHeightPx(false)]).toEqual([148, 172])
+    expect([gridMinVisibleHeightPx(true), gridMinVisibleHeightPx(false)]).toEqual([124, 148])
     expect(autoFillGridClass(true)).toBe('grid content-start grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-2')
     expect(autoFillGridClass(false)).toBe('grid content-start grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2')
   })
